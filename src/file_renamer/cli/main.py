@@ -1,0 +1,413 @@
+"""Main CLI entry point."""
+
+import asyncio
+from pathlib import Path
+from typing import Optional
+
+import click
+from rich.console import Console
+from rich.table import Table
+
+from file_renamer.core.models import MediaType, RenameStatus
+from file_renamer.core.parser import create_parser
+from file_renamer.core.renamer import FileRenamer
+from file_renamer.core.template import TemplateEngine
+from file_renamer.providers.cache import APICache
+from file_renamer.providers.tmdb import TMDBClient
+from file_renamer.providers.tvdb import TVDBClient
+from file_renamer.services.config_service import ConfigService
+from file_renamer.services.rename_service import RenameService
+
+console = Console()
+
+
+def get_config_service() -> ConfigService:
+    """Get the config service instance."""
+    return ConfigService()
+
+
+@click.group()
+@click.version_option()
+def cli() -> None:
+    """File Renamer - Rename media files using TMDB/TVDB metadata."""
+    pass
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--type",
+    "-t",
+    "media_type",
+    type=click.Choice(["movie", "tv", "auto"]),
+    default="auto",
+    help="Media type (movie, tv, or auto-detect)",
+)
+@click.option(
+    "--recursive",
+    "-r",
+    is_flag=True,
+    help="Scan directories recursively",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output directory for renamed files",
+)
+@click.option(
+    "--dry-run",
+    "-n",
+    is_flag=True,
+    help="Preview changes without renaming",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+def rename(
+    path: Path,
+    media_type: str,
+    recursive: bool,
+    output: Optional[Path],
+    dry_run: bool,
+    yes: bool,
+) -> None:
+    """Rename media files in PATH.
+
+    PATH can be a file or directory.
+    """
+    config = get_config_service()
+    settings = config.load()
+
+    # Check for API keys
+    if not settings.api.tmdb_api_key and not settings.api.tvdb_api_key:
+        console.print(
+            "[red]Error:[/red] No API keys configured. "
+            "Run 'file-renamer config set-key' to configure."
+        )
+        raise SystemExit(1)
+
+    # Determine files to process
+    if path.is_file():
+        files = [path]
+    else:
+        parser = create_parser()
+        files = []
+        if recursive:
+            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                files.extend(path.rglob(f"*{ext}"))
+        else:
+            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                files.extend(path.glob(f"*{ext}"))
+        files = sorted(files)
+
+    if not files:
+        console.print("[yellow]No video files found.[/yellow]")
+        return
+
+    console.print(f"Found [cyan]{len(files)}[/cyan] file(s) to process.")
+
+    # Determine force type
+    force_type: Optional[MediaType] = None
+    if media_type == "movie":
+        force_type = MediaType.MOVIE
+    elif media_type == "tv":
+        force_type = MediaType.TV_EPISODE
+
+    # Run async processing
+    asyncio.run(_process_files(files, force_type, output, dry_run, yes, config))
+
+
+class DummyTVProvider:
+    """Dummy TV provider when TVDB is not configured."""
+
+    async def search_show(self, title: str, year: Optional[int] = None) -> list:
+        return []
+
+    async def get_show(self, show_id: int):
+        return None
+
+    async def get_episode(self, show_id: int, season: int, episode: int):
+        return None
+
+
+class DummyMovieProvider:
+    """Dummy movie provider when TMDB is not configured."""
+
+    async def search_movie(self, title: str, year: Optional[int] = None) -> list:
+        return []
+
+    async def get_movie(self, movie_id: int):
+        return None
+
+
+async def _process_files(
+    files: list[Path],
+    force_type: Optional[MediaType],
+    output: Optional[Path],
+    dry_run: bool,
+    yes: bool,
+    config: ConfigService,
+) -> None:
+    """Process files asynchronously."""
+    settings = config.settings
+
+    # Set up components
+    parser = create_parser()
+    cache = APICache(config.cache_dir)
+    template = TemplateEngine(
+        movie_template=settings.templates.movie,
+        tv_template=settings.templates.tv,
+    )
+    renamer = FileRenamer(dry_run=dry_run)
+
+    # Create providers based on available API keys
+    tmdb = None
+    tvdb = None
+    movie_provider = DummyMovieProvider()
+    tv_provider = DummyTVProvider()
+
+    if settings.api.tmdb_api_key:
+        tmdb = TMDBClient(settings.api.tmdb_api_key, cache)
+    if settings.api.tvdb_api_key:
+        tvdb = TVDBClient(settings.api.tvdb_api_key, cache)
+
+    try:
+        # Enter async contexts for available providers
+        if tmdb:
+            await tmdb.__aenter__()
+            movie_provider = tmdb
+        if tvdb:
+            await tvdb.__aenter__()
+            tv_provider = tvdb
+
+        service = RenameService(
+            parser=parser,
+            movie_provider=movie_provider,
+            tv_provider=tv_provider,
+            template_engine=template,
+            file_renamer=renamer,
+        )
+
+        # Process files
+        with console.status("Processing files..."):
+            operations = await service.process_files(
+                files, force_type, output
+            )
+
+        if not operations:
+            console.print("[yellow]No matches found.[/yellow]")
+            return
+
+        # Show preview
+        _show_preview(operations)
+
+        # Confirm and execute
+        if dry_run:
+            console.print("\n[yellow]Dry run - no files were renamed.[/yellow]")
+            return
+
+        if not yes:
+            if not click.confirm("\nProceed with rename?"):
+                console.print("[yellow]Cancelled.[/yellow]")
+                return
+
+        # Execute rename
+        with console.status("Renaming files..."):
+            service.execute_rename(operations)
+
+        # Show results
+        _show_results(operations)
+    finally:
+        # Clean up providers
+        if tmdb:
+            await tmdb.__aexit__(None, None, None)
+        if tvdb:
+            await tvdb.__aexit__(None, None, None)
+
+
+def _show_preview(operations: list) -> None:
+    """Display rename preview table."""
+    table = Table(title="Rename Preview")
+    table.add_column("Original", style="red")
+    table.add_column("New Name", style="green")
+
+    for op in operations:
+        table.add_row(op.source.name, op.destination.name)
+
+    console.print(table)
+
+
+def _show_results(operations: list) -> None:
+    """Display rename results."""
+    completed = sum(1 for op in operations if op.status == RenameStatus.COMPLETED)
+    failed = sum(1 for op in operations if op.status == RenameStatus.FAILED)
+    skipped = sum(1 for op in operations if op.status == RenameStatus.SKIPPED)
+
+    console.print()
+    console.print(f"[green]Completed:[/green] {completed}")
+    if failed:
+        console.print(f"[red]Failed:[/red] {failed}")
+    if skipped:
+        console.print(f"[yellow]Skipped:[/yellow] {skipped}")
+
+    # Show errors
+    for op in operations:
+        if op.status == RenameStatus.FAILED:
+            console.print(f"  [red]Error:[/red] {op.source.name}: {op.error_message}")
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--recursive",
+    "-r",
+    is_flag=True,
+    help="Scan directories recursively",
+)
+def preview(path: Path, recursive: bool) -> None:
+    """Preview what files would be renamed without making changes.
+
+    PATH can be a file or directory.
+    """
+    # Determine files to process
+    if path.is_file():
+        files = [path]
+    else:
+        files = []
+        if recursive:
+            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                files.extend(path.rglob(f"*{ext}"))
+        else:
+            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                files.extend(path.glob(f"*{ext}"))
+        files = sorted(files)
+
+    if not files:
+        console.print("[yellow]No video files found.[/yellow]")
+        return
+
+    # Parse filenames and show info
+    parser = create_parser()
+    table = Table(title="Parsed File Information")
+    table.add_column("Filename")
+    table.add_column("Type")
+    table.add_column("Title")
+    table.add_column("Year")
+    table.add_column("Season")
+    table.add_column("Episode")
+
+    for f in files:
+        parsed = parser.parse(f.name)
+        type_str = parsed.media_type.name.lower()
+        table.add_row(
+            f.name,
+            type_str,
+            parsed.title,
+            str(parsed.year) if parsed.year else "-",
+            str(parsed.season) if parsed.season else "-",
+            str(parsed.episode) if parsed.episode else "-",
+        )
+
+    console.print(table)
+
+
+@cli.group()
+def config() -> None:
+    """Manage configuration settings."""
+    pass
+
+
+@config.command("show")
+def config_show() -> None:
+    """Show current configuration."""
+    config = get_config_service()
+    settings = config.load()
+
+    console.print("[bold]Current Configuration[/bold]\n")
+    console.print(f"Config file: {config.config_file}")
+    console.print(f"Cache dir: {config.cache_dir}\n")
+
+    console.print("[bold]Templates:[/bold]")
+    console.print(f"  Movie: {settings.templates.movie}")
+    console.print(f"  TV:    {settings.templates.tv}\n")
+
+    console.print("[bold]API Keys:[/bold]")
+    tmdb_status = "[green]configured[/green]" if settings.api.tmdb_api_key else "[red]not set[/red]"
+    tvdb_status = "[green]configured[/green]" if settings.api.tvdb_api_key else "[red]not set[/red]"
+    console.print(f"  TMDB: {tmdb_status}")
+    console.print(f"  TVDB: {tvdb_status}")
+
+
+@config.command("set-key")
+@click.argument("provider", type=click.Choice(["tmdb", "tvdb"]))
+@click.argument("key")
+def config_set_key(provider: str, key: str) -> None:
+    """Set an API key for a provider.
+
+    PROVIDER is either 'tmdb' or 'tvdb'.
+    """
+    config = get_config_service()
+    config.load()  # Ensure settings are loaded
+    config.set_api_key(provider, key)
+    console.print(f"[green]API key for {provider.upper()} saved.[/green]")
+
+
+@config.command("set-template")
+@click.argument("type_", metavar="TYPE", type=click.Choice(["movie", "tv"]))
+@click.argument("template")
+def config_set_template(type_: str, template: str) -> None:
+    """Set a naming template.
+
+    TYPE is either 'movie' or 'tv'.
+
+    Example templates:
+      movie: "{title} ({year})"
+      tv: "{title} - S{season2}E{episode2} - {episode_title}"
+    """
+    config = get_config_service()
+    settings = config.load()
+
+    # Validate template
+    engine = TemplateEngine()
+    is_valid, errors = engine.validate_template(template)
+
+    if not is_valid:
+        console.print("[red]Invalid template:[/red]")
+        for error in errors:
+            console.print(f"  - {error}")
+        raise SystemExit(1)
+
+    if type_ == "movie":
+        settings.templates.movie = template
+    else:
+        settings.templates.tv = template
+
+    config.save(settings)
+    console.print(f"[green]Template for {type_} saved.[/green]")
+
+
+@config.command("init")
+def config_init() -> None:
+    """Initialize configuration file with defaults."""
+    config = get_config_service()
+    config._ensure_dirs()
+
+    if config.config_file.exists():
+        if not click.confirm("Config file exists. Overwrite?"):
+            return
+
+    config.save()
+    console.print(f"[green]Config file created at:[/green] {config.config_file}")
+    console.print("\nNext steps:")
+    console.print("  1. Get a TMDB API key from https://www.themoviedb.org/settings/api")
+    console.print("  2. Run: file-renamer config set-key tmdb YOUR_API_KEY")
+    console.print("  3. (Optional) Get a TVDB API key from https://thetvdb.com/api-information")
+    console.print("  4. Run: file-renamer config set-key tvdb YOUR_API_KEY")
+
+
+if __name__ == "__main__":
+    cli()

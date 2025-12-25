@@ -1,0 +1,149 @@
+# File Renamer
+
+A cross-platform media file renaming application inspired by FileBot. Automatically fetches metadata from TMDB and TVDB to rename your movie and TV show files with clean, consistent naming.
+
+## Features
+
+- **Smart Detection** - Automatically identifies movies vs TV episodes from filenames
+- **Metadata Lookup** - Fetches accurate titles, years, and episode names from TMDB/TVDB
+- **Preview Mode** - See exactly what will be renamed before committing changes
+- **Custom Templates** - Define your own naming patterns with powerful placeholders
+- **Dual Interface** - Full CLI for automation + GUI for visual file management
+- **Cross-Platform** - Works on macOS, Windows, and Linux
+- **Caching** - API responses are cached to minimize requests and speed up bulk operations
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/file-renamer.git
+cd file-renamer
+
+# Install (CLI only)
+pip install -e .
+
+# Install with GUI support
+pip install -e ".[gui]"
+```
+
+## Quick Start
+
+### 1. Get API Keys
+
+- **TMDB** (for movies): https://www.themoviedb.org/settings/api
+- **TVDB** (for TV shows): https://thetvdb.com/api-information
+
+### 2. Configure
+
+```bash
+file-renamer config init
+file-renamer config set-key tmdb YOUR_TMDB_API_KEY
+file-renamer config set-key tvdb YOUR_TVDB_API_KEY  # optional
+```
+
+### 3. Rename Files
+
+```bash
+# Preview what will happen
+file-renamer rename /path/to/media --dry-run
+
+# Rename movies
+file-renamer rename /path/to/movies --type movie
+
+# Rename TV shows
+file-renamer rename /path/to/shows --type tv
+
+# Auto-detect and rename
+file-renamer rename /path/to/media
+```
+
+### 4. Or Use the GUI
+
+```bash
+file-renamer-gui
+```
+
+## Example
+
+```
+Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.mkv
+After:  One Battle After Another (2025).mkv
+
+Before: Breaking.Bad.S01E01.720p.BluRay.x264.mkv
+After:  Breaking Bad - S01E01 - Pilot.mkv
+```
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `file-renamer rename PATH` | Rename files in PATH |
+| `file-renamer preview PATH` | Preview parsed file info |
+| `file-renamer config show` | Show current configuration |
+| `file-renamer config set-key PROVIDER KEY` | Set API key |
+| `file-renamer config set-template TYPE TEMPLATE` | Set naming template |
+
+### Rename Options
+
+```
+-t, --type [movie|tv|auto]  Force media type detection
+-r, --recursive             Scan subdirectories
+-o, --output PATH           Move renamed files to this directory
+-n, --dry-run               Preview only, don't rename
+-y, --yes                   Skip confirmation prompt
+```
+
+## Templates
+
+Customize how files are named using placeholders:
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{title}` | Title | "The Matrix" |
+| `{year}` | Year | "1999" |
+| `{season2}` | Season (2-digit) | "01" |
+| `{episode2}` | Episode (2-digit) | "05" |
+| `{episode_title}` | Episode title | "Pilot" |
+| `{quality}` | Quality | "1080p" |
+
+**Default templates:**
+- Movies: `{title} ({year})`
+- TV: `{title} - S{season2}E{episode2} - {episode_title}`
+
+**Custom example:**
+```bash
+file-renamer config set-template movie "{title} ({year}) [{quality}]"
+# Result: The Matrix (1999) [1080p].mkv
+```
+
+## Documentation
+
+See the [Wiki](wiki/) for detailed documentation:
+
+- [Installation Guide](wiki/Installation.md)
+- [Getting Started](wiki/Getting-Started.md)
+- [CLI Reference](wiki/CLI-Reference.md)
+- [GUI Guide](wiki/GUI-Guide.md)
+- [Template Syntax](wiki/Templates.md)
+- [Configuration](wiki/Configuration.md)
+- [Troubleshooting](wiki/Troubleshooting.md)
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Lint
+ruff check src/
+
+# Type check
+mypy src/
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
