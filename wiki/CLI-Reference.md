@@ -40,6 +40,7 @@ file-renamer rename PATH [OPTIONS]
 | `--output` | `-o` | Move renamed files to this directory |
 | `--dry-run` | `-n` | Preview changes without renaming |
 | `--yes` | `-y` | Skip confirmation prompt |
+| `--auto-select` | `-a` | Automatically select first match when multiple results found |
 
 **Examples:**
 
@@ -61,7 +62,30 @@ file-renamer rename /downloads --output /media/movies --type movie
 
 # Non-interactive (for scripts)
 file-renamer rename /path/to/media --yes
+
+# Auto-select first match when multiple results found
+file-renamer rename /path/to/media --auto-select
 ```
+
+**Interactive Selection:**
+
+When TidyTitles finds multiple matches for a file, it will prompt you to choose the correct one:
+
+```
+Multiple matches found for: Movie.2024.mkv
+
+┏━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━┓
+┃ # ┃ Title               ┃ Year ┃ Type  ┃
+┡━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━┩
+│ 1 │ The Movie Title     │ 2024 │ Movie │
+│ 2 │ Movie Title (Remake)│ 2024 │ Movie │
+│ 3 │ Different Movie     │ 2024 │ Movie │
+└───┴─────────────────────┴──────┴───────┘
+
+Select match (1-3) or 's' to skip:
+```
+
+Use `--auto-select` to automatically pick the first match without prompting.
 
 ---
 

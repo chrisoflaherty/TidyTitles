@@ -34,10 +34,17 @@ tmdb_api_key = "your_tmdb_key_here"
 tvdb_api_key = "your_tvdb_key_here"
 tvdb_pin = ""
 
+[associated_files]
+enabled = true
+subtitles = true
+nfo = true
+images = true
+
 [behavior]
 dry_run = false
 overwrite = false
 preview_before_rename = true
+conflict_resolution = "skip"
 
 [providers]
 movie = "tmdb"
@@ -65,13 +72,104 @@ See [Templates](Templates.md) for placeholder documentation.
 
 See [API Keys](API-Keys.md) for how to obtain these.
 
+### Associated Files
+
+Controls which associated files are automatically renamed along with video files:
+
+| Key | Description | Default | Supported Extensions |
+|-----|-------------|---------|---------------------|
+| `enabled` | Enable/disable associated file renaming | `true` | - |
+| `subtitles` | Rename subtitle files | `true` | `.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx` |
+| `nfo` | Rename NFO metadata files | `true` | `.nfo` |
+| `images` | Rename cover/poster images | `true` | `.jpg`, `.jpeg`, `.png`, `.tbn` |
+
+When enabled, TidyTitles will automatically find and rename files with the same base name as the video file. For example:
+
+```
+Video:    movie.mkv     → Movie Title (2024).mkv
+Subtitle: movie.srt     → Movie Title (2024).srt
+Subtitle: movie.en.srt  → Movie Title (2024).en.srt  (language codes preserved)
+NFO:      movie.nfo     → Movie Title (2024).nfo
+Image:    movie.jpg     → Movie Title (2024).jpg
+```
+
+To disable associated file renaming entirely:
+
+```toml
+[associated_files]
+enabled = false
+```
+
+To selectively enable only certain types:
+
+```toml
+[associated_files]
+enabled = true
+subtitles = true
+nfo = false
+images = false
+```
+
 ### Behavior
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `dry_run` | If true, never actually rename files | `false` |
-| `overwrite` | If true, overwrite existing files | `false` |
-| `preview_before_rename` | Show preview before renaming | `true` |
+| Key | Description | Default | Options |
+|-----|-------------|---------|---------|
+| `dry_run` | If true, never actually rename files | `false` | `true`, `false` |
+| `overwrite` | If true, overwrite existing files | `false` | `true`, `false` |
+| `preview_before_rename` | Show preview before renaming | `true` | `true`, `false` |
+| `conflict_resolution` | How to handle filename conflicts | `"skip"` | `"skip"`, `"overwrite"`, `"auto_version"` |
+
+#### Conflict Resolution Strategies
+
+The `conflict_resolution` setting controls what happens when a renamed file would overwrite an existing file:
+
+**`skip` (Default)**
+Skip files that would overwrite existing files. The original file is left unchanged.
+
+```
+Existing: Movie (2024).mkv
+Attempt:  Movie (2024).mkv  →  Skipped
+```
+
+**`overwrite`**
+Overwrite existing files. **Use with caution!**
+
+```
+Existing: Movie (2024).mkv (old version)
+Attempt:  Movie (2024).mkv  →  Replaced with new version
+```
+
+**`auto_version`** ⭐ **Recommended**
+Automatically add version numbers to avoid conflicts. Files are renamed with incrementing numbers: `(1)`, `(2)`, `(3)`, etc.
+
+```
+Existing: Movie (2024).mkv
+Attempt:  Movie (2024).mkv  →  Movie (2024) (1).mkv
+
+Existing: Movie (2024).mkv, Movie (2024) (1).mkv
+Attempt:  Movie (2024).mkv  →  Movie (2024) (2).mkv
+```
+
+This works for both main files and associated files:
+
+```
+Before:
+  Movie.mkv (existing)
+  Movie.srt (existing)
+
+After renaming new_movie.mkv with auto_version:
+  Movie.mkv (unchanged)
+  Movie.srt (unchanged)
+  Movie (1).mkv (new)
+  Movie (1).srt (new)
+```
+
+To enable auto-versioning:
+
+```toml
+[behavior]
+conflict_resolution = "auto_version"
+```
 
 ### Providers
 

@@ -6,8 +6,18 @@ from typing import Optional
 
 import click
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    TimeRemainingColumn,
+    MofNCompleteColumn,
+)
 from rich.table import Table
 
+from file_renamer.core.conflict_resolution import ConflictStrategy
 from file_renamer.core.models import MediaType, RenameStatus
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
@@ -67,6 +77,12 @@ def cli() -> None:
     is_flag=True,
     help="Skip confirmation prompt",
 )
+@click.option(
+    "--auto-select",
+    "-a",
+    is_flag=True,
+    help="Automatically select first match when multiple results found",
+)
 def rename(
     path: Path,
     media_type: str,
@@ -74,6 +90,7 @@ def rename(
     output: Optional[Path],
     dry_run: bool,
     yes: bool,
+    auto_select: bool,
 ) -> None:
     """Rename media files in PATH.
 
@@ -94,15 +111,16 @@ def rename(
     if path.is_file():
         files = [path]
     else:
-        parser = create_parser()
-        files = []
-        if recursive:
-            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
-                files.extend(path.rglob(f"*{ext}"))
-        else:
-            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
-                files.extend(path.glob(f"*{ext}"))
-        files = sorted(files)
+        with console.status("[cyan]Scanning for video files..."):
+            parser = create_parser()
+            files = []
+            if recursive:
+                for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                    files.extend(path.rglob(f"*{ext}"))
+            else:
+                for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                    files.extend(path.glob(f"*{ext}"))
+            files = sorted(files)
 
     if not files:
         console.print("[yellow]No video files found.[/yellow]")
@@ -118,7 +136,7 @@ def rename(
         force_type = MediaType.TV_EPISODE
 
     # Run async processing
-    asyncio.run(_process_files(files, force_type, output, dry_run, yes, config))
+    asyncio.run(_process_files(files, force_type, output, dry_run, yes, auto_select, config))
 
 
 class DummyTVProvider:
@@ -144,12 +162,79 @@ class DummyMovieProvider:
         return None
 
 
+def _create_selection_callback(auto_select: bool):
+    """Create a selection callback for choosing from multiple matches.
+
+    Args:
+        auto_select: If True, automatically select the first match.
+
+    Returns:
+        Selection callback function.
+    """
+    from file_renamer.core.models import Movie, TVShow
+
+    def select_match(options: list, filename: str) -> Optional[int]:
+        """Prompt user to select from multiple matches."""
+        if auto_select:
+            return 0  # Always select first
+
+        console.print(f"\n[yellow]Multiple matches found for:[/yellow] {filename}")
+        console.print()
+
+        # Display options
+        table = Table(title="Select Match", show_header=True)
+        table.add_column("#", style="cyan", width=3)
+        table.add_column("Title", style="green")
+        table.add_column("Year", style="yellow")
+        table.add_column("Type", style="blue")
+
+        for i, option in enumerate(options, 1):
+            if isinstance(option, Movie):
+                table.add_row(
+                    str(i),
+                    option.title,
+                    str(option.year),
+                    "Movie"
+                )
+            elif isinstance(option, TVShow):
+                table.add_row(
+                    str(i),
+                    option.title,
+                    str(option.year),
+                    "TV Show"
+                )
+
+        console.print(table)
+        console.print()
+
+        # Prompt for selection
+        while True:
+            choice = console.input(
+                f"[cyan]Select match (1-{len(options)}) or 's' to skip:[/cyan] "
+            ).strip().lower()
+
+            if choice == "s":
+                return None  # Skip this file
+
+            try:
+                selection = int(choice)
+                if 1 <= selection <= len(options):
+                    return selection - 1  # Convert to 0-indexed
+                else:
+                    console.print(f"[red]Invalid choice. Enter 1-{len(options)} or 's'[/red]")
+            except ValueError:
+                console.print(f"[red]Invalid input. Enter a number (1-{len(options)}) or 's'[/red]")
+
+    return select_match
+
+
 async def _process_files(
     files: list[Path],
     force_type: Optional[MediaType],
     output: Optional[Path],
     dry_run: bool,
     yes: bool,
+    auto_select: bool,
     config: ConfigService,
 ) -> None:
     """Process files asynchronously."""
@@ -184,19 +269,66 @@ async def _process_files(
             await tvdb.__aenter__()
             tv_provider = tvdb
 
+        # Parse conflict resolution strategy
+        try:
+            conflict_strategy = ConflictStrategy(settings.conflict_resolution)
+        except ValueError:
+            conflict_strategy = ConflictStrategy.SKIP
+
+        # Create selection callback
+        selection_callback = _create_selection_callback(auto_select)
+
         service = RenameService(
             parser=parser,
             movie_provider=movie_provider,
             tv_provider=tv_provider,
             template_engine=template,
             file_renamer=renamer,
+            associated_files_settings=settings.associated_files,
+            conflict_strategy=conflict_strategy,
+            selection_callback=selection_callback,
         )
 
-        # Process files
-        with console.status("Processing files..."):
-            operations = await service.process_files(
-                files, force_type, output
+        # Process files with progress tracking
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            # Create progress tasks
+            parse_task = progress.add_task("Parsing filenames...", total=len(files))
+            fetch_task = progress.add_task("Fetching metadata...", total=len(files), visible=False)
+
+            # Parse files
+            media_files = service.parse_files(
+                files,
+                progress_callback=lambda current, total, msg: progress.update(
+                    parse_task, completed=current, description=f"Parsing: {msg.split(': ')[-1]}"
+                ),
             )
+
+            # Show fetch task and hide parse task
+            progress.update(parse_task, visible=False)
+            progress.update(fetch_task, visible=True)
+
+            # Fetch metadata
+            media_files = await service.fetch_metadata(
+                media_files,
+                force_type,
+                progress_callback=lambda current, total, msg: progress.update(
+                    fetch_task, completed=current, description=f"Fetching: {msg.split(': ')[-1]}"
+                ),
+            )
+
+            # Hide fetch task
+            progress.update(fetch_task, visible=False)
+
+            # Generate preview (no progress needed, it's fast)
+            operations = service.generate_preview(media_files, output)
 
         if not operations:
             console.print("[yellow]No matches found.[/yellow]")
@@ -215,9 +347,24 @@ async def _process_files(
                 console.print("[yellow]Cancelled.[/yellow]")
                 return
 
-        # Execute rename
-        with console.status("Renaming files..."):
-            service.execute_rename(operations)
+        # Execute rename with progress tracking
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            rename_task = progress.add_task("Renaming files...", total=len(operations))
+
+            service.execute_rename(
+                operations,
+                progress_callback=lambda current, total, msg: progress.update(
+                    rename_task, completed=current, description=f"Renaming: {msg.split(': ')[-1]}"
+                ),
+            )
 
         # Show results
         _show_results(operations)
@@ -232,13 +379,33 @@ async def _process_files(
 def _show_preview(operations: list) -> None:
     """Display rename preview table."""
     table = Table(title="Rename Preview")
+    table.add_column("Type", style="cyan")
     table.add_column("Original", style="red")
     table.add_column("New Name", style="green")
 
     for op in operations:
-        table.add_row(op.source.name, op.destination.name)
+        # Main video file
+        table.add_row("Video", op.source.name, op.destination.name)
+
+        # Associated files
+        for assoc in op.associated_files:
+            type_label = assoc.file_type.capitalize()
+            table.add_row(
+                f"  └─ {type_label}",
+                assoc.source.name,
+                assoc.destination.name,
+            )
 
     console.print(table)
+
+    # Show summary
+    total_files = sum(op.total_files for op in operations)
+    assoc_count = sum(len(op.associated_files) for op in operations)
+    if assoc_count > 0:
+        console.print(
+            f"\n[dim]Total: {len(operations)} video file(s) + "
+            f"{assoc_count} associated file(s) = {total_files} file(s)[/dim]"
+        )
 
 
 def _show_results(operations: list) -> None:
@@ -339,7 +506,22 @@ def config_show() -> None:
     tmdb_status = "[green]configured[/green]" if settings.api.tmdb_api_key else "[red]not set[/red]"
     tvdb_status = "[green]configured[/green]" if settings.api.tvdb_api_key else "[red]not set[/red]"
     console.print(f"  TMDB: {tmdb_status}")
-    console.print(f"  TVDB: {tvdb_status}")
+    console.print(f"  TVDB: {tvdb_status}\n")
+
+    console.print("[bold]Associated Files:[/bold]")
+    enabled_status = "[green]enabled[/green]" if settings.associated_files.enabled else "[red]disabled[/red]"
+    console.print(f"  Enabled:   {enabled_status}")
+    if settings.associated_files.enabled:
+        sub_status = "✓" if settings.associated_files.subtitles else "✗"
+        nfo_status = "✓" if settings.associated_files.nfo else "✗"
+        img_status = "✓" if settings.associated_files.images else "✗"
+        console.print(f"  Subtitles: {sub_status}")
+        console.print(f"  NFO files: {nfo_status}")
+        console.print(f"  Images:    {img_status}\n")
+
+    console.print("[bold]Behavior:[/bold]")
+    console.print(f"  Conflict resolution: {settings.conflict_resolution}")
+    console.print(f"  Preview before rename: {settings.preview_before_rename}")
 
 
 @config.command("set-key")

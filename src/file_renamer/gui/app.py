@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from file_renamer.core.conflict_resolution import ConflictStrategy
 from file_renamer.core.models import MediaType, RenameOperation, RenameStatus
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
@@ -300,11 +301,19 @@ class FetchWorker(QThread):
                 if not tmdb:
                     movie_provider = tvdb
 
+            # Parse conflict resolution strategy
+            try:
+                conflict_strategy = ConflictStrategy(settings.conflict_resolution)
+            except ValueError:
+                conflict_strategy = ConflictStrategy.SKIP
+
             service = RenameService(
                 parser=parser,
                 movie_provider=movie_provider,
                 tv_provider=tv_provider,
                 template_engine=template,
+                associated_files_settings=settings.associated_files,
+                conflict_strategy=conflict_strategy,
             )
 
             self._operations = await service.process_files(
@@ -349,13 +358,18 @@ class FileRenamerApp(QMainWindow):
         top_bar = QHBoxLayout()
 
         self.path_input = QLineEdit()
-        self.path_input.setPlaceholderText("Select a folder or drop files here...")
+        self.path_input.setPlaceholderText("Drag and drop files/folders here or use Browse...")
         self.path_input.setReadOnly(True)
         top_bar.addWidget(self.path_input, stretch=1)
 
         browse_btn = QPushButton("Browse...")
         browse_btn.clicked.connect(self._on_browse)
         top_bar.addWidget(browse_btn)
+
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.clicked.connect(self._on_clear)
+        self.clear_btn.setEnabled(False)
+        top_bar.addWidget(self.clear_btn)
 
         layout.addLayout(top_bar)
 
@@ -390,11 +404,12 @@ class FileRenamerApp(QMainWindow):
 
         # Preview table
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Original", "New Name", "Status"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Type", "Original", "New Name", "Status"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.table)
 
@@ -449,24 +464,91 @@ class FileRenamerApp(QMainWindow):
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
-        """Handle drop event."""
+        """Handle drop event - supports multiple files and folders."""
         urls = event.mimeData().urls()
-        if urls:
-            path = Path(urls[0].toLocalFile())
-            self._load_path(path)
+        if not urls:
+            return
+
+        # Define video extensions
+        video_exts = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm", ".flv", ".mpg", ".mpeg", ".ts", ".m2ts"}
+
+        new_files = []
+        for url in urls:
+            path = Path(url.toLocalFile())
+
+            if path.is_file():
+                # Check if it's a video file
+                if path.suffix.lower() in video_exts:
+                    new_files.append(path)
+            elif path.is_dir():
+                # Add all video files from the directory
+                for ext in video_exts:
+                    new_files.extend(path.glob(f"*{ext}"))
+
+        if new_files:
+            self._add_files(new_files)
+        else:
+            self.status_label.setText("No video files found in dropped items")
 
     def _on_browse(self) -> None:
-        """Handle browse button click."""
-        path = QFileDialog.getExistingDirectory(
-            self, "Select Folder", str(Path.home())
-        )
-        if path:
-            self._load_path(Path(path))
+        """Handle browse button click - supports both folders and files."""
+        # Show dialog with option to select folder or files
+        dialog = QFileDialog(self, "Select Files or Folder", str(Path.home()))
+        dialog.setFileMode(QFileDialog.ExistingFiles)  # Allow multiple file selection
+        dialog.setNameFilter("Video Files (*.mkv *.mp4 *.avi *.mov *.m4v *.webm *.flv *.mpg *.mpeg *.ts *.m2ts);;All Files (*)")
+
+        if dialog.exec():
+            selected_files = [Path(f) for f in dialog.selectedFiles()]
+            if selected_files:
+                # If single directory-like selection, load the path
+                if len(selected_files) == 1 and selected_files[0].is_dir():
+                    self._load_path(selected_files[0])
+                else:
+                    # Add individual files
+                    self._add_files(selected_files)
+
+    def _on_clear(self) -> None:
+        """Clear the file list."""
+        self.files = []
+        self.operations = []
+        self.path_input.setText("")
+        self.table.setRowCount(0)
+        self.fetch_btn.setEnabled(False)
+        self.rename_btn.setEnabled(False)
+        self.clear_btn.setEnabled(False)
+        self.status_label.setText("File list cleared")
+
+    def _add_files(self, new_files: list[Path]) -> None:
+        """Add files to the existing file list (accumulative).
+
+        Args:
+            new_files: List of file paths to add.
+        """
+        # Remove duplicates and add to existing files
+        existing_paths = {f.resolve() for f in self.files}
+        for f in new_files:
+            resolved = f.resolve()
+            if resolved not in existing_paths:
+                self.files.append(f)
+                existing_paths.add(resolved)
+
+        # Sort files
+        self.files = sorted(self.files, key=lambda p: p.name)
+
+        # Update UI
+        self._update_table_with_files()
+        self._update_file_display()
+
+        # Enable/disable buttons based on file count
+        provider = self.provider_combo.currentData()
+        has_files = len(self.files) > 0
+        self.fetch_btn.setEnabled(has_files and provider != "none")
+        self.rename_btn.setEnabled(False)
+        self.clear_btn.setEnabled(has_files)
+        self.status_label.setText(f"Added files - Total: {len(self.files)} file(s)")
 
     def _load_path(self, path: Path) -> None:
-        """Load files from a path."""
-        self.path_input.setText(str(path))
-
+        """Load files from a path (replaces existing list)."""
         if path.is_file():
             self.files = [path]
         else:
@@ -475,21 +557,40 @@ class FileRenamerApp(QMainWindow):
                 self.files.extend(path.glob(f"*{ext}"))
             self.files = sorted(self.files)
 
+        # Update UI
         self._update_table_with_files()
+        self.path_input.setText(str(path))
 
-        # Enable fetch only if we have files and a valid provider
+        # Enable/disable buttons based on file count
         provider = self.provider_combo.currentData()
-        self.fetch_btn.setEnabled(len(self.files) > 0 and provider != "none")
+        has_files = len(self.files) > 0
+        self.fetch_btn.setEnabled(has_files and provider != "none")
         self.rename_btn.setEnabled(False)
+        self.clear_btn.setEnabled(has_files)
         self.status_label.setText(f"Found {len(self.files)} file(s)")
+
+    def _update_file_display(self) -> None:
+        """Update the path input to show file count or path."""
+        if len(self.files) == 0:
+            self.path_input.setText("")
+        elif len(self.files) == 1:
+            self.path_input.setText(str(self.files[0]))
+        else:
+            # Show parent directory if all files are in the same directory
+            parents = {f.parent for f in self.files}
+            if len(parents) == 1:
+                self.path_input.setText(f"{list(parents)[0]} ({len(self.files)} files)")
+            else:
+                self.path_input.setText(f"{len(self.files)} files from multiple locations")
 
     def _update_table_with_files(self) -> None:
         """Update the table with just filenames (before fetching)."""
         self.table.setRowCount(len(self.files))
         for i, f in enumerate(self.files):
-            self.table.setItem(i, 0, QTableWidgetItem(f.name))
-            self.table.setItem(i, 1, QTableWidgetItem(""))
-            self.table.setItem(i, 2, QTableWidgetItem("Pending"))
+            self.table.setItem(i, 0, QTableWidgetItem("Video"))
+            self.table.setItem(i, 1, QTableWidgetItem(f.name))
+            self.table.setItem(i, 2, QTableWidgetItem(""))
+            self.table.setItem(i, 3, QTableWidgetItem("Pending"))
 
     def _on_fetch(self) -> None:
         """Handle fetch button click."""
@@ -572,27 +673,72 @@ class FileRenamerApp(QMainWindow):
 
     def _update_table_with_operations(self) -> None:
         """Update the table with rename operations."""
-        self.table.setRowCount(len(self.operations))
-        for i, op in enumerate(self.operations):
-            self.table.setItem(i, 0, QTableWidgetItem(op.source.name))
-            self.table.setItem(i, 1, QTableWidgetItem(op.destination.name))
-            self.table.setItem(i, 2, QTableWidgetItem(op.status.name.capitalize()))
+        # Calculate total rows (operations + associated files)
+        total_rows = sum(1 + len(op.associated_files) for op in self.operations)
+        self.table.setRowCount(total_rows)
+
+        row = 0
+        for op in self.operations:
+            # Main video file
+            self.table.setItem(row, 0, QTableWidgetItem("Video"))
+            self.table.setItem(row, 1, QTableWidgetItem(op.source.name))
+            self.table.setItem(row, 2, QTableWidgetItem(op.destination.name))
+            self.table.setItem(row, 3, QTableWidgetItem(op.status.name.capitalize()))
+            row += 1
+
+            # Associated files
+            for assoc in op.associated_files:
+                type_label = f"  └─ {assoc.file_type.capitalize()}"
+                self.table.setItem(row, 0, QTableWidgetItem(type_label))
+                self.table.setItem(row, 1, QTableWidgetItem(assoc.source.name))
+                self.table.setItem(row, 2, QTableWidgetItem(assoc.destination.name))
+                self.table.setItem(row, 3, QTableWidgetItem(""))
+                row += 1
 
     def _on_rename(self) -> None:
         """Handle rename button click."""
+        total_files = sum(op.total_files for op in self.operations)
+        video_count = len(self.operations)
+        assoc_count = sum(len(op.associated_files) for op in self.operations)
+
+        message = f"Rename {video_count} video file(s)"
+        if assoc_count > 0:
+            message += f" + {assoc_count} associated file(s) = {total_files} total file(s)"
+        message += "?"
+
         reply = QMessageBox.question(
             self,
             "Confirm Rename",
-            f"Rename {len(self.operations)} file(s)?",
+            message,
             QMessageBox.Yes | QMessageBox.No,
         )
 
         if reply != QMessageBox.Yes:
             return
 
-        # Execute rename
+        # Create progress dialog for rename
+        progress = QProgressDialog(
+            "Renaming files...", "Cancel", 0, len(self.operations), self
+        )
+        progress.setWindowTitle("Renaming")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+
+        # Progress callback
+        def on_rename_progress(current: int, total: int, message: str) -> None:
+            progress.setValue(current)
+            progress.setLabelText(message)
+            # Process events to keep UI responsive
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+        # Execute rename with progress tracking
         renamer = FileRenamer()
-        renamer.execute(self.operations)
+        renamer.execute(self.operations, progress_callback=on_rename_progress)
+
+        progress.close()
 
         # Update table
         self._update_table_with_operations()

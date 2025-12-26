@@ -24,6 +24,15 @@ class APISettings(BaseModel):
     tvdb_pin: str = ""
 
 
+class AssociatedFilesSettings(BaseModel):
+    """Associated files configuration."""
+
+    enabled: bool = True
+    subtitles: bool = True
+    nfo: bool = True
+    images: bool = True
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -34,11 +43,15 @@ class Settings(BaseSettings):
 
     templates: TemplateSettings = Field(default_factory=TemplateSettings)
     api: APISettings = Field(default_factory=APISettings)
+    associated_files: AssociatedFilesSettings = Field(
+        default_factory=AssociatedFilesSettings
+    )
 
     # Behavior settings
     dry_run: bool = False
     overwrite: bool = False
     preview_before_rename: bool = True
+    conflict_resolution: str = "skip"  # "skip", "overwrite", or "auto_version"
 
     # Provider preferences
     movie_provider: str = "tmdb"
@@ -89,6 +102,8 @@ class ConfigService:
                 config_data["templates"] = raw_config["templates"]
             if "api" in raw_config:
                 config_data["api"] = raw_config["api"]
+            if "associated_files" in raw_config:
+                config_data["associated_files"] = raw_config["associated_files"]
             if "behavior" in raw_config:
                 behavior = raw_config["behavior"]
                 if "dry_run" in behavior:
@@ -97,6 +112,8 @@ class ConfigService:
                     config_data["overwrite"] = behavior["overwrite"]
                 if "preview_before_rename" in behavior:
                     config_data["preview_before_rename"] = behavior["preview_before_rename"]
+                if "conflict_resolution" in behavior:
+                    config_data["conflict_resolution"] = behavior["conflict_resolution"]
             if "providers" in raw_config:
                 providers = raw_config["providers"]
                 if "movie" in providers:
@@ -135,10 +152,17 @@ class ConfigService:
             f'tvdb_api_key = "{settings.api.tvdb_api_key}"',
             f'tvdb_pin = "{settings.api.tvdb_pin}"',
             "",
+            "[associated_files]",
+            f"enabled = {str(settings.associated_files.enabled).lower()}",
+            f"subtitles = {str(settings.associated_files.subtitles).lower()}",
+            f"nfo = {str(settings.associated_files.nfo).lower()}",
+            f"images = {str(settings.associated_files.images).lower()}",
+            "",
             "[behavior]",
             f"dry_run = {str(settings.dry_run).lower()}",
             f"overwrite = {str(settings.overwrite).lower()}",
             f"preview_before_rename = {str(settings.preview_before_rename).lower()}",
+            f'conflict_resolution = "{settings.conflict_resolution}"',
             "",
             "[providers]",
             f'movie = "{settings.movie_provider}"',

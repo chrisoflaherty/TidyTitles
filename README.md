@@ -6,6 +6,10 @@ A cross-platform media file renaming application inspired by FileBot. Automatica
 
 - **Smart Detection** - Automatically identifies movies vs TV episodes from filenames
 - **Metadata Lookup** - Fetches accurate titles, years, and episode names from TMDB/TVDB
+- **Interactive Selection** - Choose the correct match when multiple results are found
+- **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
+- **Smart Conflict Resolution** - Auto-versioning prevents accidental overwrites
+- **Progress Indicators** - Real-time progress bars show scanning, fetching, and renaming status
 - **Preview Mode** - See exactly what will be renamed before committing changes
 - **Custom Templates** - Define your own naming patterns with powerful placeholders
 - **Dual Interface** - Full CLI for automation + GUI for visual file management
@@ -77,15 +81,37 @@ file-renamer rename /path/to/media
 file-renamer-gui
 ```
 
+The GUI supports:
+- **Drag and drop** - Drop multiple files or folders directly into the window
+- **Multi-file selection** - Add files from different locations
+- **Accumulative list** - Files are added to the existing list (use Clear to reset)
+- **Auto-filtering** - Only video files are added
+
 ## Example
 
+**Movies:**
 ```
 Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.mkv
 After:  One Battle After Another (2025).mkv
 
+Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.srt
+After:  One Battle After Another (2025).srt
+```
+
+**TV Shows:**
+```
 Before: Breaking.Bad.S01E01.720p.BluRay.x264.mkv
 After:  Breaking Bad - S01E01 - Pilot.mkv
+
+Before: Breaking.Bad.S01E01.en.srt
+After:  Breaking Bad - S01E01 - Pilot.en.srt
 ```
+
+**Associated Files:**
+TidyTitles automatically renames associated files along with your videos:
+- Subtitles (`.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx`)
+- NFO metadata files (`.nfo`)
+- Cover images (`.jpg`, `.png`, `.tbn`)
 
 ## CLI Reference
 
@@ -105,7 +131,44 @@ After:  Breaking Bad - S01E01 - Pilot.mkv
 -o, --output PATH           Move renamed files to this directory
 -n, --dry-run               Preview only, don't rename
 -y, --yes                   Skip confirmation prompt
+-a, --auto-select           Automatically select first match (no prompts)
 ```
+
+**Interactive Selection:**
+
+When TidyTitles finds multiple matches for a file, it prompts you to choose:
+
+```
+Multiple matches found for: Movie.2024.mkv
+
+┏━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━┓
+┃ # ┃ Title               ┃ Year ┃ Type  ┃
+┡━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━┩
+│ 1 │ The Movie Title     │ 2024 │ Movie │
+│ 2 │ Movie Title (Remake)│ 2024 │ Movie │
+│ 3 │ Different Movie     │ 2024 │ Movie │
+└───┴─────────────────────┴──────┴───────┘
+
+Select match (1-3) or 's' to skip:
+```
+
+Use `--auto-select` to always pick the first match without prompting.
+
+**Progress Tracking:**
+
+For large batch operations, TidyTitles shows real-time progress:
+
+**CLI:**
+```
+⠋ Parsing: movie_name.mkv                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45/100 0:00:12
+⠙ Fetching: The Movie Title                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23/100 0:01:05
+⠹ Renaming: The Movie (2024).mkv             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67/100 0:00:03
+```
+
+**GUI:**
+- Progress dialog with bar and percentage
+- Shows current file being processed
+- Displays time remaining estimate
 
 ## Templates
 

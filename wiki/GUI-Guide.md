@@ -41,12 +41,21 @@ pip install PySide6
 
 **Option A: Browse**
 - Click the "Browse..." button
-- Navigate to your media folder
-- Click "Open" or "Select"
+- Select one or more video files
+- Or select a folder to load all videos in it
+- Selected files are added to the list
 
 **Option B: Drag and Drop**
-- Drag a folder from Finder/Explorer
-- Drop it onto the application window
+- Drag files or folders from Finder/Explorer
+- Drop them onto the application window
+- **Multiple files** - Drag and drop multiple files at once
+- **Mix sources** - Add files from different locations
+- **Accumulative** - Files are added to the existing list
+- **Auto-filter** - Only video files are added (non-video files are ignored)
+
+**Option C: Clear**
+- Click the "Clear" button to remove all files from the list
+- Start fresh with a new selection
 
 ### 2. Choose Media Type
 
@@ -137,4 +146,6 @@ This is normal for large collections. The progress dialog shows current status. 
 ### Files not appearing
 
 Check that your files have supported extensions:
-`.mkv`, `.mp4`, `.avi`, `.mov`, `.m4v`
+`.mkv`, `.mp4`, `.avi`, `.mov`, `.m4v`, `.webm`, `.flv`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`
+
+When dragging and dropping, only video files with these extensions will be added to the list.
