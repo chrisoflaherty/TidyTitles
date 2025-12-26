@@ -41,8 +41,10 @@ class TemplateEngine:
         r"\{(?P<field>\w+)(?:\|(?P<formatter>\w+)(?::(?P<arg>[^}]+))?)?\}"
     )
 
-    # Characters invalid in filenames on various OSes
+    # Characters invalid in filenames on various OSes (excluding path separator)
     INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+    # Same but preserves forward slash for directory templates
+    INVALID_CHARS_PRESERVE_SLASH = re.compile(r'[<>:"\\|?*\x00-\x1f]')
 
     FORMATTERS: dict[str, Callable[..., str]] = {
         "lower": lambda s: str(s).lower(),
@@ -147,8 +149,8 @@ class TemplateEngine:
 
         result = self.render(self.movie_template, context)
 
-        # Clean invalid characters from final result
-        result = self.INVALID_CHARS.sub("", result)
+        # Clean invalid characters from each path component (preserve slashes)
+        result = self._clean_path(result)
 
         if extension:
             ext = extension.lstrip(".")
@@ -190,8 +192,8 @@ class TemplateEngine:
 
         result = self.render(self.tv_template, context)
 
-        # Clean invalid characters from final result
-        result = self.INVALID_CHARS.sub("", result)
+        # Clean invalid characters from each path component (preserve slashes)
+        result = self._clean_path(result)
 
         if extension:
             ext = extension.lstrip(".")
@@ -199,6 +201,26 @@ class TemplateEngine:
                 result += f".{ext}"
 
         return result
+
+    def _clean_path(self, path: str) -> str:
+        """Clean invalid characters from a path while preserving directory structure.
+
+        Args:
+            path: Path string that may contain forward slashes.
+
+        Returns:
+            Cleaned path with invalid characters removed from each component.
+        """
+        if "/" not in path:
+            # Simple case: no directories, clean entire string
+            return self.INVALID_CHARS.sub("", path)
+
+        # Split by forward slash, clean each component, rejoin
+        parts = path.split("/")
+        cleaned_parts = [self.INVALID_CHARS.sub("", part) for part in parts]
+        # Remove empty parts (from leading/trailing/double slashes)
+        cleaned_parts = [p for p in cleaned_parts if p]
+        return "/".join(cleaned_parts)
 
     def validate_template(self, template: str) -> tuple[bool, list[str]]:
         """Validate a template string.

@@ -294,9 +294,9 @@ class RenameService:
                         assoc_dest = generate_associated_destination(
                             assoc_file.path, new_base_name, original_media_stem
                         )
-                        # Use destination_dir if specified
-                        if destination_dir:
-                            assoc_dest = destination_dir / assoc_dest.name
+                        # Always place associated files in same directory as main file
+                        # This handles both destination_dir and directory templates
+                        assoc_dest = new_path.parent / assoc_dest.name
 
                         # Apply conflict resolution to associated files
                         assoc_dest, _ = resolve_conflict(assoc_dest, self._conflict_strategy)
