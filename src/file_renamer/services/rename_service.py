@@ -289,9 +289,10 @@ class RenameService:
                     # Generate destination paths for associated files
                     # Use the potentially versioned base name from the main file
                     new_base_name = new_path.stem  # Base name without extension
+                    original_media_stem = media_file.path.stem
                     for assoc_file in associated_files:
                         assoc_dest = generate_associated_destination(
-                            assoc_file.path, new_base_name
+                            assoc_file.path, new_base_name, original_media_stem
                         )
                         # Use destination_dir if specified
                         if destination_dir:

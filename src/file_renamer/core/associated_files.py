@@ -128,31 +128,43 @@ def find_associated_files(
 def generate_associated_destination(
     original_path: Path,
     new_base_name: str,
+    original_media_stem: str | None = None,
 ) -> Path:
     """Generate destination path for an associated file.
 
     Args:
         original_path: Original path of the associated file.
         new_base_name: New base name (without extension) for the media file.
+        original_media_stem: Original media file's stem (without extension).
+            If provided, used to accurately detect language codes.
 
     Returns:
         New path for the associated file.
     """
     parent = original_path.parent
     ext = original_path.suffix
-
-    # Check for language-specific subtitle pattern (e.g., movie.en.srt)
     stem = original_path.stem
-    # Split on first dot to check for language code
-    parts = stem.split(".", 1)
 
-    if len(parts) == 2:
-        # Has something after the base name (might be language code)
-        suffix_part = parts[1]
-        # Keep the suffix part (e.g., "en" from "movie.en.srt")
+    suffix_part = None
+
+    if original_media_stem:
+        # If we know the original video's stem, extract suffix after it
+        # e.g., "Movie.Name.en" with original_media_stem "Movie.Name" -> suffix "en"
+        if stem.startswith(f"{original_media_stem}."):
+            suffix_part = stem[len(original_media_stem) + 1:]
+    else:
+        # Fallback: check if stem ends with a short language code pattern
+        # Split from the right to find potential language code (e.g., "movie.en")
+        if "." in stem:
+            last_dot_idx = stem.rfind(".")
+            potential_lang = stem[last_dot_idx + 1:]
+            # Language codes are typically 2-3 chars (en, es, fra, eng, etc.)
+            if len(potential_lang) <= 4 and potential_lang.isalpha():
+                suffix_part = potential_lang
+
+    if suffix_part:
         new_name = f"{new_base_name}.{suffix_part}{ext}"
     else:
-        # Simple case: just base name + extension
         new_name = f"{new_base_name}{ext}"
 
     return parent / new_name
