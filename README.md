@@ -6,6 +6,7 @@ A cross-platform media file renaming application inspired by FileBot. Automatica
 
 - **Smart Detection** - Automatically identifies movies vs TV episodes from filenames
 - **Metadata Lookup** - Fetches accurate titles, years, and episode names from TMDB/TVDB
+- **Interactive Selection** - Choose the correct match when multiple results are found
 - **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
 - **Smart Conflict Resolution** - Auto-versioning prevents accidental overwrites
 - **Preview Mode** - See exactly what will be renamed before committing changes
@@ -123,7 +124,28 @@ TidyTitles automatically renames associated files along with your videos:
 -o, --output PATH           Move renamed files to this directory
 -n, --dry-run               Preview only, don't rename
 -y, --yes                   Skip confirmation prompt
+-a, --auto-select           Automatically select first match (no prompts)
 ```
+
+**Interactive Selection:**
+
+When TidyTitles finds multiple matches for a file, it prompts you to choose:
+
+```
+Multiple matches found for: Movie.2024.mkv
+
+┏━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━┓
+┃ # ┃ Title               ┃ Year ┃ Type  ┃
+┡━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━┩
+│ 1 │ The Movie Title     │ 2024 │ Movie │
+│ 2 │ Movie Title (Remake)│ 2024 │ Movie │
+│ 3 │ Different Movie     │ 2024 │ Movie │
+└───┴─────────────────────┴──────┴───────┘
+
+Select match (1-3) or 's' to skip:
+```
+
+Use `--auto-select` to always pick the first match without prompting.
 
 ## Templates
 

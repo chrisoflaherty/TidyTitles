@@ -19,12 +19,18 @@ from file_renamer.core.models import (
     MediaType,
     Movie,
     RenameOperation,
+    TVShow,
 )
 from file_renamer.core.parser import FilenameParser
 from file_renamer.core.renamer import FileRenamer
 from file_renamer.core.template import TemplateEngine
 from file_renamer.providers.base import MovieProvider, TVProvider
 from file_renamer.services.config_service import AssociatedFilesSettings
+
+
+# Type alias for selection callback
+# Takes list of options and filename, returns selected index or None to skip
+SelectionCallback = Callable[[list[Union[Movie, TVShow]], str], Optional[int]]
 
 
 # Common video file extensions
@@ -56,6 +62,7 @@ class RenameService:
         file_renamer: Optional[FileRenamer] = None,
         associated_files_settings: Optional[AssociatedFilesSettings] = None,
         conflict_strategy: ConflictStrategy = ConflictStrategy.SKIP,
+        selection_callback: Optional[SelectionCallback] = None,
     ) -> None:
         """Initialize the rename service.
 
@@ -67,6 +74,7 @@ class RenameService:
             file_renamer: File renamer instance.
             associated_files_settings: Settings for associated file handling.
             conflict_strategy: Strategy for resolving filename conflicts.
+            selection_callback: Optional callback for selecting from multiple search results.
         """
         self._parser = parser
         self._movie_provider = movie_provider
@@ -75,6 +83,7 @@ class RenameService:
         self._renamer = file_renamer or FileRenamer()
         self._associated_files_settings = associated_files_settings or AssociatedFilesSettings()
         self._conflict_strategy = conflict_strategy
+        self._selection_callback = selection_callback
 
     def scan_directory(
         self,
@@ -165,8 +174,21 @@ class RenameService:
         parsed = media_file.parsed_info
         movies = await self._movie_provider.search_movie(parsed.title, parsed.year)
 
-        if movies:
-            # Use the first (best) match
+        if not movies:
+            return
+
+        # If only one result, use it automatically
+        if len(movies) == 1:
+            media_file.matched_metadata = movies[0]
+            return
+
+        # Multiple results - use selection callback if available
+        if self._selection_callback:
+            selected_index = self._selection_callback(movies, media_file.filename)
+            if selected_index is not None and 0 <= selected_index < len(movies):
+                media_file.matched_metadata = movies[selected_index]
+        else:
+            # No callback - use first match (default behavior)
             media_file.matched_metadata = movies[0]
 
     async def _fetch_tv_metadata(self, media_file: MediaFile) -> None:
@@ -176,10 +198,25 @@ class RenameService:
         # Search for the show
         shows = await self._tv_provider.search_show(parsed.title, parsed.year)
 
-        if shows and parsed.season is not None and parsed.episode is not None:
+        if not shows or parsed.season is None or parsed.episode is None:
+            return
+
+        # Select the show (with callback if multiple results)
+        selected_show = None
+        if len(shows) == 1:
+            selected_show = shows[0]
+        elif self._selection_callback:
+            selected_index = self._selection_callback(shows, media_file.filename)
+            if selected_index is not None and 0 <= selected_index < len(shows):
+                selected_show = shows[selected_index]
+        else:
+            # No callback - use first match (default behavior)
+            selected_show = shows[0]
+
+        if selected_show:
             # Get episode details
             episode = await self._tv_provider.get_episode(
-                shows[0].id, parsed.season, parsed.episode
+                selected_show.id, parsed.season, parsed.episode
             )
             if episode:
                 media_file.matched_metadata = episode

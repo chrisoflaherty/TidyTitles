@@ -68,6 +68,12 @@ def cli() -> None:
     is_flag=True,
     help="Skip confirmation prompt",
 )
+@click.option(
+    "--auto-select",
+    "-a",
+    is_flag=True,
+    help="Automatically select first match when multiple results found",
+)
 def rename(
     path: Path,
     media_type: str,
@@ -75,6 +81,7 @@ def rename(
     output: Optional[Path],
     dry_run: bool,
     yes: bool,
+    auto_select: bool,
 ) -> None:
     """Rename media files in PATH.
 
@@ -119,7 +126,7 @@ def rename(
         force_type = MediaType.TV_EPISODE
 
     # Run async processing
-    asyncio.run(_process_files(files, force_type, output, dry_run, yes, config))
+    asyncio.run(_process_files(files, force_type, output, dry_run, yes, auto_select, config))
 
 
 class DummyTVProvider:
@@ -145,12 +152,79 @@ class DummyMovieProvider:
         return None
 
 
+def _create_selection_callback(auto_select: bool):
+    """Create a selection callback for choosing from multiple matches.
+
+    Args:
+        auto_select: If True, automatically select the first match.
+
+    Returns:
+        Selection callback function.
+    """
+    from file_renamer.core.models import Movie, TVShow
+
+    def select_match(options: list, filename: str) -> Optional[int]:
+        """Prompt user to select from multiple matches."""
+        if auto_select:
+            return 0  # Always select first
+
+        console.print(f"\n[yellow]Multiple matches found for:[/yellow] {filename}")
+        console.print()
+
+        # Display options
+        table = Table(title="Select Match", show_header=True)
+        table.add_column("#", style="cyan", width=3)
+        table.add_column("Title", style="green")
+        table.add_column("Year", style="yellow")
+        table.add_column("Type", style="blue")
+
+        for i, option in enumerate(options, 1):
+            if isinstance(option, Movie):
+                table.add_row(
+                    str(i),
+                    option.title,
+                    str(option.year),
+                    "Movie"
+                )
+            elif isinstance(option, TVShow):
+                table.add_row(
+                    str(i),
+                    option.title,
+                    str(option.year),
+                    "TV Show"
+                )
+
+        console.print(table)
+        console.print()
+
+        # Prompt for selection
+        while True:
+            choice = console.input(
+                f"[cyan]Select match (1-{len(options)}) or 's' to skip:[/cyan] "
+            ).strip().lower()
+
+            if choice == "s":
+                return None  # Skip this file
+
+            try:
+                selection = int(choice)
+                if 1 <= selection <= len(options):
+                    return selection - 1  # Convert to 0-indexed
+                else:
+                    console.print(f"[red]Invalid choice. Enter 1-{len(options)} or 's'[/red]")
+            except ValueError:
+                console.print(f"[red]Invalid input. Enter a number (1-{len(options)}) or 's'[/red]")
+
+    return select_match
+
+
 async def _process_files(
     files: list[Path],
     force_type: Optional[MediaType],
     output: Optional[Path],
     dry_run: bool,
     yes: bool,
+    auto_select: bool,
     config: ConfigService,
 ) -> None:
     """Process files asynchronously."""
@@ -191,6 +265,9 @@ async def _process_files(
         except ValueError:
             conflict_strategy = ConflictStrategy.SKIP
 
+        # Create selection callback
+        selection_callback = _create_selection_callback(auto_select)
+
         service = RenameService(
             parser=parser,
             movie_provider=movie_provider,
@@ -199,6 +276,7 @@ async def _process_files(
             file_renamer=renamer,
             associated_files_settings=settings.associated_files,
             conflict_strategy=conflict_strategy,
+            selection_callback=selection_callback,
         )
 
         # Process files
