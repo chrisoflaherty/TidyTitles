@@ -6,7 +6,7 @@ from typing import Any, Optional
 import httpx
 
 from file_renamer.core.exceptions import AuthenticationError, ProviderError, RateLimitError
-from file_renamer.core.models import Movie
+from file_renamer.core.models import Episode, Movie, TVShow
 
 from .cache import APICache
 
@@ -184,4 +184,129 @@ class TMDBClient:
             genres=genres,
             poster_path=data.get("poster_path"),
             provider=self.PROVIDER_NAME,
+        )
+
+    async def search_show(
+        self,
+        title: str,
+        year: Optional[int] = None,
+    ) -> list[TVShow]:
+        """Search for TV shows by title.
+
+        Args:
+            title: TV show title to search for.
+            year: Optional first air date year to narrow results.
+
+        Returns:
+            List of matching TVShow objects.
+        """
+        params: dict[str, Any] = {"query": title}
+        if year:
+            params["first_air_date_year"] = year
+
+        data = await self._request("/search/tv", params)
+
+        shows = []
+        for item in data.get("results", []):
+            first_air_year = 0
+            if item.get("first_air_date"):
+                try:
+                    first_air_year = int(item["first_air_date"][:4])
+                except (ValueError, IndexError):
+                    pass
+
+            shows.append(
+                TVShow(
+                    id=item["id"],
+                    title=item["name"],
+                    original_title=item.get("original_name", item["name"]),
+                    year=first_air_year,
+                    network=None,  # Would need separate call
+                    status=None,
+                    genres=[],  # Would need separate call to get genre names
+                    poster_path=item.get("poster_path"),
+                    provider=self.PROVIDER_NAME,
+                )
+            )
+
+        return shows
+
+    async def get_show(self, show_id: int) -> Optional[TVShow]:
+        """Get TV show details by ID.
+
+        Args:
+            show_id: TMDB TV show ID.
+
+        Returns:
+            TVShow object or None if not found.
+        """
+        try:
+            data = await self._request(f"/tv/{show_id}")
+        except ProviderError:
+            return None
+
+        first_air_year = 0
+        if data.get("first_air_date"):
+            try:
+                first_air_year = int(data["first_air_date"][:4])
+            except (ValueError, IndexError):
+                pass
+
+        genres = [g["name"] for g in data.get("genres", [])]
+        networks = data.get("networks", [])
+        network = networks[0]["name"] if networks else None
+
+        return TVShow(
+            id=data["id"],
+            title=data["name"],
+            original_title=data.get("original_name", data["name"]),
+            year=first_air_year,
+            network=network,
+            status=data.get("status"),
+            genres=genres,
+            poster_path=data.get("poster_path"),
+            provider=self.PROVIDER_NAME,
+        )
+
+    async def get_episode(
+        self,
+        show_id: int,
+        season: int,
+        episode: int,
+    ) -> Optional[Episode]:
+        """Get episode details.
+
+        Args:
+            show_id: TMDB TV show ID.
+            season: Season number.
+            episode: Episode number.
+
+        Returns:
+            Episode object or None if not found.
+        """
+        # First get the show info
+        show = await self.get_show(show_id)
+        if not show:
+            return None
+
+        # Then get the episode
+        try:
+            data = await self._request(f"/tv/{show_id}/season/{season}/episode/{episode}")
+        except ProviderError:
+            return None
+
+        air_date = None
+        if data.get("air_date"):
+            try:
+                air_date = date.fromisoformat(data["air_date"])
+            except ValueError:
+                pass
+
+        return Episode(
+            show=show,
+            season=data.get("season_number", season),
+            episode=data.get("episode_number", episode),
+            title=data.get("name", ""),
+            air_date=air_date,
+            overview=data.get("overview"),
         )

@@ -265,9 +265,15 @@ async def _process_files(
         if tmdb:
             await tmdb.__aenter__()
             movie_provider = tmdb
+            # Also use TMDB for TV if TVDB not available
+            if not tvdb:
+                tv_provider = tmdb
         if tvdb:
             await tvdb.__aenter__()
             tv_provider = tvdb
+            # Also use TVDB for movies if TMDB not available
+            if not tmdb:
+                movie_provider = tvdb
 
         # Parse conflict resolution strategy
         try:
