@@ -9,6 +9,7 @@ A cross-platform media file renaming application inspired by FileBot. Automatica
 - **Interactive Selection** - Choose the correct match when multiple results are found
 - **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
 - **Smart Conflict Resolution** - Auto-versioning prevents accidental overwrites
+- **Progress Indicators** - Real-time progress bars show scanning, fetching, and renaming status
 - **Preview Mode** - See exactly what will be renamed before committing changes
 - **Custom Templates** - Define your own naming patterns with powerful placeholders
 - **Dual Interface** - Full CLI for automation + GUI for visual file management
@@ -146,6 +147,22 @@ Select match (1-3) or 's' to skip:
 ```
 
 Use `--auto-select` to always pick the first match without prompting.
+
+**Progress Tracking:**
+
+For large batch operations, TidyTitles shows real-time progress:
+
+**CLI:**
+```
+⠋ Parsing: movie_name.mkv                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45/100 0:00:12
+⠙ Fetching: The Movie Title                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23/100 0:01:05
+⠹ Renaming: The Movie (2024).mkv             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67/100 0:00:03
+```
+
+**GUI:**
+- Progress dialog with bar and percentage
+- Shows current file being processed
+- Displays time remaining estimate
 
 ## Templates
 

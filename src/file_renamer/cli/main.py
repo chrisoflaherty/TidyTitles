@@ -6,6 +6,15 @@ from typing import Optional
 
 import click
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    TimeRemainingColumn,
+    MofNCompleteColumn,
+)
 from rich.table import Table
 
 from file_renamer.core.conflict_resolution import ConflictStrategy
@@ -102,15 +111,16 @@ def rename(
     if path.is_file():
         files = [path]
     else:
-        parser = create_parser()
-        files = []
-        if recursive:
-            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
-                files.extend(path.rglob(f"*{ext}"))
-        else:
-            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
-                files.extend(path.glob(f"*{ext}"))
-        files = sorted(files)
+        with console.status("[cyan]Scanning for video files..."):
+            parser = create_parser()
+            files = []
+            if recursive:
+                for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                    files.extend(path.rglob(f"*{ext}"))
+            else:
+                for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                    files.extend(path.glob(f"*{ext}"))
+            files = sorted(files)
 
     if not files:
         console.print("[yellow]No video files found.[/yellow]")
@@ -279,11 +289,46 @@ async def _process_files(
             selection_callback=selection_callback,
         )
 
-        # Process files
-        with console.status("Processing files..."):
-            operations = await service.process_files(
-                files, force_type, output
+        # Process files with progress tracking
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            # Create progress tasks
+            parse_task = progress.add_task("Parsing filenames...", total=len(files))
+            fetch_task = progress.add_task("Fetching metadata...", total=len(files), visible=False)
+
+            # Parse files
+            media_files = service.parse_files(
+                files,
+                progress_callback=lambda current, total, msg: progress.update(
+                    parse_task, completed=current, description=f"Parsing: {msg.split(': ')[-1]}"
+                ),
             )
+
+            # Show fetch task and hide parse task
+            progress.update(parse_task, visible=False)
+            progress.update(fetch_task, visible=True)
+
+            # Fetch metadata
+            media_files = await service.fetch_metadata(
+                media_files,
+                force_type,
+                progress_callback=lambda current, total, msg: progress.update(
+                    fetch_task, completed=current, description=f"Fetching: {msg.split(': ')[-1]}"
+                ),
+            )
+
+            # Hide fetch task
+            progress.update(fetch_task, visible=False)
+
+            # Generate preview (no progress needed, it's fast)
+            operations = service.generate_preview(media_files, output)
 
         if not operations:
             console.print("[yellow]No matches found.[/yellow]")
@@ -302,9 +347,24 @@ async def _process_files(
                 console.print("[yellow]Cancelled.[/yellow]")
                 return
 
-        # Execute rename
-        with console.status("Renaming files..."):
-            service.execute_rename(operations)
+        # Execute rename with progress tracking
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            rename_task = progress.add_task("Renaming files...", total=len(operations))
+
+            service.execute_rename(
+                operations,
+                progress_callback=lambda current, total, msg: progress.update(
+                    rename_task, completed=current, description=f"Renaming: {msg.split(': ')[-1]}"
+                ),
+            )
 
         # Show results
         _show_results(operations)

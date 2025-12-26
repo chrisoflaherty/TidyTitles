@@ -626,9 +626,29 @@ class FileRenamerApp(QMainWindow):
         if reply != QMessageBox.Yes:
             return
 
-        # Execute rename
+        # Create progress dialog for rename
+        progress = QProgressDialog(
+            "Renaming files...", "Cancel", 0, len(self.operations), self
+        )
+        progress.setWindowTitle("Renaming")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+
+        # Progress callback
+        def on_rename_progress(current: int, total: int, message: str) -> None:
+            progress.setValue(current)
+            progress.setLabelText(message)
+            # Process events to keep UI responsive
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+        # Execute rename with progress tracking
         renamer = FileRenamer()
-        renamer.execute(self.operations)
+        renamer.execute(self.operations, progress_callback=on_rename_progress)
+
+        progress.close()
 
         # Update table
         self._update_table_with_operations()
