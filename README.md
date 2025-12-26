@@ -81,6 +81,12 @@ file-renamer rename /path/to/media
 file-renamer-gui
 ```
 
+The GUI supports:
+- **Drag and drop** - Drop multiple files or folders directly into the window
+- **Multi-file selection** - Add files from different locations
+- **Accumulative list** - Files are added to the existing list (use Clear to reset)
+- **Auto-filtering** - Only video files are added
+
 ## Example
 
 **Movies:**
