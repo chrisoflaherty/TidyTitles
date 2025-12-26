@@ -3,7 +3,13 @@
 from pathlib import Path
 from typing import Callable, Optional, Union
 
+from file_renamer.core.associated_files import (
+    find_associated_files,
+    generate_associated_destination,
+    get_extensions_from_settings,
+)
 from file_renamer.core.models import (
+    AssociatedFileRename,
     Episode,
     MediaFile,
     MediaType,
@@ -14,6 +20,7 @@ from file_renamer.core.parser import FilenameParser
 from file_renamer.core.renamer import FileRenamer
 from file_renamer.core.template import TemplateEngine
 from file_renamer.providers.base import MovieProvider, TVProvider
+from file_renamer.services.config_service import AssociatedFilesSettings
 
 
 # Common video file extensions
@@ -43,6 +50,7 @@ class RenameService:
         tv_provider: TVProvider,
         template_engine: TemplateEngine,
         file_renamer: Optional[FileRenamer] = None,
+        associated_files_settings: Optional[AssociatedFilesSettings] = None,
     ) -> None:
         """Initialize the rename service.
 
@@ -52,12 +60,14 @@ class RenameService:
             tv_provider: TV show metadata provider.
             template_engine: Template engine for generating filenames.
             file_renamer: File renamer instance.
+            associated_files_settings: Settings for associated file handling.
         """
         self._parser = parser
         self._movie_provider = movie_provider
         self._tv_provider = tv_provider
         self._template = template_engine
         self._renamer = file_renamer or FileRenamer()
+        self._associated_files_settings = associated_files_settings or AssociatedFilesSettings()
 
     def scan_directory(
         self,
@@ -216,11 +226,43 @@ class RenameService:
             dest_dir = destination_dir or media_file.path.parent
             new_path = dest_dir / new_name
 
+            # Find associated files (subtitles, nfo, images, etc.)
+            associated_renames = []
+            if self._associated_files_settings.enabled:
+                # Build extension set based on settings
+                extensions = get_extensions_from_settings(
+                    include_subtitles=self._associated_files_settings.subtitles,
+                    include_nfo=self._associated_files_settings.nfo,
+                    include_images=self._associated_files_settings.images,
+                )
+
+                if extensions:  # Only search if at least one type is enabled
+                    associated_files = find_associated_files(media_file.path, extensions)
+
+                    # Generate destination paths for associated files
+                    new_base_name = new_path.stem  # Base name without extension
+                    for assoc_file in associated_files:
+                        assoc_dest = generate_associated_destination(
+                            assoc_file.path, new_base_name
+                        )
+                        # Use destination_dir if specified
+                        if destination_dir:
+                            assoc_dest = destination_dir / assoc_dest.name
+
+                        associated_renames.append(
+                            AssociatedFileRename(
+                                source=assoc_file.path,
+                                destination=assoc_dest,
+                                file_type=assoc_file.file_type,
+                            )
+                        )
+
             operations.append(
                 RenameOperation(
                     source=media_file.path,
                     destination=new_path,
                     media_file=media_file,
+                    associated_files=associated_renames,
                 )
             )
 

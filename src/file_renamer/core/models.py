@@ -103,6 +103,15 @@ class MediaFile:
 
 
 @dataclass
+class AssociatedFileRename:
+    """Represents a rename operation for an associated file."""
+
+    source: Path
+    destination: Path
+    file_type: str  # "subtitle", "nfo", "image", "other"
+
+
+@dataclass
 class RenameOperation:
     """Represents a planned rename operation."""
 
@@ -111,8 +120,14 @@ class RenameOperation:
     media_file: MediaFile
     status: RenameStatus = RenameStatus.PENDING
     error_message: Optional[str] = None
+    associated_files: list[AssociatedFileRename] = field(default_factory=list)
 
     @property
     def will_overwrite(self) -> bool:
         """Check if this rename would overwrite an existing file."""
         return self.destination.exists() and self.source != self.destination
+
+    @property
+    def total_files(self) -> int:
+        """Get total number of files that will be renamed (main + associated)."""
+        return 1 + len(self.associated_files)

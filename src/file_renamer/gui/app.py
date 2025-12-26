@@ -305,6 +305,7 @@ class FetchWorker(QThread):
                 movie_provider=movie_provider,
                 tv_provider=tv_provider,
                 template_engine=template,
+                associated_files_settings=settings.associated_files,
             )
 
             self._operations = await service.process_files(
@@ -390,11 +391,12 @@ class FileRenamerApp(QMainWindow):
 
         # Preview table
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Original", "New Name", "Status"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Type", "Original", "New Name", "Status"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.table)
 
@@ -487,9 +489,10 @@ class FileRenamerApp(QMainWindow):
         """Update the table with just filenames (before fetching)."""
         self.table.setRowCount(len(self.files))
         for i, f in enumerate(self.files):
-            self.table.setItem(i, 0, QTableWidgetItem(f.name))
-            self.table.setItem(i, 1, QTableWidgetItem(""))
-            self.table.setItem(i, 2, QTableWidgetItem("Pending"))
+            self.table.setItem(i, 0, QTableWidgetItem("Video"))
+            self.table.setItem(i, 1, QTableWidgetItem(f.name))
+            self.table.setItem(i, 2, QTableWidgetItem(""))
+            self.table.setItem(i, 3, QTableWidgetItem("Pending"))
 
     def _on_fetch(self) -> None:
         """Handle fetch button click."""
@@ -572,18 +575,43 @@ class FileRenamerApp(QMainWindow):
 
     def _update_table_with_operations(self) -> None:
         """Update the table with rename operations."""
-        self.table.setRowCount(len(self.operations))
-        for i, op in enumerate(self.operations):
-            self.table.setItem(i, 0, QTableWidgetItem(op.source.name))
-            self.table.setItem(i, 1, QTableWidgetItem(op.destination.name))
-            self.table.setItem(i, 2, QTableWidgetItem(op.status.name.capitalize()))
+        # Calculate total rows (operations + associated files)
+        total_rows = sum(1 + len(op.associated_files) for op in self.operations)
+        self.table.setRowCount(total_rows)
+
+        row = 0
+        for op in self.operations:
+            # Main video file
+            self.table.setItem(row, 0, QTableWidgetItem("Video"))
+            self.table.setItem(row, 1, QTableWidgetItem(op.source.name))
+            self.table.setItem(row, 2, QTableWidgetItem(op.destination.name))
+            self.table.setItem(row, 3, QTableWidgetItem(op.status.name.capitalize()))
+            row += 1
+
+            # Associated files
+            for assoc in op.associated_files:
+                type_label = f"  └─ {assoc.file_type.capitalize()}"
+                self.table.setItem(row, 0, QTableWidgetItem(type_label))
+                self.table.setItem(row, 1, QTableWidgetItem(assoc.source.name))
+                self.table.setItem(row, 2, QTableWidgetItem(assoc.destination.name))
+                self.table.setItem(row, 3, QTableWidgetItem(""))
+                row += 1
 
     def _on_rename(self) -> None:
         """Handle rename button click."""
+        total_files = sum(op.total_files for op in self.operations)
+        video_count = len(self.operations)
+        assoc_count = sum(len(op.associated_files) for op in self.operations)
+
+        message = f"Rename {video_count} video file(s)"
+        if assoc_count > 0:
+            message += f" + {assoc_count} associated file(s) = {total_files} total file(s)"
+        message += "?"
+
         reply = QMessageBox.question(
             self,
             "Confirm Rename",
-            f"Rename {len(self.operations)} file(s)?",
+            message,
             QMessageBox.Yes | QMessageBox.No,
         )
 

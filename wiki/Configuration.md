@@ -34,6 +34,12 @@ tmdb_api_key = "your_tmdb_key_here"
 tvdb_api_key = "your_tvdb_key_here"
 tvdb_pin = ""
 
+[associated_files]
+enabled = true
+subtitles = true
+nfo = true
+images = true
+
 [behavior]
 dry_run = false
 overwrite = false
@@ -64,6 +70,44 @@ See [Templates](Templates.md) for placeholder documentation.
 | `tvdb_pin` | TVDB subscriber PIN (optional) |
 
 See [API Keys](API-Keys.md) for how to obtain these.
+
+### Associated Files
+
+Controls which associated files are automatically renamed along with video files:
+
+| Key | Description | Default | Supported Extensions |
+|-----|-------------|---------|---------------------|
+| `enabled` | Enable/disable associated file renaming | `true` | - |
+| `subtitles` | Rename subtitle files | `true` | `.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx` |
+| `nfo` | Rename NFO metadata files | `true` | `.nfo` |
+| `images` | Rename cover/poster images | `true` | `.jpg`, `.jpeg`, `.png`, `.tbn` |
+
+When enabled, TidyTitles will automatically find and rename files with the same base name as the video file. For example:
+
+```
+Video:    movie.mkv     → Movie Title (2024).mkv
+Subtitle: movie.srt     → Movie Title (2024).srt
+Subtitle: movie.en.srt  → Movie Title (2024).en.srt  (language codes preserved)
+NFO:      movie.nfo     → Movie Title (2024).nfo
+Image:    movie.jpg     → Movie Title (2024).jpg
+```
+
+To disable associated file renaming entirely:
+
+```toml
+[associated_files]
+enabled = false
+```
+
+To selectively enable only certain types:
+
+```toml
+[associated_files]
+enabled = true
+subtitles = true
+nfo = false
+images = false
+```
 
 ### Behavior
 

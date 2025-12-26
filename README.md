@@ -6,6 +6,7 @@ A cross-platform media file renaming application inspired by FileBot. Automatica
 
 - **Smart Detection** - Automatically identifies movies vs TV episodes from filenames
 - **Metadata Lookup** - Fetches accurate titles, years, and episode names from TMDB/TVDB
+- **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
 - **Preview Mode** - See exactly what will be renamed before committing changes
 - **Custom Templates** - Define your own naming patterns with powerful placeholders
 - **Dual Interface** - Full CLI for automation + GUI for visual file management
@@ -79,13 +80,29 @@ file-renamer-gui
 
 ## Example
 
+**Movies:**
 ```
 Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.mkv
 After:  One Battle After Another (2025).mkv
 
+Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.srt
+After:  One Battle After Another (2025).srt
+```
+
+**TV Shows:**
+```
 Before: Breaking.Bad.S01E01.720p.BluRay.x264.mkv
 After:  Breaking Bad - S01E01 - Pilot.mkv
+
+Before: Breaking.Bad.S01E01.en.srt
+After:  Breaking Bad - S01E01 - Pilot.en.srt
 ```
+
+**Associated Files:**
+TidyTitles automatically renames associated files along with your videos:
+- Subtitles (`.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx`)
+- NFO metadata files (`.nfo`)
+- Cover images (`.jpg`, `.png`, `.tbn`)
 
 ## CLI Reference
 

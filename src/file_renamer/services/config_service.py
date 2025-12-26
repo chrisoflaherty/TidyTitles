@@ -24,6 +24,15 @@ class APISettings(BaseModel):
     tvdb_pin: str = ""
 
 
+class AssociatedFilesSettings(BaseModel):
+    """Associated files configuration."""
+
+    enabled: bool = True
+    subtitles: bool = True
+    nfo: bool = True
+    images: bool = True
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -34,6 +43,9 @@ class Settings(BaseSettings):
 
     templates: TemplateSettings = Field(default_factory=TemplateSettings)
     api: APISettings = Field(default_factory=APISettings)
+    associated_files: AssociatedFilesSettings = Field(
+        default_factory=AssociatedFilesSettings
+    )
 
     # Behavior settings
     dry_run: bool = False
@@ -89,6 +101,8 @@ class ConfigService:
                 config_data["templates"] = raw_config["templates"]
             if "api" in raw_config:
                 config_data["api"] = raw_config["api"]
+            if "associated_files" in raw_config:
+                config_data["associated_files"] = raw_config["associated_files"]
             if "behavior" in raw_config:
                 behavior = raw_config["behavior"]
                 if "dry_run" in behavior:
@@ -134,6 +148,12 @@ class ConfigService:
             f'tmdb_api_key = "{settings.api.tmdb_api_key}"',
             f'tvdb_api_key = "{settings.api.tvdb_api_key}"',
             f'tvdb_pin = "{settings.api.tvdb_pin}"',
+            "",
+            "[associated_files]",
+            f"enabled = {str(settings.associated_files.enabled).lower()}",
+            f"subtitles = {str(settings.associated_files.subtitles).lower()}",
+            f"nfo = {str(settings.associated_files.nfo).lower()}",
+            f"images = {str(settings.associated_files.images).lower()}",
             "",
             "[behavior]",
             f"dry_run = {str(settings.dry_run).lower()}",

@@ -190,6 +190,7 @@ async def _process_files(
             tv_provider=tv_provider,
             template_engine=template,
             file_renamer=renamer,
+            associated_files_settings=settings.associated_files,
         )
 
         # Process files
@@ -232,13 +233,33 @@ async def _process_files(
 def _show_preview(operations: list) -> None:
     """Display rename preview table."""
     table = Table(title="Rename Preview")
+    table.add_column("Type", style="cyan")
     table.add_column("Original", style="red")
     table.add_column("New Name", style="green")
 
     for op in operations:
-        table.add_row(op.source.name, op.destination.name)
+        # Main video file
+        table.add_row("Video", op.source.name, op.destination.name)
+
+        # Associated files
+        for assoc in op.associated_files:
+            type_label = assoc.file_type.capitalize()
+            table.add_row(
+                f"  └─ {type_label}",
+                assoc.source.name,
+                assoc.destination.name,
+            )
 
     console.print(table)
+
+    # Show summary
+    total_files = sum(op.total_files for op in operations)
+    assoc_count = sum(len(op.associated_files) for op in operations)
+    if assoc_count > 0:
+        console.print(
+            f"\n[dim]Total: {len(operations)} video file(s) + "
+            f"{assoc_count} associated file(s) = {total_files} file(s)[/dim]"
+        )
 
 
 def _show_results(operations: list) -> None:
@@ -339,7 +360,18 @@ def config_show() -> None:
     tmdb_status = "[green]configured[/green]" if settings.api.tmdb_api_key else "[red]not set[/red]"
     tvdb_status = "[green]configured[/green]" if settings.api.tvdb_api_key else "[red]not set[/red]"
     console.print(f"  TMDB: {tmdb_status}")
-    console.print(f"  TVDB: {tvdb_status}")
+    console.print(f"  TVDB: {tvdb_status}\n")
+
+    console.print("[bold]Associated Files:[/bold]")
+    enabled_status = "[green]enabled[/green]" if settings.associated_files.enabled else "[red]disabled[/red]"
+    console.print(f"  Enabled:   {enabled_status}")
+    if settings.associated_files.enabled:
+        sub_status = "✓" if settings.associated_files.subtitles else "✗"
+        nfo_status = "✓" if settings.associated_files.nfo else "✗"
+        img_status = "✓" if settings.associated_files.images else "✗"
+        console.print(f"  Subtitles: {sub_status}")
+        console.print(f"  NFO files: {nfo_status}")
+        console.print(f"  Images:    {img_status}")
 
 
 @config.command("set-key")

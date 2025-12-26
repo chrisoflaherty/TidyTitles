@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .exceptions import RenameError
-from .models import RenameOperation, RenameStatus
+from .models import AssociatedFileRename, RenameOperation, RenameStatus
 
 
 class FileRenamer:
@@ -61,6 +61,28 @@ class FileRenamer:
             except OSError as copy_error:
                 raise RenameError(f"Failed to rename file: {copy_error}") from e
 
+    def _rename_associated_files(
+        self,
+        associated: list[AssociatedFileRename],
+    ) -> list[str]:
+        """Rename associated files.
+
+        Args:
+            associated: List of associated file rename operations.
+
+        Returns:
+            List of error messages (empty if all successful).
+        """
+        errors = []
+
+        for assoc in associated:
+            try:
+                self.rename(assoc.source, assoc.destination)
+            except RenameError as e:
+                errors.append(f"{assoc.source.name}: {e}")
+
+        return errors
+
     def execute(
         self,
         operations: list[RenameOperation],
@@ -98,7 +120,16 @@ class FileRenamer:
                 continue
 
             try:
+                # Rename the main file
                 self.rename(op.source, op.destination)
+
+                # Rename associated files (subtitles, nfo, etc.)
+                if op.associated_files:
+                    assoc_errors = self._rename_associated_files(op.associated_files)
+                    if assoc_errors:
+                        # Main file succeeded but some associated files failed
+                        op.error_message = f"Associated files: {'; '.join(assoc_errors)}"
+
                 op.status = RenameStatus.COMPLETED
             except RenameError as e:
                 op.status = RenameStatus.FAILED
@@ -133,6 +164,11 @@ class FileRenamer:
                 continue
 
             try:
+                # Undo associated files first (in reverse order)
+                if op.associated_files:
+                    for assoc in reversed(op.associated_files):
+                        self.rename(assoc.destination, assoc.source)
+
                 # Swap source and destination for undo
                 self.rename(op.destination, op.source)
                 op.status = RenameStatus.PENDING
