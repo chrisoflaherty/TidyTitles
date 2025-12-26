@@ -8,6 +8,10 @@ from file_renamer.core.associated_files import (
     generate_associated_destination,
     get_extensions_from_settings,
 )
+from file_renamer.core.conflict_resolution import (
+    ConflictStrategy,
+    resolve_conflict,
+)
 from file_renamer.core.models import (
     AssociatedFileRename,
     Episode,
@@ -51,6 +55,7 @@ class RenameService:
         template_engine: TemplateEngine,
         file_renamer: Optional[FileRenamer] = None,
         associated_files_settings: Optional[AssociatedFilesSettings] = None,
+        conflict_strategy: ConflictStrategy = ConflictStrategy.SKIP,
     ) -> None:
         """Initialize the rename service.
 
@@ -61,6 +66,7 @@ class RenameService:
             template_engine: Template engine for generating filenames.
             file_renamer: File renamer instance.
             associated_files_settings: Settings for associated file handling.
+            conflict_strategy: Strategy for resolving filename conflicts.
         """
         self._parser = parser
         self._movie_provider = movie_provider
@@ -68,6 +74,7 @@ class RenameService:
         self._template = template_engine
         self._renamer = file_renamer or FileRenamer()
         self._associated_files_settings = associated_files_settings or AssociatedFilesSettings()
+        self._conflict_strategy = conflict_strategy
 
     def scan_directory(
         self,
@@ -226,6 +233,9 @@ class RenameService:
             dest_dir = destination_dir or media_file.path.parent
             new_path = dest_dir / new_name
 
+            # Apply conflict resolution to main file
+            new_path, was_versioned = resolve_conflict(new_path, self._conflict_strategy)
+
             # Find associated files (subtitles, nfo, images, etc.)
             associated_renames = []
             if self._associated_files_settings.enabled:
@@ -240,6 +250,7 @@ class RenameService:
                     associated_files = find_associated_files(media_file.path, extensions)
 
                     # Generate destination paths for associated files
+                    # Use the potentially versioned base name from the main file
                     new_base_name = new_path.stem  # Base name without extension
                     for assoc_file in associated_files:
                         assoc_dest = generate_associated_destination(
@@ -248,6 +259,9 @@ class RenameService:
                         # Use destination_dir if specified
                         if destination_dir:
                             assoc_dest = destination_dir / assoc_dest.name
+
+                        # Apply conflict resolution to associated files
+                        assoc_dest, _ = resolve_conflict(assoc_dest, self._conflict_strategy)
 
                         associated_renames.append(
                             AssociatedFileRename(

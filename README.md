@@ -7,6 +7,7 @@ A cross-platform media file renaming application inspired by FileBot. Automatica
 - **Smart Detection** - Automatically identifies movies vs TV episodes from filenames
 - **Metadata Lookup** - Fetches accurate titles, years, and episode names from TMDB/TVDB
 - **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
+- **Smart Conflict Resolution** - Auto-versioning prevents accidental overwrites
 - **Preview Mode** - See exactly what will be renamed before committing changes
 - **Custom Templates** - Define your own naming patterns with powerful placeholders
 - **Dual Interface** - Full CLI for automation + GUI for visual file management

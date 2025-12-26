@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from file_renamer.core.conflict_resolution import ConflictStrategy
 from file_renamer.core.models import MediaType, RenameStatus
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
@@ -184,6 +185,12 @@ async def _process_files(
             await tvdb.__aenter__()
             tv_provider = tvdb
 
+        # Parse conflict resolution strategy
+        try:
+            conflict_strategy = ConflictStrategy(settings.conflict_resolution)
+        except ValueError:
+            conflict_strategy = ConflictStrategy.SKIP
+
         service = RenameService(
             parser=parser,
             movie_provider=movie_provider,
@@ -191,6 +198,7 @@ async def _process_files(
             template_engine=template,
             file_renamer=renamer,
             associated_files_settings=settings.associated_files,
+            conflict_strategy=conflict_strategy,
         )
 
         # Process files
@@ -371,7 +379,11 @@ def config_show() -> None:
         img_status = "✓" if settings.associated_files.images else "✗"
         console.print(f"  Subtitles: {sub_status}")
         console.print(f"  NFO files: {nfo_status}")
-        console.print(f"  Images:    {img_status}")
+        console.print(f"  Images:    {img_status}\n")
+
+    console.print("[bold]Behavior:[/bold]")
+    console.print(f"  Conflict resolution: {settings.conflict_resolution}")
+    console.print(f"  Preview before rename: {settings.preview_before_rename}")
 
 
 @config.command("set-key")

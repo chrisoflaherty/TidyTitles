@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from file_renamer.core.conflict_resolution import ConflictStrategy
 from file_renamer.core.models import MediaType, RenameOperation, RenameStatus
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
@@ -300,12 +301,19 @@ class FetchWorker(QThread):
                 if not tmdb:
                     movie_provider = tvdb
 
+            # Parse conflict resolution strategy
+            try:
+                conflict_strategy = ConflictStrategy(settings.conflict_resolution)
+            except ValueError:
+                conflict_strategy = ConflictStrategy.SKIP
+
             service = RenameService(
                 parser=parser,
                 movie_provider=movie_provider,
                 tv_provider=tv_provider,
                 template_engine=template,
                 associated_files_settings=settings.associated_files,
+                conflict_strategy=conflict_strategy,
             )
 
             self._operations = await service.process_files(

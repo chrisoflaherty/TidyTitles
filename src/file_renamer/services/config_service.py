@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     dry_run: bool = False
     overwrite: bool = False
     preview_before_rename: bool = True
+    conflict_resolution: str = "skip"  # "skip", "overwrite", or "auto_version"
 
     # Provider preferences
     movie_provider: str = "tmdb"
@@ -111,6 +112,8 @@ class ConfigService:
                     config_data["overwrite"] = behavior["overwrite"]
                 if "preview_before_rename" in behavior:
                     config_data["preview_before_rename"] = behavior["preview_before_rename"]
+                if "conflict_resolution" in behavior:
+                    config_data["conflict_resolution"] = behavior["conflict_resolution"]
             if "providers" in raw_config:
                 providers = raw_config["providers"]
                 if "movie" in providers:
@@ -159,6 +162,7 @@ class ConfigService:
             f"dry_run = {str(settings.dry_run).lower()}",
             f"overwrite = {str(settings.overwrite).lower()}",
             f"preview_before_rename = {str(settings.preview_before_rename).lower()}",
+            f'conflict_resolution = "{settings.conflict_resolution}"',
             "",
             "[providers]",
             f'movie = "{settings.movie_provider}"',
