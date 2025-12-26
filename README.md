@@ -14,6 +14,20 @@ A cross-platform media file renaming application inspired by FileBot. Automatica
 
 ## Installation
 
+### For End Users (No Python Required)
+
+Download the standalone executable for your platform:
+
+- **Windows**: Download `TidyTitles.exe` - double-click to run
+- **macOS**: Download `TidyTitles.app` - drag to Applications folder
+- **Linux**: Download `TidyTitles` - make executable and run
+
+No installation needed! Just download and run. The app includes everything it needs.
+
+> **Building from source?** See [BUILD.md](BUILD.md) for instructions on creating your own executable.
+
+### For Developers
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/file-renamer.git
@@ -143,6 +157,22 @@ ruff check src/
 # Type check
 mypy src/
 ```
+
+### Building for Distribution
+
+Create standalone executables to share with others:
+
+```bash
+# Install build dependencies
+pip install -e ".[build,gui]"
+
+# Build executable for your platform
+python build.py
+
+# Output will be in dist/
+```
+
+See [BUILD.md](BUILD.md) for detailed instructions on building and distributing TidyTitles.
 
 ## License
 

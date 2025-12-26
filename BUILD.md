@@ -1,0 +1,220 @@
+# Building TidyTitles for Distribution
+
+This guide shows you how to build TidyTitles as a **standalone executable** that can be shared with friends and family who don't have Python installed.
+
+## Quick Start
+
+### 1. Install Build Dependencies (One Time Only)
+
+```bash
+pip install -e ".[build,gui]"
+```
+
+This installs PyInstaller and all necessary dependencies.
+
+### 2. Build the Executable
+
+```bash
+python build.py
+```
+
+That's it! The build script handles everything automatically.
+
+### 3. Find Your Executable
+
+After building, look in the `dist/` directory:
+
+- **Windows**: `dist/TidyTitles.exe` (50-100 MB)
+- **macOS**: `dist/TidyTitles.app` (folder)
+- **Linux**: `dist/TidyTitles` (executable file)
+
+## Sharing With Others
+
+### Windows
+
+1. Share the `TidyTitles.exe` file directly, OR
+2. Create a ZIP file containing the .exe
+3. Recipients: Just double-click to run!
+
+**No Python installation needed!**
+
+### macOS
+
+1. Right-click `TidyTitles.app` → Compress
+2. Share the resulting `.zip` file
+3. Recipients: Unzip and drag to Applications folder
+
+**Note**: First time running may show a security warning. Recipients should:
+- Right-click the app → Open (instead of double-click)
+- Click "Open" in the security dialog
+
+### Linux
+
+1. Share the `TidyTitles` executable, OR
+2. Create a tarball: `tar -czf TidyTitles.tar.gz -C dist TidyTitles`
+3. Recipients:
+   ```bash
+   chmod +x TidyTitles
+   ./TidyTitles
+   ```
+
+## Advanced Usage
+
+### Clean Build
+
+Remove previous build artifacts before building:
+
+```bash
+python build.py --clean
+```
+
+### Build Options
+
+The build script automatically:
+- ✅ Detects all Python dependencies from `pyproject.toml`
+- ✅ Bundles PySide6 GUI framework
+- ✅ Includes all your code from `src/file_renamer/`
+- ✅ Creates a single-file executable (Windows/Linux) or .app bundle (macOS)
+- ✅ Optimizes for size (excludes unnecessary libraries)
+
+## When You Add Features
+
+**Good news**: You rarely need to touch the build files!
+
+### No Changes Needed:
+- ✅ Adding new Python code
+- ✅ Adding dependencies to `pyproject.toml`
+- ✅ Bug fixes
+- ✅ New CLI commands
+- ✅ Most new features
+
+Just run `python build.py` again!
+
+### Might Need Updates:
+- ⚠️ **Adding icon files**: Edit `file-renamer.spec`, uncomment the icon lines
+- ⚠️ **Adding data files** (templates, configs): Add to `datas` list in `file-renamer.spec`
+- ⚠️ **Dynamic imports**: Add module names to `hiddenimports` in `file-renamer.spec`
+
+The spec file has comments showing exactly what to change.
+
+## Troubleshooting
+
+### Build fails with "PyInstaller not found"
+
+```bash
+pip install -e ".[build,gui]"
+```
+
+### Build fails with "file_renamer not found"
+
+Install the package in development mode:
+
+```bash
+pip install -e .
+```
+
+### Executable is very large (>200 MB)
+
+This is normal! The executable includes:
+- Python interpreter (~15 MB)
+- PySide6/Qt framework (~50-80 MB)
+- All dependencies
+- Your application code
+
+You can reduce size by:
+- Using UPX compression (already enabled)
+- Excluding unused Qt modules (advanced)
+
+### "Application damaged" error on macOS
+
+Your app needs to be code-signed for distribution. Options:
+1. **Simple**: Recipients right-click → Open (bypasses Gatekeeper)
+2. **Advanced**: Get Apple Developer account and sign the app
+
+### Antivirus flags the .exe (Windows)
+
+This is common with PyInstaller apps. Solutions:
+1. Add your build to antivirus exceptions
+2. Submit the .exe to Microsoft for analysis (removes false positive)
+3. Use a code signing certificate (costs money, but prevents warnings)
+
+## File Size Comparison
+
+Typical build sizes:
+- **Windows**: 60-90 MB (.exe)
+- **macOS**: 70-100 MB (.app bundle)
+- **Linux**: 60-90 MB (executable)
+
+This is normal and expected - it includes everything needed to run!
+
+## Customization
+
+### Change Application Name
+
+Edit `file-renamer.spec`:
+```python
+name='YourAppName',  # Change this line
+```
+
+### Add an Icon
+
+1. Get icon files:
+   - Windows: `.ico` file (256x256 or multi-size)
+   - macOS: `.icns` file
+   - Linux: `.png` file (used by desktop entries)
+
+2. Edit `file-renamer.spec`:
+   ```python
+   # For Windows/Linux
+   icon='path/to/icon.ico',
+
+   # For macOS app bundle
+   app = BUNDLE(
+       exe,
+       icon='path/to/icon.icns',
+       ...
+   )
+   ```
+
+3. Rebuild: `python build.py --clean`
+
+## Platform-Specific Notes
+
+### Windows
+- Single `.exe` file - easiest to distribute
+- May need to disable antivirus temporarily during build
+- First-time users may see SmartScreen warning (normal)
+
+### macOS
+- Creates `.app` bundle (folder that looks like an app)
+- Gatekeeper may block unsigned apps
+- Recipients should right-click → Open first time
+
+### Linux
+- Single executable file
+- Recipient needs to `chmod +x` first
+- May need to install system libraries (very rare with PyInstaller)
+
+## Automated Builds (Optional)
+
+You can set up GitHub Actions to automatically build for all platforms:
+
+1. Push code to GitHub
+2. GitHub Actions builds Windows, macOS, and Linux versions
+3. Download all three from the "Releases" page
+
+See `.github/workflows/build.yml` for setup (coming soon).
+
+## Questions?
+
+- **Build issues**: Check the error message and troubleshooting section above
+- **App doesn't start**: Run from terminal to see error messages
+- **Feature requests**: Open an issue on GitHub
+
+## Summary
+
+**Building**: `python build.py`
+**Sharing**: Send the file from `dist/` folder
+**Updating**: Just rebuild after making changes
+
+**That's it!** Your friends and family can now use TidyTitles without installing Python or any dependencies.
