@@ -1,6 +1,6 @@
 # Building TidyTitles for Distribution
 
-This guide shows you how to build TidyTitles as a **standalone executable** that can be shared with friends and family who don't have Python installed.
+This guide shows you how to build TidyTitles as a **standalone executable** and create **platform-specific installers** that can be shared with friends and family who don't have Python installed.
 
 ## Quick Start
 
@@ -20,26 +20,59 @@ python build.py
 
 That's it! The build script handles everything automatically.
 
-### 3. Find Your Executable
+### 3. Create an Installer (Optional)
+
+For a professional distribution experience with easy install/uninstall:
+
+```bash
+python build.py --installer
+```
+
+Or create an installer from an existing build:
+
+```bash
+python build.py --installer-only
+```
+
+### 4. Find Your Files
 
 After building, look in the `dist/` directory:
 
+**Executables:**
 - **Windows**: `dist/TidyTitles.exe` (50-100 MB)
 - **macOS**: `dist/TidyTitles.app` (folder)
 - **Linux**: `dist/TidyTitles` (executable file)
+
+**Installers (with --installer flag):**
+- **Windows**: `dist/TidyTitles-x.x.x-windows-setup.exe`
+- **macOS**: `dist/TidyTitles-x.x.x-macos.dmg`
+- **Linux**: `dist/TidyTitles-x.x.x-x86_64.AppImage`
 
 ## Sharing With Others
 
 ### Windows
 
-1. Share the `TidyTitles.exe` file directly, OR
-2. Create a ZIP file containing the .exe
-3. Recipients: Just double-click to run!
+**Option A: With Installer (Recommended)**
+1. Build with: `python build.py --installer`
+2. Share `TidyTitles-x.x.x-windows-setup.exe`
+3. Recipients: Run installer → Next → Install → Done!
+4. Includes: Start Menu shortcut, Desktop shortcut, Uninstaller
+
+**Option B: Portable Executable**
+1. Share the `TidyTitles.exe` file directly
+2. Recipients: Just double-click to run!
 
 **No Python installation needed!**
 
 ### macOS
 
+**Option A: With DMG Installer (Recommended)**
+1. Build with: `python build.py --installer`
+2. Share `TidyTitles-x.x.x-macos.dmg`
+3. Recipients: Open DMG → Drag to Applications → Eject
+4. Uninstall: Drag from Applications to Trash
+
+**Option B: App Bundle**
 1. Right-click `TidyTitles.app` → Compress
 2. Share the resulting `.zip` file
 3. Recipients: Unzip and drag to Applications folder
@@ -50,7 +83,18 @@ After building, look in the `dist/` directory:
 
 ### Linux
 
-1. Share the `TidyTitles` executable, OR
+**Option A: With AppImage (Recommended)**
+1. Build with: `python build.py --installer`
+2. Share `TidyTitles-x.x.x-x86_64.AppImage`
+3. Recipients:
+   ```bash
+   chmod +x TidyTitles-*.AppImage
+   ./TidyTitles-*.AppImage
+   ```
+4. Uninstall: Just delete the file
+
+**Option B: Raw Executable**
+1. Share the `TidyTitles` executable
 2. Create a tarball: `tar -czf TidyTitles.tar.gz -C dist TidyTitles`
 3. Recipients:
    ```bash
@@ -70,12 +114,36 @@ python build.py --clean
 
 ### Build Options
 
+```bash
+python build.py                    # Build executable only
+python build.py --installer        # Build executable + installer
+python build.py --installer-only   # Create installer from existing build
+python build.py --clean            # Clean previous builds first
+python build.py --clean --installer # Clean, build, and create installer
+```
+
 The build script automatically:
 - ✅ Detects all Python dependencies from `pyproject.toml`
 - ✅ Bundles PySide6 GUI framework
 - ✅ Includes all your code from `src/file_renamer/`
 - ✅ Creates a single-file executable (Windows/Linux) or .app bundle (macOS)
 - ✅ Optimizes for size (excludes unnecessary libraries)
+
+### Installer Requirements
+
+**macOS DMG:**
+- No extra tools needed (uses built-in `hdiutil`)
+
+**Windows NSIS:**
+- Install NSIS: https://nsis.sourceforge.io/
+- Or on Windows: `winget install NSIS.NSIS`
+- On macOS (for cross-compile): `brew install makensis`
+- On Linux: `sudo apt install nsis`
+
+**Linux AppImage:**
+- Install appimagetool: https://github.com/AppImage/AppImageKit/releases
+- Make executable: `chmod +x appimagetool-x86_64.AppImage`
+- Add to PATH: `sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool`
 
 ## When You Add Features
 

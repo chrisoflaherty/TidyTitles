@@ -2,13 +2,15 @@
 """
 Automated build script for TidyTitles
 
-This script builds a standalone executable using PyInstaller.
-No need to edit this file when adding features - it auto-detects everything!
+This script builds a standalone executable using PyInstaller and optionally
+creates platform-specific installers.
 
 Usage:
-    python build.py              # Build for current platform
-    python build.py --clean      # Clean build artifacts first
-    python build.py --help       # Show help
+    python build.py                    # Build executable only
+    python build.py --installer        # Build executable + installer
+    python build.py --installer-only   # Create installer from existing build
+    python build.py --clean            # Clean build artifacts first
+    python build.py --help             # Show help
 """
 
 import argparse
@@ -17,6 +19,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# Version - update this for releases
+APP_VERSION = "0.1.0"
 
 
 def get_platform_name() -> str:
@@ -111,7 +116,119 @@ def build_executable():
         return False
 
 
-def show_results():
+def create_macos_dmg() -> bool:
+    """Create a macOS DMG installer."""
+    print("\n" + "=" * 60)
+    print("📦 Creating macOS DMG Installer")
+    print("=" * 60 + "\n")
+
+    script_path = Path('installer/macos/create-dmg.sh')
+    if not script_path.exists():
+        print(f"❌ Error: {script_path} not found!")
+        return False
+
+    try:
+        result = subprocess.run(
+            ['bash', str(script_path), APP_VERSION],
+            check=True
+        )
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ DMG creation failed with error code {e.returncode}")
+        return False
+    except FileNotFoundError:
+        print("❌ Error: bash not found")
+        return False
+
+
+def create_windows_installer() -> bool:
+    """Create a Windows NSIS installer."""
+    print("\n" + "=" * 60)
+    print("📦 Creating Windows NSIS Installer")
+    print("=" * 60 + "\n")
+
+    nsi_path = Path('installer/windows/tidytitles.nsi')
+    if not nsi_path.exists():
+        print(f"❌ Error: {nsi_path} not found!")
+        return False
+
+    # Check if makensis is available
+    makensis_cmd = 'makensis'
+    if platform.system() == 'Windows':
+        # Try common NSIS install locations on Windows
+        nsis_paths = [
+            Path(r'C:\Program Files (x86)\NSIS\makensis.exe'),
+            Path(r'C:\Program Files\NSIS\makensis.exe'),
+        ]
+        for nsis_path in nsis_paths:
+            if nsis_path.exists():
+                makensis_cmd = str(nsis_path)
+                break
+
+    try:
+        # Update version in NSI file before building
+        print(f"   Building installer for version {APP_VERSION}...")
+
+        result = subprocess.run(
+            [makensis_cmd, f'-DAPP_VERSION={APP_VERSION}', str(nsi_path)],
+            check=True,
+            cwd=nsi_path.parent
+        )
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ NSIS build failed with error code {e.returncode}")
+        return False
+    except FileNotFoundError:
+        print("❌ Error: makensis not found!")
+        print("\n💡 Install NSIS from: https://nsis.sourceforge.io/")
+        if platform.system() == 'Darwin':
+            print("   On macOS: brew install makensis")
+        elif platform.system() == 'Linux':
+            print("   On Linux: sudo apt install nsis")
+        return False
+
+
+def create_linux_appimage() -> bool:
+    """Create a Linux AppImage."""
+    print("\n" + "=" * 60)
+    print("📦 Creating Linux AppImage")
+    print("=" * 60 + "\n")
+
+    script_path = Path('installer/linux/create-appimage.sh')
+    if not script_path.exists():
+        print(f"❌ Error: {script_path} not found!")
+        return False
+
+    try:
+        result = subprocess.run(
+            ['bash', str(script_path), APP_VERSION],
+            check=True
+        )
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ AppImage creation failed with error code {e.returncode}")
+        return False
+    except FileNotFoundError:
+        print("❌ Error: bash not found")
+        return False
+
+
+def create_installer() -> bool:
+    """Create installer for the current platform."""
+    system = platform.system()
+
+    if system == 'Darwin':
+        return create_macos_dmg()
+    elif system == 'Windows':
+        return create_windows_installer()
+    elif system == 'Linux':
+        return create_linux_appimage()
+    else:
+        print(f"❌ Unsupported platform for installer: {system}")
+        return False
+
+
+def show_results(include_installer: bool = False):
     """Display information about the built executable."""
     print("\n" + "=" * 60)
     print("🎉 Build Complete!")
@@ -126,12 +243,21 @@ def show_results():
             size_mb = sum(f.stat().st_size for f in app_bundle.rglob('*') if f.is_file()) / (1024 * 1024)
             print(f"\n📦 Application bundle: {app_bundle}")
             print(f"   Size: {size_mb:.1f} MB")
+
+        # Check for DMG installer
+        dmg_file = dist_dir / f'TidyTitles-{APP_VERSION}-macos.dmg'
+        if include_installer and dmg_file.exists():
+            dmg_size_mb = dmg_file.stat().st_size / (1024 * 1024)
+            print(f"\n💿 DMG Installer: {dmg_file}")
+            print(f"   Size: {dmg_size_mb:.1f} MB")
+            print(f"\n📤 To distribute:")
+            print(f"   Share the DMG file - users drag app to Applications")
+        elif app_bundle.exists():
             print(f"\n🚀 To run:")
             print(f"   open {app_bundle}")
             print(f"\n📤 To share:")
-            print(f"   1. Zip the .app bundle")
-            print(f"   2. Share the .zip file")
-            print(f"   3. Recipients: Unzip and drag to Applications folder")
+            print(f"   1. Zip the .app bundle, or")
+            print(f"   2. Run: python build.py --installer")
 
     elif platform.system() == 'Windows':
         # Windows .exe
@@ -140,11 +266,21 @@ def show_results():
             size_mb = exe_file.stat().st_size / (1024 * 1024)
             print(f"\n📦 Executable: {exe_file}")
             print(f"   Size: {size_mb:.1f} MB")
+
+        # Check for NSIS installer
+        installer_file = dist_dir / f'TidyTitles-{APP_VERSION}-windows-setup.exe'
+        if include_installer and installer_file.exists():
+            inst_size_mb = installer_file.stat().st_size / (1024 * 1024)
+            print(f"\n💿 Windows Installer: {installer_file}")
+            print(f"   Size: {inst_size_mb:.1f} MB")
+            print(f"\n📤 To distribute:")
+            print(f"   Share the installer - users get Start Menu & uninstaller")
+        elif exe_file.exists():
             print(f"\n🚀 To run:")
             print(f"   Double-click: {exe_file}")
             print(f"\n📤 To share:")
             print(f"   1. Share the .exe file directly, or")
-            print(f"   2. Create a .zip for easier distribution")
+            print(f"   2. Run: python build.py --installer")
 
     else:
         # Linux executable
@@ -153,12 +289,22 @@ def show_results():
             size_mb = exe_file.stat().st_size / (1024 * 1024)
             print(f"\n📦 Executable: {exe_file}")
             print(f"   Size: {size_mb:.1f} MB")
+
+        # Check for AppImage
+        appimage_file = dist_dir / f'TidyTitles-{APP_VERSION}-x86_64.AppImage'
+        if include_installer and appimage_file.exists():
+            ai_size_mb = appimage_file.stat().st_size / (1024 * 1024)
+            print(f"\n💿 AppImage: {appimage_file}")
+            print(f"   Size: {ai_size_mb:.1f} MB")
+            print(f"\n📤 To distribute:")
+            print(f"   Share the AppImage - users just chmod +x and run")
+        elif exe_file.exists():
             print(f"\n🚀 To run:")
             print(f"   chmod +x {exe_file}")
             print(f"   ./{exe_file}")
             print(f"\n📤 To share:")
             print(f"   1. Share the executable directly, or")
-            print(f"   2. Create a .tar.gz archive")
+            print(f"   2. Run: python build.py --installer")
 
     print("\n" + "=" * 60)
 
@@ -166,14 +312,21 @@ def show_results():
 def main():
     """Main build orchestration."""
     parser = argparse.ArgumentParser(
-        description='Build TidyTitles standalone executable',
+        description='Build TidyTitles standalone executable and installers',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python build.py              Build for current platform
-  python build.py --clean      Clean previous builds first
+  python build.py                    Build executable only
+  python build.py --installer        Build executable + installer
+  python build.py --installer-only   Create installer from existing build
+  python build.py --clean            Clean previous builds first
 
-After building, the executable will be in the dist/ directory.
+After building, files will be in the dist/ directory.
+
+Installers created:
+  macOS:   TidyTitles-x.x.x-macos.dmg
+  Windows: TidyTitles-x.x.x-windows-setup.exe
+  Linux:   TidyTitles-x.x.x-x86_64.AppImage
         """
     )
     parser.add_argument(
@@ -181,11 +334,22 @@ After building, the executable will be in the dist/ directory.
         action='store_true',
         help='Clean build artifacts before building'
     )
+    parser.add_argument(
+        '--installer',
+        action='store_true',
+        help='Create platform-specific installer after building'
+    )
+    parser.add_argument(
+        '--installer-only',
+        action='store_true',
+        help='Create installer from existing build (skip PyInstaller)'
+    )
 
     args = parser.parse_args()
 
     print("=" * 60)
     print("TidyTitles - Standalone Executable Builder")
+    print(f"Version: {APP_VERSION}")
     print("=" * 60)
     print()
 
@@ -193,18 +357,57 @@ After building, the executable will be in the dist/ directory.
     if args.clean:
         clean_build_artifacts()
 
+    # If installer-only, skip the build step
+    if args.installer_only:
+        print("🔍 Creating installer from existing build...")
+        print()
+
+        # Check if build exists
+        dist_dir = Path('dist')
+        if platform.system() == 'Darwin':
+            if not (dist_dir / 'TidyTitles.app').exists():
+                print("❌ Error: dist/TidyTitles.app not found!")
+                print("   Run 'python build.py' first to build the executable.")
+                return 1
+        elif platform.system() == 'Windows':
+            if not (dist_dir / 'TidyTitles.exe').exists():
+                print("❌ Error: dist/TidyTitles.exe not found!")
+                print("   Run 'python build.py' first to build the executable.")
+                return 1
+        else:
+            if not (dist_dir / 'TidyTitles').exists():
+                print("❌ Error: dist/TidyTitles not found!")
+                print("   Run 'python build.py' first to build the executable.")
+                return 1
+
+        if create_installer():
+            show_results(include_installer=True)
+            return 0
+        else:
+            print("\n❌ Installer creation failed.")
+            return 1
+
     # Check all dependencies
     check_dependencies()
 
     # Build the executable
     success = build_executable()
 
-    if success:
-        show_results()
-        return 0
-    else:
+    if not success:
         print("\n❌ Build failed. Check the error messages above.")
         return 1
+
+    # Create installer if requested
+    if args.installer:
+        installer_success = create_installer()
+        show_results(include_installer=installer_success)
+        if not installer_success:
+            print("\n⚠️  Executable built, but installer creation failed.")
+            return 1
+    else:
+        show_results(include_installer=False)
+
+    return 0
 
 
 if __name__ == '__main__':
