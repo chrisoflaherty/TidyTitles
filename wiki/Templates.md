@@ -35,6 +35,21 @@ This produces: `The Matrix (1999).mkv`
 | `{episode2}` | Episode (2 digits) | "05" |
 | `{episode_title}` | Episode title | "Pilot" |
 
+### Music Placeholders
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{title}` | Track title | "Comfortably Numb" |
+| `{artist}` | Artist name | "Pink Floyd" |
+| `{album}` | Album title | "The Wall" |
+| `{album_artist}` | Album artist | "Pink Floyd" |
+| `{year}` | Release year | "1979" |
+| `{track}` | Track number | "6" |
+| `{track2}` | Track (2 digits) | "06" |
+| `{disc}` | Disc number | "2" |
+| `{disc2}` | Disc (2 digits) | "02" |
+| `{genre}` | Genre | "Rock" |
+
 ### Quality Placeholders
 
 These are extracted from the original filename:
@@ -90,6 +105,14 @@ Example: `The Matrix (1999).mkv`
 
 Example: `Breaking Bad - S01E01 - Pilot.mkv`
 
+### Music
+
+```
+{artist}/{album} ({year})/{track2} - {title}
+```
+
+Example: `Pink Floyd/The Wall (1979)/06 - Comfortably Numb.flac`
+
 ## Common Template Examples
 
 ### Movies
@@ -136,6 +159,30 @@ Example: `Breaking Bad - S01E01 - Pilot.mkv`
 # → Breaking Bad/Season 1/Breaking Bad S01E01.mkv
 ```
 
+### Music
+
+```bash
+# Standard (default)
+"{artist}/{album} ({year})/{track2} - {title}"
+# → Pink Floyd/The Wall (1979)/06 - Comfortably Numb.flac
+
+# With disc number
+"{artist}/{album}/Disc {disc2}/{track2} - {title}"
+# → Pink Floyd/The Wall/Disc 02/06 - Comfortably Numb.flac
+
+# Flat structure (no folders)
+"{artist} - {album} - {track2} - {title}"
+# → Pink Floyd - The Wall - 06 - Comfortably Numb.flac
+
+# Simple with year
+"{track2} - {title} ({year})"
+# → 06 - Comfortably Numb (1979).flac
+
+# Artist folder only
+"{artist}/{track2} - {title}"
+# → Pink Floyd/06 - Comfortably Numb.flac
+```
+
 ## Setting Templates
 
 Use the CLI to set your preferred templates:
@@ -146,6 +193,9 @@ file-renamer config set-template movie "{title} ({year}) [{quality}]"
 
 # Set TV template
 file-renamer config set-template tv "{title} S{season2}E{episode2}"
+
+# Set music template
+file-renamer config set-template music "{artist}/{album} ({year})/{track2} - {title}"
 ```
 
 ## Template Validation

@@ -1,6 +1,6 @@
 # GUI Guide
 
-File Renamer includes a graphical user interface for users who prefer visual file management.
+TidyTitles includes a graphical user interface for users who prefer visual file management.
 
 ## Launching the GUI
 
@@ -18,17 +18,18 @@ pip install PySide6
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  File Renamer                                               │
+│  TidyTitles                                                 │
 ├─────────────────────────────────────────────────────────────┤
 │  [/path/to/folder                          ] [Browse...]    │
 ├─────────────────────────────────────────────────────────────┤
-│  Type: [Auto-detect ▼]              [Fetch Metadata]        │
+│  Type: [Auto-detect ▼]  ☐ Recursive  ☐ Cover Art   [Fetch] │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┬─────────────────────┬────────┐         │
 │  │ Original        │ New Name            │ Status │         │
 │  ├─────────────────┼─────────────────────┼────────┤         │
 │  │ Movie.2024.mkv  │ Movie (2024).mkv    │ Ready  │         │
 │  │ Show.S01E01.mkv │ Show - S01E01.mkv   │ Ready  │         │
+│  │ song.mp3        │ Artist/Album/01.mp3 │ Ready  │         │
 │  └─────────────────┴─────────────────────┴────────┘         │
 ├─────────────────────────────────────────────────────────────┤
 │  Ready                                    [Rename Files]    │
@@ -51,7 +52,7 @@ pip install PySide6
 - **Multiple files** - Drag and drop multiple files at once
 - **Mix sources** - Add files from different locations
 - **Accumulative** - Files are added to the existing list
-- **Auto-filter** - Only video files are added (non-video files are ignored)
+- **Auto-filter** - Only supported media files are added (videos + audio)
 
 **Option C: Clear**
 - Click the "Clear" button to remove all files from the list
@@ -60,20 +61,51 @@ pip install PySide6
 ### 2. Choose Media Type
 
 Use the dropdown to select:
-- **Auto-detect** - Let File Renamer determine if files are movies or TV shows
+- **Auto-detect** - Let TidyTitles determine if files are movies, TV shows, or music
 - **Movies** - Force all files to be treated as movies
 - **TV Shows** - Force all files to be treated as TV episodes
+- **Music** - Force all files to be treated as music tracks
 
-### 3. Fetch Metadata
+### 3. Configure Options
+
+**Recursive Scanning:**
+- Check **"Recursive"** to scan subdirectories when adding folders
+- Useful for large media libraries with nested folder structures
+
+**Cover Art Download:**
+- Check **"Cover Art"** to download posters and album covers
+- Movie/TV posters are saved as `poster.jpg`
+- Album art is saved as `cover.jpg`
+
+### 4. Fetch Metadata
 
 Click **"Fetch Metadata"** to:
-- Connect to TMDB/TVDB
+- Connect to TMDB (movies), TVDB (TV shows), or MusicBrainz (music)
 - Look up each file
 - Populate the preview table with new names
 
 A progress dialog will show the status.
 
-### 4. Review Changes
+**Interactive Selection:**
+
+When multiple matches are found for a file, a selection dialog appears:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Multiple matches found for: Movie.2024.mkv                 │
+├─────────────────────────────────────────────────────────────┤
+│  ○ The Movie Title (2024) - Movie                          │
+│  ○ Movie Title (Remake) (2024) - Movie                     │
+│  ○ Different Movie (2024) - Movie                          │
+├─────────────────────────────────────────────────────────────┤
+│                                  [Skip]  [Select]           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- Select the correct match and click **"Select"**
+- Click **"Skip"** to leave the file unchanged
+
+### 5. Review Changes
 
 The preview table shows:
 - **Original** - Current filename
@@ -82,11 +114,13 @@ The preview table shows:
 
 Review the proposed names before proceeding.
 
-### 5. Rename Files
+### 6. Rename Files
 
 Click **"Rename Files"** to apply the changes.
 
 A confirmation dialog will appear. Click "Yes" to proceed.
+
+If cover art download is enabled, posters and album covers will be saved after renaming.
 
 ## Configuration
 
@@ -103,10 +137,9 @@ The GUI will prompt you if no API keys are configured.
 ### Handling Mismatches
 
 If a file is matched incorrectly:
-1. Note the original filename
-2. Cancel the rename
-3. Manually rename the file to include the correct title/year
-4. Re-run the fetch
+1. Use the interactive selection dialog to pick the correct match
+2. Or, cancel and manually rename the file to include the correct title/year
+3. Re-run the fetch
 
 ### Large Collections
 
@@ -146,6 +179,9 @@ This is normal for large collections. The progress dialog shows current status. 
 ### Files not appearing
 
 Check that your files have supported extensions:
-`.mkv`, `.mp4`, `.avi`, `.mov`, `.m4v`, `.webm`, `.flv`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`
 
-When dragging and dropping, only video files with these extensions will be added to the list.
+**Video:** `.mkv`, `.mp4`, `.avi`, `.mov`, `.m4v`, `.webm`, `.flv`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`
+
+**Audio:** `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav`, `.aiff`, `.wma`
+
+When dragging and dropping, only media files with these extensions will be added to the list.

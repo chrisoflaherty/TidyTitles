@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete documentation for the File Renamer command-line interface.
+Complete documentation for the TidyTitles command-line interface.
 
 ## Global Options
 
@@ -19,7 +19,7 @@ file-renamer [OPTIONS] COMMAND [ARGS]
 
 ### `rename`
 
-Rename media files using metadata from TMDB/TVDB.
+Rename media files using metadata from TMDB/TVDB/MusicBrainz.
 
 ```bash
 file-renamer rename PATH [OPTIONS]
@@ -35,12 +35,14 @@ file-renamer rename PATH [OPTIONS]
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--type` | `-t` | Media type: `movie`, `tv`, or `auto` (default: auto) |
+| `--type` | `-t` | Media type: `movie`, `tv`, `music`, or `auto` (default: auto) |
 | `--recursive` | `-r` | Scan subdirectories |
 | `--output` | `-o` | Move renamed files to this directory |
 | `--dry-run` | `-n` | Preview changes without renaming |
 | `--yes` | `-y` | Skip confirmation prompt |
 | `--auto-select` | `-a` | Automatically select first match when multiple results found |
+| `--cover-art` | `-c` | Download movie posters and album covers |
+| `--provider` | `-p` | Metadata provider: `tmdb`, `tvdb`, `musicbrainz`, or `auto` |
 
 **Examples:**
 
@@ -54,6 +56,9 @@ file-renamer rename /path/to/movies --type movie
 # Rename TV shows recursively
 file-renamer rename /path/to/shows --type tv --recursive
 
+# Rename music files (no API key needed!)
+file-renamer rename /path/to/music --type music
+
 # Preview without making changes
 file-renamer rename /path/to/media --dry-run
 
@@ -65,6 +70,12 @@ file-renamer rename /path/to/media --yes
 
 # Auto-select first match when multiple results found
 file-renamer rename /path/to/media --auto-select
+
+# Download cover art alongside renaming
+file-renamer rename /path/to/media --cover-art
+
+# Use specific provider
+file-renamer rename /path/to/music --provider musicbrainz
 ```
 
 **Interactive Selection:**
@@ -202,7 +213,7 @@ file-renamer config set-template TYPE TEMPLATE
 
 | Argument | Description |
 |----------|-------------|
-| `TYPE` | `movie` or `tv` |
+| `TYPE` | `movie`, `tv`, or `music` |
 | `TEMPLATE` | Template string with placeholders |
 
 **Examples:**
@@ -216,6 +227,12 @@ file-renamer config set-template tv "{title} S{season2}E{episode2}"
 
 # Plex-style folder structure
 file-renamer config set-template tv "{title}/Season {season2}/{title} - S{season2}E{episode2}"
+
+# Music with artist/album folders
+file-renamer config set-template music "{artist}/{album} ({year})/{track2} - {title}"
+
+# Music with disc number
+file-renamer config set-template music "{artist}/{album}/Disc {disc2}/{track2} - {title}"
 ```
 
 ---

@@ -1,14 +1,17 @@
-# File Renamer
+# TidyTitles
 
-A cross-platform media file renaming application inspired by FileBot. Automatically fetches metadata from TMDB and TVDB to rename your movie and TV show files with clean, consistent naming.
+A cross-platform media file renaming application inspired by FileBot. Automatically fetches metadata from TMDB, TVDB, and MusicBrainz to rename your movies, TV shows, and music files with clean, consistent naming.
 
 ## Features
 
-- **Smart Detection** - Automatically identifies movies vs TV episodes from filenames
-- **Metadata Lookup** - Fetches accurate titles, years, and episode names from TMDB/TVDB
-- **Interactive Selection** - Choose the correct match when multiple results are found
+- **Smart Detection** - Automatically identifies movies, TV episodes, and music from filenames
+- **Metadata Lookup** - Fetches accurate titles from TMDB (movies), TVDB (TV), and MusicBrainz (music)
+- **Music Support** - Reads ID3/Vorbis/FLAC tags with filename fallback, no API key required
+- **Cover Art Download** - Automatically download movie posters and album covers
+- **Interactive Selection** - Choose the correct match when multiple results are found (CLI + GUI)
 - **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
 - **Smart Conflict Resolution** - Auto-versioning prevents accidental overwrites
+- **Recursive Scanning** - Scan subdirectories for media files
 - **Progress Indicators** - Real-time progress bars show scanning, fetching, and renaming status
 - **Preview Mode** - See exactly what will be renamed before committing changes
 - **Custom Templates** - Define your own naming patterns with powerful placeholders
@@ -50,6 +53,7 @@ pip install -e ".[gui]"
 
 - **TMDB** (for movies): https://www.themoviedb.org/settings/api
 - **TVDB** (for TV shows): https://thetvdb.com/api-information
+- **MusicBrainz** (for music): No API key required!
 
 ### 2. Configure
 
@@ -71,8 +75,17 @@ file-renamer rename /path/to/movies --type movie
 # Rename TV shows
 file-renamer rename /path/to/shows --type tv
 
+# Rename music files
+file-renamer rename /path/to/music --type music
+
 # Auto-detect and rename
 file-renamer rename /path/to/media
+
+# Download cover art alongside renaming
+file-renamer rename /path/to/media --cover-art
+
+# Scan subdirectories
+file-renamer rename /path/to/media --recursive
 ```
 
 ### 4. Or Use the GUI
@@ -85,7 +98,10 @@ The GUI supports:
 - **Drag and drop** - Drop multiple files or folders directly into the window
 - **Multi-file selection** - Add files from different locations
 - **Accumulative list** - Files are added to the existing list (use Clear to reset)
-- **Auto-filtering** - Only video files are added
+- **Media type selection** - Choose Auto-detect, Movies, TV Shows, or Music
+- **Recursive scanning** - Check "Recursive" to scan subdirectories
+- **Cover art download** - Check "Cover Art" to download posters/album covers
+- **Interactive selection** - Pick the correct match when multiple results found
 
 ## Example
 
@@ -107,6 +123,12 @@ Before: Breaking.Bad.S01E01.en.srt
 After:  Breaking Bad - S01E01 - Pilot.en.srt
 ```
 
+**Music:**
+```
+Before: 06 - Comfortably Numb.flac
+After:  Pink Floyd/The Wall (1979)/06 - Comfortably Numb.flac
+```
+
 **Associated Files:**
 TidyTitles automatically renames associated files along with your videos:
 - Subtitles (`.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx`)
@@ -126,12 +148,14 @@ TidyTitles automatically renames associated files along with your videos:
 ### Rename Options
 
 ```
--t, --type [movie|tv|auto]  Force media type detection
--r, --recursive             Scan subdirectories
--o, --output PATH           Move renamed files to this directory
--n, --dry-run               Preview only, don't rename
--y, --yes                   Skip confirmation prompt
--a, --auto-select           Automatically select first match (no prompts)
+-t, --type [movie|tv|music|auto]  Force media type detection
+-r, --recursive                   Scan subdirectories
+-o, --output PATH                 Move renamed files to this directory
+-n, --dry-run                     Preview only, don't rename
+-y, --yes                         Skip confirmation prompt
+-a, --auto-select                 Automatically select first match (no prompts)
+-c, --cover-art                   Download movie posters and album covers
+-p, --provider [tmdb|tvdb|musicbrainz|auto]  Metadata provider
 ```
 
 **Interactive Selection:**
@@ -174,23 +198,43 @@ For large batch operations, TidyTitles shows real-time progress:
 
 Customize how files are named using placeholders:
 
+**Common:**
 | Placeholder | Description | Example |
 |-------------|-------------|---------|
 | `{title}` | Title | "The Matrix" |
 | `{year}` | Year | "1999" |
+| `{quality}` | Quality | "1080p" |
+
+**TV Shows:**
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
 | `{season2}` | Season (2-digit) | "01" |
 | `{episode2}` | Episode (2-digit) | "05" |
 | `{episode_title}` | Episode title | "Pilot" |
-| `{quality}` | Quality | "1080p" |
+
+**Music:**
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{artist}` | Artist name | "Pink Floyd" |
+| `{album}` | Album title | "The Wall" |
+| `{track2}` | Track number (2-digit) | "06" |
+| `{disc2}` | Disc number (2-digit) | "01" |
+| `{genre}` | Genre | "Rock" |
 
 **Default templates:**
 - Movies: `{title} ({year})`
 - TV: `{title} - S{season2}E{episode2} - {episode_title}`
+- Music: `{artist}/{album} ({year})/{track2} - {title}`
 
-**Custom example:**
+**Custom examples:**
 ```bash
+# Movie with quality tag
 file-renamer config set-template movie "{title} ({year}) [{quality}]"
 # Result: The Matrix (1999) [1080p].mkv
+
+# Music with disc number
+file-renamer config set-template music "{artist}/{album}/Disc {disc2}/{track2} - {title}"
+# Result: Pink Floyd/The Wall/Disc 02/06 - Comfortably Numb.flac
 ```
 
 ## Documentation
