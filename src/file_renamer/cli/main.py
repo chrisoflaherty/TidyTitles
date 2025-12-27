@@ -83,6 +83,13 @@ def cli() -> None:
     is_flag=True,
     help="Automatically select first match when multiple results found",
 )
+@click.option(
+    "--provider",
+    "-p",
+    type=click.Choice(["tmdb", "tvdb", "auto"]),
+    default="auto",
+    help="Metadata provider (tmdb, tvdb, or auto based on config)",
+)
 def rename(
     path: Path,
     media_type: str,
@@ -91,6 +98,7 @@ def rename(
     dry_run: bool,
     yes: bool,
     auto_select: bool,
+    provider: str,
 ) -> None:
     """Rename media files in PATH.
 
@@ -136,7 +144,7 @@ def rename(
         force_type = MediaType.TV_EPISODE
 
     # Run async processing
-    asyncio.run(_process_files(files, force_type, output, dry_run, yes, auto_select, config))
+    asyncio.run(_process_files(files, force_type, output, dry_run, yes, auto_select, config, provider))
 
 
 class DummyTVProvider:
@@ -236,6 +244,7 @@ async def _process_files(
     yes: bool,
     auto_select: bool,
     config: ConfigService,
+    provider: str = "auto",
 ) -> None:
     """Process files asynchronously."""
     settings = config.settings
@@ -249,31 +258,52 @@ async def _process_files(
     )
     renamer = FileRenamer(dry_run=dry_run)
 
-    # Create providers based on available API keys
+    # Create providers based on --provider flag and available API keys
     tmdb = None
     tvdb = None
     movie_provider = DummyMovieProvider()
     tv_provider = DummyTVProvider()
 
-    if settings.api.tmdb_api_key:
-        tmdb = TMDBClient(settings.api.tmdb_api_key, cache)
-    if settings.api.tvdb_api_key:
-        tvdb = TVDBClient(settings.api.tvdb_api_key, cache)
+    # Only create clients for requested provider(s)
+    if provider == "tmdb" or provider == "auto":
+        if settings.api.tmdb_api_key:
+            tmdb = TMDBClient(settings.api.tmdb_api_key, cache)
+        elif provider == "tmdb":
+            console.print("[red]Error:[/red] TMDB API key not configured.")
+            raise SystemExit(1)
+
+    if provider == "tvdb" or provider == "auto":
+        if settings.api.tvdb_api_key:
+            tvdb = TVDBClient(settings.api.tvdb_api_key, cache)
+        elif provider == "tvdb":
+            console.print("[red]Error:[/red] TVDB API key not configured.")
+            raise SystemExit(1)
 
     try:
-        # Enter async contexts for available providers
+        # Enter async contexts and assign providers based on --provider flag
         if tmdb:
             await tmdb.__aenter__()
-            movie_provider = tmdb
-            # Also use TMDB for TV if TVDB not available
-            if not tvdb:
-                tv_provider = tmdb
         if tvdb:
             await tvdb.__aenter__()
+
+        if provider == "tmdb":
+            # Use TMDB for everything
+            movie_provider = tmdb
+            tv_provider = tmdb
+        elif provider == "tvdb":
+            # Use TVDB for everything
+            movie_provider = tvdb
             tv_provider = tvdb
-            # Also use TVDB for movies if TMDB not available
-            if not tmdb:
-                movie_provider = tvdb
+        else:
+            # Auto mode: use best provider for each type with fallbacks
+            if tmdb:
+                movie_provider = tmdb
+                if not tvdb:
+                    tv_provider = tmdb
+            if tvdb:
+                tv_provider = tvdb
+                if not tmdb:
+                    movie_provider = tvdb
 
         # Parse conflict resolution strategy
         try:
