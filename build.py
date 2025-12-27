@@ -169,10 +169,10 @@ def create_windows_installer() -> bool:
         # Update version in NSI file before building
         print(f"   Building installer for version {APP_VERSION}...")
 
+        # Run from project root with absolute path to script
         result = subprocess.run(
-            [makensis_cmd, f'-DAPP_VERSION={APP_VERSION}', str(nsi_path)],
-            check=True,
-            cwd=nsi_path.parent
+            [makensis_cmd, f'-DAPP_VERSION={APP_VERSION}', str(nsi_path.resolve())],
+            check=True
         )
         return result.returncode == 0
     except subprocess.CalledProcessError as e:
