@@ -28,6 +28,7 @@ from file_renamer.providers.musicbrainz import MusicBrainzClient
 from file_renamer.providers.tmdb import TMDBClient
 from file_renamer.providers.tvdb import TVDBClient
 from file_renamer.services.config_service import ConfigService
+from file_renamer.services.cover_art import CoverArtDownloader
 from file_renamer.services.rename_service import RenameService, VIDEO_EXTENSIONS
 
 console = Console()
@@ -92,6 +93,12 @@ def cli() -> None:
     default="auto",
     help="Metadata provider (tmdb, tvdb, musicbrainz, or auto based on config)",
 )
+@click.option(
+    "--cover-art",
+    "-c",
+    is_flag=True,
+    help="Download cover art (posters/album covers) after renaming",
+)
 def rename(
     path: Path,
     media_type: str,
@@ -101,6 +108,7 @@ def rename(
     yes: bool,
     auto_select: bool,
     provider: str,
+    cover_art: bool,
 ) -> None:
     """Rename media files in PATH.
 
@@ -465,8 +473,24 @@ async def _process_files(
         # Show results
         _show_results(operations)
 
-        # Save history for undo
+        # Download cover art if requested
         completed_ops = [op for op in operations if op.status == RenameStatus.COMPLETED]
+        if cover_art and completed_ops and not dry_run:
+            console.print("\n[dim]Downloading cover art...[/dim]")
+            downloader = CoverArtDownloader(
+                filename=settings.cover_art.filename,
+                music_filename=settings.cover_art.music_filename,
+                overwrite=settings.cover_art.overwrite,
+                size=settings.cover_art.size,
+            )
+            downloaded = await downloader.download_for_operations(
+                operations,
+                progress_callback=lambda c, t, m: console.print(f"  [dim]{m}[/dim]"),
+            )
+            if downloaded:
+                console.print(f"[green]Downloaded {len(downloaded)} cover art file(s)[/green]")
+
+        # Save history for undo (completed_ops already defined above)
         if completed_ops:
             history_data = []
             for op in completed_ops:

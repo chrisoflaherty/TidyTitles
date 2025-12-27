@@ -8,6 +8,7 @@ from typing import Optional, Union
 
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -50,6 +51,7 @@ from file_renamer.providers.musicbrainz import MusicBrainzClient
 from file_renamer.providers.tmdb import TMDBClient
 from file_renamer.providers.tvdb import TVDBClient
 from file_renamer.services.config_service import ConfigService
+from file_renamer.services.cover_art import CoverArtDownloader
 from file_renamer.services.rename_service import RenameService, VIDEO_EXTENSIONS
 
 
@@ -695,6 +697,16 @@ class FileRenamerApp(QMainWindow):
         self.provider_combo.setMinimumWidth(150)
         options_bar.addWidget(self.provider_combo)
 
+        options_bar.addSpacing(20)
+
+        self.recursive_checkbox = QCheckBox("Recursive")
+        self.recursive_checkbox.setToolTip("Scan subdirectories when loading folders")
+        options_bar.addWidget(self.recursive_checkbox)
+
+        self.cover_art_checkbox = QCheckBox("Cover Art")
+        self.cover_art_checkbox.setToolTip("Download movie posters and album covers")
+        options_bar.addWidget(self.cover_art_checkbox)
+
         options_bar.addStretch()
 
         settings_btn = QPushButton("Settings")
@@ -789,6 +801,7 @@ class FileRenamerApp(QMainWindow):
 
         # Define media extensions
         media_exts = VIDEO_EXTENSIONS | MUSIC_EXTENSIONS
+        recursive = self.recursive_checkbox.isChecked()
 
         new_files = []
         for url in urls:
@@ -800,8 +813,9 @@ class FileRenamerApp(QMainWindow):
                     new_files.append(path)
             elif path.is_dir():
                 # Add all media files from the directory
+                glob_method = path.rglob if recursive else path.glob
                 for ext in media_exts:
-                    new_files.extend(path.glob(f"*{ext}"))
+                    new_files.extend(glob_method(f"*{ext}"))
 
         if new_files:
             self._add_files(new_files)
@@ -878,8 +892,10 @@ class FileRenamerApp(QMainWindow):
         else:
             self.files = []
             media_exts = VIDEO_EXTENSIONS | MUSIC_EXTENSIONS
+            recursive = self.recursive_checkbox.isChecked()
+            glob_method = path.rglob if recursive else path.glob
             for ext in media_exts:
-                self.files.extend(path.glob(f"*{ext}"))
+                self.files.extend(glob_method(f"*{ext}"))
             self.files = sorted(self.files)
 
         # Update UI
@@ -1111,19 +1127,53 @@ class FileRenamerApp(QMainWindow):
         # Update table
         self._update_table_with_operations()
 
+        # Download cover art if enabled
+        completed_ops = [op for op in self.operations if op.status == RenameStatus.COMPLETED]
+        cover_art_count = 0
+        if self.cover_art_checkbox.isChecked() and completed_ops:
+            settings = self.config.settings
+            downloader = CoverArtDownloader(
+                filename=settings.cover_art.filename,
+                music_filename=settings.cover_art.music_filename,
+                overwrite=settings.cover_art.overwrite,
+                size=settings.cover_art.size,
+            )
+
+            # Show progress for cover art download
+            art_progress = QProgressDialog(
+                "Downloading cover art...", "Cancel", 0, len(completed_ops), self
+            )
+            art_progress.setWindowTitle("Downloading Art")
+            art_progress.setWindowModality(Qt.WindowModal)
+            art_progress.setMinimumDuration(0)
+            art_progress.show()
+
+            def art_progress_callback(current: int, total: int, msg: str) -> None:
+                art_progress.setValue(current)
+                art_progress.setLabelText(msg)
+                from PySide6.QtWidgets import QApplication
+                QApplication.processEvents()
+
+            downloaded = asyncio.run(
+                downloader.download_for_operations(self.operations, art_progress_callback)
+            )
+            cover_art_count = len(downloaded)
+            art_progress.close()
+
         # Show results
-        completed = sum(1 for op in self.operations if op.status == RenameStatus.COMPLETED)
+        completed = len(completed_ops)
         failed = sum(1 for op in self.operations if op.status == RenameStatus.FAILED)
 
         message = f"Completed: {completed}"
         if failed:
             message += f"\nFailed: {failed}"
+        if cover_art_count:
+            message += f"\nCover art downloaded: {cover_art_count}"
 
         QMessageBox.information(self, "Rename Complete", message)
         self.rename_btn.setEnabled(False)
 
-        # Store completed operations for undo
-        completed_ops = [op for op in self.operations if op.status == RenameStatus.COMPLETED]
+        # Store completed operations for undo (completed_ops already defined above)
         if completed_ops:
             self.last_completed_operations = completed_ops
             self.undo_btn.setEnabled(True)

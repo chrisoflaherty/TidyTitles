@@ -36,6 +36,16 @@ class AssociatedFilesSettings(BaseModel):
     images: bool = True
 
 
+class CoverArtSettings(BaseModel):
+    """Cover art download configuration."""
+
+    enabled: bool = False
+    filename: str = "poster.jpg"
+    music_filename: str = "cover.jpg"
+    overwrite: bool = False
+    size: str = "w500"  # TMDB sizes: w92, w154, w185, w342, w500, w780, original
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -49,6 +59,7 @@ class Settings(BaseSettings):
     associated_files: AssociatedFilesSettings = Field(
         default_factory=AssociatedFilesSettings
     )
+    cover_art: CoverArtSettings = Field(default_factory=CoverArtSettings)
 
     # Behavior settings
     dry_run: bool = False
@@ -108,6 +119,8 @@ class ConfigService:
                 config_data["api"] = raw_config["api"]
             if "associated_files" in raw_config:
                 config_data["associated_files"] = raw_config["associated_files"]
+            if "cover_art" in raw_config:
+                config_data["cover_art"] = raw_config["cover_art"]
             if "behavior" in raw_config:
                 behavior = raw_config["behavior"]
                 if "dry_run" in behavior:
@@ -164,6 +177,13 @@ class ConfigService:
             f"subtitles = {str(settings.associated_files.subtitles).lower()}",
             f"nfo = {str(settings.associated_files.nfo).lower()}",
             f"images = {str(settings.associated_files.images).lower()}",
+            "",
+            "[cover_art]",
+            f"enabled = {str(settings.cover_art.enabled).lower()}",
+            f'filename = "{settings.cover_art.filename}"',
+            f'music_filename = "{settings.cover_art.music_filename}"',
+            f"overwrite = {str(settings.cover_art.overwrite).lower()}",
+            f'size = "{settings.cover_art.size}"',
             "",
             "[behavior]",
             f"dry_run = {str(settings.dry_run).lower()}",
