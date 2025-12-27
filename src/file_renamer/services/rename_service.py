@@ -19,18 +19,20 @@ from file_renamer.core.models import (
     MediaType,
     Movie,
     RenameOperation,
+    Track,
     TVShow,
 )
+from file_renamer.core.music_parser import MusicParser, create_music_parser, is_music_file
 from file_renamer.core.parser import FilenameParser
 from file_renamer.core.renamer import FileRenamer
 from file_renamer.core.template import TemplateEngine
-from file_renamer.providers.base import MovieProvider, TVProvider
+from file_renamer.providers.base import MovieProvider, MusicProvider, TVProvider
 from file_renamer.services.config_service import AssociatedFilesSettings
 
 
 # Type alias for selection callback
 # Takes list of options and filename, returns selected index or None to skip
-SelectionCallback = Callable[[list[Union[Movie, TVShow]], str], Optional[int]]
+SelectionCallback = Callable[[list[Union[Movie, TVShow, Track]], str], Optional[int]]
 
 
 # Common video file extensions
@@ -49,6 +51,20 @@ VIDEO_EXTENSIONS = {
     ".m2ts",
 }
 
+# Common music file extensions
+MUSIC_EXTENSIONS = {
+    ".mp3",
+    ".flac",
+    ".m4a",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".aiff",
+    ".wma",
+    ".aac",
+    ".ape",
+}
+
 
 class RenameService:
     """Main service orchestrating the rename workflow."""
@@ -63,6 +79,8 @@ class RenameService:
         associated_files_settings: Optional[AssociatedFilesSettings] = None,
         conflict_strategy: ConflictStrategy = ConflictStrategy.SKIP,
         selection_callback: Optional[SelectionCallback] = None,
+        music_provider: Optional[MusicProvider] = None,
+        music_parser: Optional[MusicParser] = None,
     ) -> None:
         """Initialize the rename service.
 
@@ -75,6 +93,8 @@ class RenameService:
             associated_files_settings: Settings for associated file handling.
             conflict_strategy: Strategy for resolving filename conflicts.
             selection_callback: Optional callback for selecting from multiple search results.
+            music_provider: Optional music metadata provider.
+            music_parser: Optional music file tag parser.
         """
         self._parser = parser
         self._movie_provider = movie_provider
@@ -84,28 +104,41 @@ class RenameService:
         self._associated_files_settings = associated_files_settings or AssociatedFilesSettings()
         self._conflict_strategy = conflict_strategy
         self._selection_callback = selection_callback
+        self._music_provider = music_provider
+        self._music_parser = music_parser or create_music_parser()
 
     def scan_directory(
         self,
         directory: Path,
         recursive: bool = False,
+        media_type: Optional[MediaType] = None,
     ) -> list[Path]:
-        """Scan a directory for video files.
+        """Scan a directory for media files.
 
         Args:
             directory: Directory to scan.
             recursive: If True, scan subdirectories.
+            media_type: If set, only scan for this media type. If None, scan for all.
 
         Returns:
-            List of video file paths.
+            List of media file paths.
         """
         files: list[Path] = []
 
+        # Determine which extensions to scan for
+        if media_type == MediaType.MUSIC:
+            extensions = MUSIC_EXTENSIONS
+        elif media_type in (MediaType.MOVIE, MediaType.TV_EPISODE):
+            extensions = VIDEO_EXTENSIONS
+        else:
+            # Scan for all media types
+            extensions = VIDEO_EXTENSIONS | MUSIC_EXTENSIONS
+
         if recursive:
-            for ext in VIDEO_EXTENSIONS:
+            for ext in extensions:
                 files.extend(directory.rglob(f"*{ext}"))
         else:
-            for ext in VIDEO_EXTENSIONS:
+            for ext in extensions:
                 files.extend(directory.glob(f"*{ext}"))
 
         return sorted(files)
@@ -132,7 +165,18 @@ class RenameService:
                 progress_callback(i + 1, total, f"Parsing: {path.name}")
 
             parsed = self._parser.parse(path.name)
-            media_files.append(MediaFile(path=path, parsed_info=parsed))
+
+            # For music files, also parse tags
+            parsed_music = None
+            if is_music_file(path):
+                parsed_music = self._music_parser.parse(path)
+                # Set media type to music if not already detected
+                if parsed.media_type == MediaType.UNKNOWN:
+                    parsed.media_type = MediaType.MUSIC
+
+            media_files.append(
+                MediaFile(path=path, parsed_info=parsed, parsed_music_info=parsed_music)
+            )
 
         return media_files
 
@@ -166,6 +210,8 @@ class RenameService:
                 await self._fetch_movie_metadata(media_file)
             elif media_type == MediaType.TV_EPISODE:
                 await self._fetch_tv_metadata(media_file)
+            elif media_type == MediaType.MUSIC:
+                await self._fetch_music_metadata(media_file)
 
         return media_files
 
@@ -221,6 +267,47 @@ class RenameService:
             if episode:
                 media_file.matched_metadata = episode
 
+    async def _fetch_music_metadata(self, media_file: MediaFile) -> None:
+        """Fetch music metadata for a media file."""
+        if not self._music_provider:
+            return
+
+        parsed = media_file.parsed_music_info
+        if not parsed:
+            return
+
+        # Search using info from tags (preferred) or filename
+        title = parsed.title or ""
+        artist = parsed.artist
+        album = parsed.album
+
+        if not title:
+            return
+
+        # Search for recordings
+        tracks = await self._music_provider.search_recording(
+            title=title,
+            artist=artist,
+            album=album,
+        )
+
+        if not tracks:
+            return
+
+        # If only one result, use it automatically
+        if len(tracks) == 1:
+            media_file.matched_metadata = tracks[0]
+            return
+
+        # Multiple results - use selection callback if available
+        if self._selection_callback:
+            selected_index = self._selection_callback(tracks, media_file.filename)
+            if selected_index is not None and 0 <= selected_index < len(tracks):
+                media_file.matched_metadata = tracks[selected_index]
+        else:
+            # No callback - use first match (default behavior)
+            media_file.matched_metadata = tracks[0]
+
     def generate_preview(
         self,
         media_files: list[MediaFile],
@@ -259,6 +346,12 @@ class RenameService:
                 )
             elif isinstance(media_file.matched_metadata, Episode):
                 new_name = self._template.render_episode(
+                    media_file.matched_metadata,
+                    media_file.extension,
+                    extra_context,
+                )
+            elif isinstance(media_file.matched_metadata, Track):
+                new_name = self._template.render_track(
                     media_file.matched_metadata,
                     media_file.extension,
                     extra_context,

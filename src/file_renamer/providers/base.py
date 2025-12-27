@@ -2,7 +2,7 @@
 
 from typing import Optional, Protocol
 
-from file_renamer.core.models import Episode, Movie, TVShow
+from file_renamer.core.models import Album, Episode, Movie, Track, TVShow
 
 
 class MovieProvider(Protocol):
@@ -43,4 +43,33 @@ class TVProvider(Protocol):
         episode: int,
     ) -> Optional[Episode]:
         """Get episode details."""
+        ...
+
+
+class MusicProvider(Protocol):
+    """Protocol for music metadata providers."""
+
+    async def search_recording(
+        self,
+        title: str,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+    ) -> list[Track]:
+        """Search for recordings (tracks) by title and optional artist/album."""
+        ...
+
+    async def search_release(
+        self,
+        album: str,
+        artist: Optional[str] = None,
+    ) -> list[Album]:
+        """Search for releases (albums) by title and optional artist."""
+        ...
+
+    async def get_recording(self, recording_id: str) -> Optional[Track]:
+        """Get recording details by MusicBrainz ID."""
+        ...
+
+    async def get_release(self, release_id: str) -> Optional[Album]:
+        """Get release details by MusicBrainz ID."""
         ...

@@ -29,14 +29,16 @@ from PySide6.QtWidgets import (
 
 from file_renamer.core.conflict_resolution import ConflictStrategy
 from file_renamer.core.models import MediaType, RenameOperation, RenameStatus
+from file_renamer.core.music_parser import MUSIC_EXTENSIONS
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
 from file_renamer.core.template import TemplateEngine
 from file_renamer.providers.cache import APICache
+from file_renamer.providers.musicbrainz import MusicBrainzClient
 from file_renamer.providers.tmdb import TMDBClient
 from file_renamer.providers.tvdb import TVDBClient
 from file_renamer.services.config_service import ConfigService
-from file_renamer.services.rename_service import RenameService
+from file_renamer.services.rename_service import RenameService, VIDEO_EXTENSIONS
 
 
 class DummyMovieProvider:
@@ -62,6 +64,24 @@ class DummyTVProvider:
         return None
 
 
+class DummyMusicProvider:
+    """Dummy music provider when MusicBrainz is not needed."""
+
+    async def search_recording(
+        self, title: str, artist: Optional[str] = None, album: Optional[str] = None
+    ) -> list:
+        return []
+
+    async def search_release(self, album: str, artist: Optional[str] = None) -> list:
+        return []
+
+    async def get_recording(self, recording_id: str):
+        return None
+
+    async def get_release(self, release_id: str):
+        return None
+
+
 class SettingsDialog(QDialog):
     """Dialog for editing application settings including templates."""
 
@@ -82,6 +102,18 @@ class SettingsDialog(QDialog):
         "episode_title": "Pilot",
         "quality": "720p",
         "source": "HDTV",
+    }
+    SAMPLE_MUSIC = {
+        "title": "Comfortably Numb",
+        "artist": "Pink Floyd",
+        "album": "The Wall",
+        "album_artist": "Pink Floyd",
+        "year": 1979,
+        "track": 6,
+        "track2": "06",
+        "disc": 2,
+        "disc2": "02",
+        "genre": "Progressive Rock",
     }
 
     def __init__(self, config: "ConfigService", parent=None) -> None:
@@ -136,6 +168,20 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(tv_group)
 
+        # Music template
+        music_group = QGroupBox("Music Template")
+        music_layout = QVBoxLayout(music_group)
+
+        self.music_input = QLineEdit()
+        self.music_input.textChanged.connect(self._update_music_preview)
+        music_layout.addWidget(self.music_input)
+
+        self.music_preview = QLabel()
+        self.music_preview.setStyleSheet("color: gray; font-style: italic;")
+        music_layout.addWidget(self.music_preview)
+
+        layout.addWidget(music_group)
+
         # API Keys section
         api_group = QGroupBox("API Keys")
         api_layout = QFormLayout(api_group)
@@ -185,6 +231,7 @@ class SettingsDialog(QDialog):
         placeholders_text = QLabel(
             "<b>Common:</b> {title}, {year}, {quality}, {source}<br>"
             "<b>TV Only:</b> {season}, {season2}, {episode}, {episode2}, {episode_title}<br>"
+            "<b>Music Only:</b> {artist}, {album}, {album_artist}, {track}, {track2}, {disc}, {disc2}, {genre}<br>"
             "<b>Formatters:</b> {title|lower}, {title|upper}, {episode|pad:3}"
         )
         placeholders_text.setWordWrap(True)
@@ -207,6 +254,10 @@ class SettingsDialog(QDialog):
         self.tv_input.setText(settings.templates.tv)
         self._update_movie_preview()
         self._update_tv_preview()
+
+        # Load music template
+        self.music_input.setText(settings.templates.music)
+        self._update_music_preview()
 
         # Load API keys
         self.tmdb_input.setText(settings.api.tmdb_api_key)
@@ -245,21 +296,41 @@ class SettingsDialog(QDialog):
             preview = self.template_engine.render(template, self.SAMPLE_TV)
             self.tv_preview.setText(f"Preview: {preview}.mkv")
 
+    def _update_music_preview(self) -> None:
+        """Update music template preview."""
+        template = self.music_input.text()
+
+        # Validate template
+        is_valid, errors = self.template_engine.validate_template(template)
+
+        if not is_valid:
+            self.music_preview.setText(f"Error: {errors[0]}")
+            self.music_preview.setStyleSheet("color: red;")
+        else:
+            self.music_preview.setStyleSheet("color: gray; font-style: italic;")
+            # Generate preview
+            preview = self.template_engine.render(template, self.SAMPLE_MUSIC)
+            self.music_preview.setText(f"Preview: {preview}.flac")
+
     def _save_settings(self) -> None:
         """Save settings and close dialog."""
         movie_template = self.movie_input.text()
         tv_template = self.tv_input.text()
+        music_template = self.music_input.text()
 
-        # Validate both templates
+        # Validate all templates
         movie_valid, movie_errors = self.template_engine.validate_template(movie_template)
         tv_valid, tv_errors = self.template_engine.validate_template(tv_template)
+        music_valid, music_errors = self.template_engine.validate_template(music_template)
 
-        if not movie_valid or not tv_valid:
+        if not movie_valid or not tv_valid or not music_valid:
             errors = []
             if not movie_valid:
                 errors.append(f"Movie: {'; '.join(movie_errors)}")
             if not tv_valid:
                 errors.append(f"TV: {'; '.join(tv_errors)}")
+            if not music_valid:
+                errors.append(f"Music: {'; '.join(music_errors)}")
             QMessageBox.warning(
                 self, "Invalid Templates", "\n".join(errors)
             )
@@ -269,6 +340,7 @@ class SettingsDialog(QDialog):
         settings = self.config.settings
         settings.templates.movie = movie_template
         settings.templates.tv = tv_template
+        settings.templates.music = music_template
 
         # Save API keys
         settings.api.tmdb_api_key = self.tmdb_input.text().strip()
@@ -329,21 +401,27 @@ class FetchWorker(QThread):
         template = TemplateEngine(
             movie_template=settings.templates.movie,
             tv_template=settings.templates.tv,
+            music_template=settings.templates.music,
         )
 
         # Only create providers that have keys and are selected
         tmdb = None
         tvdb = None
+        musicbrainz = None
         movie_provider = DummyMovieProvider()
         tv_provider = DummyTVProvider()
+        music_provider = DummyMusicProvider()
 
         use_tmdb = self.provider in ("tmdb", "auto") and settings.api.tmdb_api_key
         use_tvdb = self.provider in ("tvdb", "auto") and settings.api.tvdb_api_key
+        use_musicbrainz = self.provider in ("musicbrainz", "auto")
 
         if use_tmdb:
             tmdb = TMDBClient(settings.api.tmdb_api_key, cache)
         if use_tvdb:
             tvdb = TVDBClient(settings.api.tvdb_api_key, cache)
+        if use_musicbrainz:
+            musicbrainz = MusicBrainzClient(cache)
 
         def progress_callback(current: int, total: int, message: str) -> None:
             self.progress.emit(current, total, message)
@@ -362,6 +440,9 @@ class FetchWorker(QThread):
                 # Also use TVDB for movies if TMDB not available
                 if not tmdb:
                     movie_provider = tvdb
+            if musicbrainz:
+                await musicbrainz.__aenter__()
+                music_provider = musicbrainz
 
             # Parse conflict resolution strategy
             try:
@@ -376,6 +457,7 @@ class FetchWorker(QThread):
                 template_engine=template,
                 associated_files_settings=settings.associated_files,
                 conflict_strategy=conflict_strategy,
+                music_provider=music_provider,
             )
 
             self._operations = await service.process_files(
@@ -389,6 +471,8 @@ class FetchWorker(QThread):
                 await tmdb.__aexit__(None, None, None)
             if tvdb:
                 await tvdb.__aexit__(None, None, None)
+            if musicbrainz:
+                await musicbrainz.__aexit__(None, None, None)
 
 
 class FileRenamerApp(QMainWindow):
@@ -441,7 +525,7 @@ class FileRenamerApp(QMainWindow):
 
         options_bar.addWidget(QLabel("Type:"))
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["Auto-detect", "Movies", "TV Shows"])
+        self.type_combo.addItems(["Auto-detect", "Movies", "TV Shows", "Music"])
         self.type_combo.setMinimumWidth(120)
         options_bar.addWidget(self.type_combo)
 
@@ -518,15 +602,20 @@ class FileRenamerApp(QMainWindow):
         self.provider_combo.clear()
 
         if has_tmdb and has_tvdb:
-            self.provider_combo.addItem("Auto (TMDB + TVDB)", "auto")
+            self.provider_combo.addItem("Auto (TMDB + TVDB + MusicBrainz)", "auto")
             self.provider_combo.addItem("TMDB (Movies)", "tmdb")
             self.provider_combo.addItem("TVDB (TV Shows)", "tvdb")
+            self.provider_combo.addItem("MusicBrainz (Music)", "musicbrainz")
         elif has_tmdb:
+            self.provider_combo.addItem("Auto (TMDB + MusicBrainz)", "auto")
             self.provider_combo.addItem("TMDB", "tmdb")
+            self.provider_combo.addItem("MusicBrainz (Music)", "musicbrainz")
         elif has_tvdb:
+            self.provider_combo.addItem("Auto (TVDB + MusicBrainz)", "auto")
             self.provider_combo.addItem("TVDB", "tvdb")
+            self.provider_combo.addItem("MusicBrainz (Music)", "musicbrainz")
         else:
-            self.provider_combo.addItem("No API keys configured", "none")
+            self.provider_combo.addItem("MusicBrainz (Music only)", "musicbrainz")
 
     def dragEnterEvent(self, event) -> None:
         """Handle drag enter event."""
@@ -539,33 +628,39 @@ class FileRenamerApp(QMainWindow):
         if not urls:
             return
 
-        # Define video extensions
-        video_exts = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm", ".flv", ".mpg", ".mpeg", ".ts", ".m2ts"}
+        # Define media extensions
+        media_exts = VIDEO_EXTENSIONS | MUSIC_EXTENSIONS
 
         new_files = []
         for url in urls:
             path = Path(url.toLocalFile())
 
             if path.is_file():
-                # Check if it's a video file
-                if path.suffix.lower() in video_exts:
+                # Check if it's a media file
+                if path.suffix.lower() in media_exts:
                     new_files.append(path)
             elif path.is_dir():
-                # Add all video files from the directory
-                for ext in video_exts:
+                # Add all media files from the directory
+                for ext in media_exts:
                     new_files.extend(path.glob(f"*{ext}"))
 
         if new_files:
             self._add_files(new_files)
         else:
-            self.status_label.setText("No video files found in dropped items")
+            self.status_label.setText("No media files found in dropped items")
 
     def _on_browse(self) -> None:
         """Handle browse button click - supports both folders and files."""
         # Show dialog with option to select folder or files
         dialog = QFileDialog(self, "Select Files or Folder", str(Path.home()))
         dialog.setFileMode(QFileDialog.ExistingFiles)  # Allow multiple file selection
-        dialog.setNameFilter("Video Files (*.mkv *.mp4 *.avi *.mov *.m4v *.webm *.flv *.mpg *.mpeg *.ts *.m2ts);;All Files (*)")
+        dialog.setNameFilter(
+            "Media Files (*.mkv *.mp4 *.avi *.mov *.m4v *.webm *.flv *.mpg *.mpeg *.ts *.m2ts "
+            "*.mp3 *.flac *.m4a *.ogg *.opus *.wav *.aiff *.wma *.aac *.ape);;"
+            "Video Files (*.mkv *.mp4 *.avi *.mov *.m4v *.webm *.flv *.mpg *.mpeg *.ts *.m2ts);;"
+            "Audio Files (*.mp3 *.flac *.m4a *.ogg *.opus *.wav *.aiff *.wma *.aac *.ape);;"
+            "All Files (*)"
+        )
 
         if dialog.exec():
             selected_files = [Path(f) for f in dialog.selectedFiles()]
@@ -623,7 +718,8 @@ class FileRenamerApp(QMainWindow):
             self.files = [path]
         else:
             self.files = []
-            for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+            media_exts = VIDEO_EXTENSIONS | MUSIC_EXTENSIONS
+            for ext in media_exts:
                 self.files.extend(path.glob(f"*{ext}"))
             self.files = sorted(self.files)
 
@@ -657,7 +753,12 @@ class FileRenamerApp(QMainWindow):
         """Update the table with just filenames (before fetching)."""
         self.table.setRowCount(len(self.files))
         for i, f in enumerate(self.files):
-            self.table.setItem(i, 0, QTableWidgetItem("Video"))
+            # Determine file type based on extension
+            if f.suffix.lower() in MUSIC_EXTENSIONS:
+                file_type = "Audio"
+            else:
+                file_type = "Video"
+            self.table.setItem(i, 0, QTableWidgetItem(file_type))
             self.table.setItem(i, 1, QTableWidgetItem(f.name))
             self.table.setItem(i, 2, QTableWidgetItem(""))
             self.table.setItem(i, 3, QTableWidgetItem("Pending"))
@@ -682,6 +783,8 @@ class FileRenamerApp(QMainWindow):
             force_type = MediaType.MOVIE
         elif self.type_combo.currentIndex() == 2:
             force_type = MediaType.TV_EPISODE
+        elif self.type_combo.currentIndex() == 3:
+            force_type = MediaType.MUSIC
 
         # Disable fetch button
         self.fetch_btn.setEnabled(False)
@@ -749,8 +852,12 @@ class FileRenamerApp(QMainWindow):
 
         row = 0
         for op in self.operations:
-            # Main video file
-            self.table.setItem(row, 0, QTableWidgetItem("Video"))
+            # Determine file type based on extension
+            if op.source.suffix.lower() in MUSIC_EXTENSIONS:
+                file_type = "Audio"
+            else:
+                file_type = "Video"
+            self.table.setItem(row, 0, QTableWidgetItem(file_type))
             self.table.setItem(row, 1, QTableWidgetItem(op.source.name))
             self.table.setItem(row, 2, QTableWidgetItem(op.destination.name))
             self.table.setItem(row, 3, QTableWidgetItem(op.status.name.capitalize()))

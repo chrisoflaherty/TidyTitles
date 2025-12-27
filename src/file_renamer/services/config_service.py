@@ -16,6 +16,7 @@ class TemplateSettings(BaseModel):
 
     movie: str = "{title} ({year})"
     tv: str = "{title} - S{season2}E{episode2} - {episode_title}"
+    music: str = "{artist}/{album} ({year})/{track2} - {title}"
 
 
 class APISettings(BaseModel):
@@ -58,6 +59,7 @@ class Settings(BaseSettings):
     # Provider preferences
     movie_provider: str = "tmdb"
     tv_provider: str = "tvdb"
+    music_provider: str = "musicbrainz"
 
 
 class ConfigService:
@@ -122,6 +124,8 @@ class ConfigService:
                     config_data["movie_provider"] = providers["movie"]
                 if "tv" in providers:
                     config_data["tv_provider"] = providers["tv"]
+                if "music" in providers:
+                    config_data["music_provider"] = providers["music"]
 
         # Create settings (environment variables take precedence)
         self._settings = Settings(**config_data)
@@ -148,6 +152,7 @@ class ConfigService:
             "[templates]",
             f'movie = "{settings.templates.movie}"',
             f'tv = "{settings.templates.tv}"',
+            f'music = "{settings.templates.music}"',
             "",
             "[api]",
             f'tmdb_api_key = "{settings.api.tmdb_api_key}"',
@@ -169,6 +174,7 @@ class ConfigService:
             "[providers]",
             f'movie = "{settings.movie_provider}"',
             f'tv = "{settings.tv_provider}"',
+            f'music = "{settings.music_provider}"',
         ]
         return "\n".join(lines) + "\n"
 

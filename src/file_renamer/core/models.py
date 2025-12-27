@@ -12,6 +12,7 @@ class MediaType(Enum):
 
     MOVIE = auto()
     TV_EPISODE = auto()
+    MUSIC = auto()
     UNKNOWN = auto()
 
 
@@ -84,12 +85,70 @@ class Episode:
 
 
 @dataclass
+class Artist:
+    """Music artist metadata."""
+
+    id: str  # MusicBrainz uses UUIDs
+    name: str
+    sort_name: Optional[str] = None
+    disambiguation: Optional[str] = None
+    provider: str = "musicbrainz"
+
+
+@dataclass
+class Album:
+    """Music album (release) metadata."""
+
+    id: str
+    title: str
+    artist: Artist
+    year: Optional[int] = None
+    release_date: Optional[date] = None
+    total_tracks: Optional[int] = None
+    total_discs: Optional[int] = None
+    cover_art_url: Optional[str] = None
+    provider: str = "musicbrainz"
+
+
+@dataclass
+class Track:
+    """Music track (recording) metadata."""
+
+    id: str
+    title: str
+    artist: Artist
+    album: Optional[Album] = None
+    track_number: Optional[int] = None
+    disc_number: Optional[int] = None
+    duration_ms: Optional[int] = None
+    genres: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ParsedMusicInfo:
+    """Information extracted from music file tags or filename."""
+
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    album_artist: Optional[str] = None
+    year: Optional[int] = None
+    track_number: Optional[int] = None
+    disc_number: Optional[int] = None
+    genre: Optional[str] = None
+    duration_ms: Optional[int] = None
+    raw_filename: str = ""
+    source: str = "unknown"  # "tags" or "filename"
+
+
+@dataclass
 class MediaFile:
     """Represents a media file to be renamed."""
 
     path: Path
     parsed_info: ParsedInfo
-    matched_metadata: Optional[Union[Movie, Episode]] = None
+    parsed_music_info: Optional[ParsedMusicInfo] = None
+    matched_metadata: Optional[Union[Movie, Episode, Track]] = None
 
     @property
     def filename(self) -> str:

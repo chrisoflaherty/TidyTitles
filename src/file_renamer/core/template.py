@@ -4,7 +4,7 @@ import re
 from typing import Any, Callable, Optional
 
 from .exceptions import TemplateError
-from .models import Episode, Movie
+from .models import Episode, Movie, Track
 
 
 class TemplateEngine:
@@ -36,6 +36,7 @@ class TemplateEngine:
 
     DEFAULT_MOVIE_TEMPLATE = "{title} ({year})"
     DEFAULT_TV_TEMPLATE = "{title} - S{season2}E{episode2} - {episode_title}"
+    DEFAULT_MUSIC_TEMPLATE = "{artist}/{album} ({year})/{track2} - {title}"
 
     PLACEHOLDER_PATTERN = re.compile(
         r"\{(?P<field>\w+)(?:\|(?P<formatter>\w+)(?::(?P<arg>[^}]+))?)?\}"
@@ -56,9 +57,12 @@ class TemplateEngine:
     }
 
     VALID_FIELDS = {
+        # Common fields
         "title",
         "original_title",
         "year",
+        "ext",
+        # Video fields
         "season",
         "season2",
         "episode",
@@ -68,22 +72,33 @@ class TemplateEngine:
         "source",
         "codec",
         "group",
-        "ext",
+        # Music fields
+        "artist",
+        "album",
+        "album_artist",
+        "track",
+        "track2",
+        "disc",
+        "disc2",
+        "genre",
     }
 
     def __init__(
         self,
         movie_template: str = DEFAULT_MOVIE_TEMPLATE,
         tv_template: str = DEFAULT_TV_TEMPLATE,
+        music_template: str = DEFAULT_MUSIC_TEMPLATE,
     ) -> None:
         """Initialize the template engine.
 
         Args:
             movie_template: Template for movie filenames.
             tv_template: Template for TV episode filenames.
+            music_template: Template for music track filenames.
         """
         self.movie_template = movie_template
         self.tv_template = tv_template
+        self.music_template = music_template
 
     def render(self, template: str, context: dict[str, Any]) -> str:
         """Render a template with the given context.
@@ -202,6 +217,51 @@ class TemplateEngine:
 
         return result
 
+    def render_track(
+        self,
+        track: Track,
+        extension: str = "",
+        extra_context: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """Generate a filename for a music track.
+
+        Args:
+            track: Track metadata.
+            extension: File extension (with or without leading dot).
+            extra_context: Additional context values.
+
+        Returns:
+            Generated filename (may include directory path).
+        """
+        context: dict[str, Any] = {
+            "title": track.title,
+            "artist": track.artist.name,
+            "album": track.album.title if track.album else "",
+            "album_artist": track.album.artist.name if track.album else track.artist.name,
+            "year": track.album.year if track.album and track.album.year else "",
+            "track": track.track_number or "",
+            "track2": str(track.track_number or 0).zfill(2),
+            "disc": track.disc_number or "",
+            "disc2": str(track.disc_number or 1).zfill(2),
+            "genre": track.genres[0] if track.genres else "",
+            "ext": extension.lstrip(".") if extension else "",
+        }
+
+        if extra_context:
+            context.update(extra_context)
+
+        result = self.render(self.music_template, context)
+
+        # Clean invalid characters from each path component (preserve slashes)
+        result = self._clean_path(result)
+
+        if extension:
+            ext = extension.lstrip(".")
+            if not result.endswith(f".{ext}"):
+                result += f".{ext}"
+
+        return result
+
     def _clean_path(self, path: str) -> str:
         """Clean invalid characters from a path while preserving directory structure.
 
@@ -259,9 +319,12 @@ class TemplateEngine:
             Dictionary mapping field names to descriptions.
         """
         return {
-            "title": "Movie or TV show title",
+            # Common
+            "title": "Movie, TV show, or track title",
             "original_title": "Original language title",
             "year": "Release year",
+            "ext": "File extension",
+            # Video
             "season": "Season number",
             "season2": "Season number (2 digits, zero-padded)",
             "episode": "Episode number",
@@ -271,7 +334,15 @@ class TemplateEngine:
             "source": "Video source (e.g., BluRay)",
             "codec": "Video codec (e.g., x264)",
             "group": "Release group",
-            "ext": "File extension",
+            # Music
+            "artist": "Track artist name",
+            "album": "Album title",
+            "album_artist": "Album artist (for compilations)",
+            "track": "Track number",
+            "track2": "Track number (2 digits, zero-padded)",
+            "disc": "Disc number",
+            "disc2": "Disc number (2 digits, zero-padded)",
+            "genre": "Music genre",
         }
 
     @classmethod

@@ -22,11 +22,13 @@ from file_renamer.core.models import MediaType, RenameStatus
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
 from file_renamer.core.template import TemplateEngine
+from file_renamer.core.music_parser import MUSIC_EXTENSIONS
 from file_renamer.providers.cache import APICache
+from file_renamer.providers.musicbrainz import MusicBrainzClient
 from file_renamer.providers.tmdb import TMDBClient
 from file_renamer.providers.tvdb import TVDBClient
 from file_renamer.services.config_service import ConfigService
-from file_renamer.services.rename_service import RenameService
+from file_renamer.services.rename_service import RenameService, VIDEO_EXTENSIONS
 
 console = Console()
 
@@ -49,9 +51,9 @@ def cli() -> None:
     "--type",
     "-t",
     "media_type",
-    type=click.Choice(["movie", "tv", "auto"]),
+    type=click.Choice(["movie", "tv", "music", "auto"]),
     default="auto",
-    help="Media type (movie, tv, or auto-detect)",
+    help="Media type (movie, tv, music, or auto-detect)",
 )
 @click.option(
     "--recursive",
@@ -86,9 +88,9 @@ def cli() -> None:
 @click.option(
     "--provider",
     "-p",
-    type=click.Choice(["tmdb", "tvdb", "auto"]),
+    type=click.Choice(["tmdb", "tvdb", "musicbrainz", "auto"]),
     default="auto",
-    help="Metadata provider (tmdb, tvdb, or auto based on config)",
+    help="Metadata provider (tmdb, tvdb, musicbrainz, or auto based on config)",
 )
 def rename(
     path: Path,
@@ -107,31 +109,45 @@ def rename(
     config = get_config_service()
     settings = config.load()
 
-    # Check for API keys
-    if not settings.api.tmdb_api_key and not settings.api.tvdb_api_key:
+    # Check for API keys (not needed for music - MusicBrainz is free)
+    if media_type != "music" and not settings.api.tmdb_api_key and not settings.api.tvdb_api_key:
         console.print(
             "[red]Error:[/red] No API keys configured. "
             "Run 'file-renamer config set-key' to configure."
         )
         raise SystemExit(1)
 
+    # Determine which extensions to scan based on media type
+    if media_type == "music":
+        extensions = MUSIC_EXTENSIONS
+        scan_message = "Scanning for music files..."
+        not_found_message = "No music files found."
+    elif media_type in ("movie", "tv"):
+        extensions = VIDEO_EXTENSIONS
+        scan_message = "Scanning for video files..."
+        not_found_message = "No video files found."
+    else:
+        # Auto mode - scan both
+        extensions = VIDEO_EXTENSIONS | MUSIC_EXTENSIONS
+        scan_message = "Scanning for media files..."
+        not_found_message = "No media files found."
+
     # Determine files to process
     if path.is_file():
         files = [path]
     else:
-        with console.status("[cyan]Scanning for video files..."):
-            parser = create_parser()
+        with console.status(f"[cyan]{scan_message}"):
             files = []
             if recursive:
-                for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                for ext in extensions:
                     files.extend(path.rglob(f"*{ext}"))
             else:
-                for ext in [".mkv", ".mp4", ".avi", ".mov", ".m4v"]:
+                for ext in extensions:
                     files.extend(path.glob(f"*{ext}"))
             files = sorted(files)
 
     if not files:
-        console.print("[yellow]No video files found.[/yellow]")
+        console.print(f"[yellow]{not_found_message}[/yellow]")
         return
 
     console.print(f"Found [cyan]{len(files)}[/cyan] file(s) to process.")
@@ -142,6 +158,8 @@ def rename(
         force_type = MediaType.MOVIE
     elif media_type == "tv":
         force_type = MediaType.TV_EPISODE
+    elif media_type == "music":
+        force_type = MediaType.MUSIC
 
     # Run async processing
     asyncio.run(_process_files(files, force_type, output, dry_run, yes, auto_select, config, provider))
@@ -170,6 +188,24 @@ class DummyMovieProvider:
         return None
 
 
+class DummyMusicProvider:
+    """Dummy music provider when MusicBrainz is not needed."""
+
+    async def search_recording(
+        self, title: str, artist: Optional[str] = None, album: Optional[str] = None
+    ) -> list:
+        return []
+
+    async def search_release(self, album: str, artist: Optional[str] = None) -> list:
+        return []
+
+    async def get_recording(self, recording_id: str):
+        return None
+
+    async def get_release(self, release_id: str):
+        return None
+
+
 def _create_selection_callback(auto_select: bool):
     """Create a selection callback for choosing from multiple matches.
 
@@ -179,7 +215,7 @@ def _create_selection_callback(auto_select: bool):
     Returns:
         Selection callback function.
     """
-    from file_renamer.core.models import Movie, TVShow
+    from file_renamer.core.models import Movie, Track, TVShow
 
     def select_match(options: list, filename: str) -> Optional[int]:
         """Prompt user to select from multiple matches."""
@@ -193,7 +229,7 @@ def _create_selection_callback(auto_select: bool):
         table = Table(title="Select Match", show_header=True)
         table.add_column("#", style="cyan", width=3)
         table.add_column("Title", style="green")
-        table.add_column("Year", style="yellow")
+        table.add_column("Artist/Year", style="yellow")
         table.add_column("Type", style="blue")
 
         for i, option in enumerate(options, 1):
@@ -210,6 +246,16 @@ def _create_selection_callback(auto_select: bool):
                     option.title,
                     str(option.year),
                     "TV Show"
+                )
+            elif isinstance(option, Track):
+                artist_info = option.artist.name
+                if option.album:
+                    artist_info = f"{option.artist.name} - {option.album.title}"
+                table.add_row(
+                    str(i),
+                    option.title,
+                    artist_info,
+                    "Track"
                 )
 
         console.print(table)
@@ -255,14 +301,17 @@ async def _process_files(
     template = TemplateEngine(
         movie_template=settings.templates.movie,
         tv_template=settings.templates.tv,
+        music_template=settings.templates.music,
     )
     renamer = FileRenamer(dry_run=dry_run)
 
     # Create providers based on --provider flag and available API keys
     tmdb = None
     tvdb = None
+    musicbrainz = None
     movie_provider = DummyMovieProvider()
     tv_provider = DummyTVProvider()
+    music_provider = DummyMusicProvider()
 
     # Only create clients for requested provider(s)
     if provider == "tmdb" or provider == "auto":
@@ -279,21 +328,31 @@ async def _process_files(
             console.print("[red]Error:[/red] TVDB API key not configured.")
             raise SystemExit(1)
 
+    # MusicBrainz doesn't require an API key
+    if provider == "musicbrainz" or provider == "auto":
+        musicbrainz = MusicBrainzClient(cache)
+
     try:
         # Enter async contexts and assign providers based on --provider flag
         if tmdb:
             await tmdb.__aenter__()
         if tvdb:
             await tvdb.__aenter__()
+        if musicbrainz:
+            await musicbrainz.__aenter__()
+            music_provider = musicbrainz
 
         if provider == "tmdb":
-            # Use TMDB for everything
+            # Use TMDB for everything (video only)
             movie_provider = tmdb
             tv_provider = tmdb
         elif provider == "tvdb":
-            # Use TVDB for everything
+            # Use TVDB for everything (video only)
             movie_provider = tvdb
             tv_provider = tvdb
+        elif provider == "musicbrainz":
+            # MusicBrainz for music only - other providers stay as dummies
+            pass
         else:
             # Auto mode: use best provider for each type with fallbacks
             if tmdb:
@@ -323,6 +382,7 @@ async def _process_files(
             associated_files_settings=settings.associated_files,
             conflict_strategy=conflict_strategy,
             selection_callback=selection_callback,
+            music_provider=music_provider,
         )
 
         # Process files with progress tracking
@@ -426,6 +486,8 @@ async def _process_files(
             await tmdb.__aexit__(None, None, None)
         if tvdb:
             await tvdb.__aexit__(None, None, None)
+        if musicbrainz:
+            await musicbrainz.__aexit__(None, None, None)
 
 
 def _show_preview(operations: list) -> None:
@@ -634,7 +696,8 @@ def config_show() -> None:
 
     console.print("[bold]Templates:[/bold]")
     console.print(f"  Movie: {settings.templates.movie}")
-    console.print(f"  TV:    {settings.templates.tv}\n")
+    console.print(f"  TV:    {settings.templates.tv}")
+    console.print(f"  Music: {settings.templates.music}\n")
 
     console.print("[bold]API Keys:[/bold]")
     tmdb_status = "[green]configured[/green]" if settings.api.tmdb_api_key else "[red]not set[/red]"
@@ -673,16 +736,17 @@ def config_set_key(provider: str, key: str) -> None:
 
 
 @config.command("set-template")
-@click.argument("type_", metavar="TYPE", type=click.Choice(["movie", "tv"]))
+@click.argument("type_", metavar="TYPE", type=click.Choice(["movie", "tv", "music"]))
 @click.argument("template")
 def config_set_template(type_: str, template: str) -> None:
     """Set a naming template.
 
-    TYPE is either 'movie' or 'tv'.
+    TYPE is 'movie', 'tv', or 'music'.
 
     Example templates:
       movie: "{title} ({year})"
       tv: "{title} - S{season2}E{episode2} - {episode_title}"
+      music: "{artist}/{album} ({year})/{track2} - {title}"
     """
     config = get_config_service()
     settings = config.load()
@@ -699,8 +763,10 @@ def config_set_template(type_: str, template: str) -> None:
 
     if type_ == "movie":
         settings.templates.movie = template
-    else:
+    elif type_ == "tv":
         settings.templates.tv = template
+    else:
+        settings.templates.music = template
 
     config.save(settings)
     console.print(f"[green]Template for {type_} saved.[/green]")
