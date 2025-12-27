@@ -136,6 +136,48 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(tv_group)
 
+        # API Keys section
+        api_group = QGroupBox("API Keys")
+        api_layout = QFormLayout(api_group)
+
+        # TMDB Key
+        tmdb_row = QHBoxLayout()
+        self.tmdb_input = QLineEdit()
+        self.tmdb_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tmdb_input.setPlaceholderText("Enter TMDB API key")
+        tmdb_row.addWidget(self.tmdb_input)
+        self.tmdb_show_btn = QPushButton("Show")
+        self.tmdb_show_btn.setFixedWidth(50)
+        self.tmdb_show_btn.clicked.connect(lambda: self._toggle_password(self.tmdb_input, self.tmdb_show_btn))
+        tmdb_row.addWidget(self.tmdb_show_btn)
+        api_layout.addRow("TMDB:", tmdb_row)
+
+        # TVDB Key
+        tvdb_row = QHBoxLayout()
+        self.tvdb_input = QLineEdit()
+        self.tvdb_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tvdb_input.setPlaceholderText("Enter TVDB API key")
+        tvdb_row.addWidget(self.tvdb_input)
+        self.tvdb_show_btn = QPushButton("Show")
+        self.tvdb_show_btn.setFixedWidth(50)
+        self.tvdb_show_btn.clicked.connect(lambda: self._toggle_password(self.tvdb_input, self.tvdb_show_btn))
+        tvdb_row.addWidget(self.tvdb_show_btn)
+        api_layout.addRow("TVDB:", tvdb_row)
+
+        # TVDB PIN
+        tvdb_pin_row = QHBoxLayout()
+        self.tvdb_pin_input = QLineEdit()
+        self.tvdb_pin_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tvdb_pin_input.setPlaceholderText("Optional")
+        tvdb_pin_row.addWidget(self.tvdb_pin_input)
+        self.tvdb_pin_show_btn = QPushButton("Show")
+        self.tvdb_pin_show_btn.setFixedWidth(50)
+        self.tvdb_pin_show_btn.clicked.connect(lambda: self._toggle_password(self.tvdb_pin_input, self.tvdb_pin_show_btn))
+        tvdb_pin_row.addWidget(self.tvdb_pin_show_btn)
+        api_layout.addRow("TVDB PIN:", tvdb_pin_row)
+
+        layout.addWidget(api_group)
+
         # Placeholders reference
         placeholders_group = QGroupBox("Available Placeholders")
         placeholders_layout = QVBoxLayout(placeholders_group)
@@ -165,6 +207,11 @@ class SettingsDialog(QDialog):
         self.tv_input.setText(settings.templates.tv)
         self._update_movie_preview()
         self._update_tv_preview()
+
+        # Load API keys
+        self.tmdb_input.setText(settings.api.tmdb_api_key)
+        self.tvdb_input.setText(settings.api.tvdb_api_key)
+        self.tvdb_pin_input.setText(settings.api.tvdb_pin)
 
     def _update_movie_preview(self) -> None:
         """Update movie template preview."""
@@ -222,9 +269,24 @@ class SettingsDialog(QDialog):
         settings = self.config.settings
         settings.templates.movie = movie_template
         settings.templates.tv = tv_template
+
+        # Save API keys
+        settings.api.tmdb_api_key = self.tmdb_input.text().strip()
+        settings.api.tvdb_api_key = self.tvdb_input.text().strip()
+        settings.api.tvdb_pin = self.tvdb_pin_input.text().strip()
+
         self.config.save(settings)
 
         self.accept()
+
+    def _toggle_password(self, line_edit: QLineEdit, button: QPushButton) -> None:
+        """Toggle password visibility for a QLineEdit field."""
+        if line_edit.echoMode() == QLineEdit.EchoMode.Password:
+            line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            button.setText("Hide")
+        else:
+            line_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            button.setText("Show")
 
 
 class FetchWorker(QThread):
@@ -437,6 +499,8 @@ class FileRenamerApp(QMainWindow):
         if dialog.exec() == QDialog.Accepted:
             # Reload config to pick up changes
             self.config.load()
+            # Refresh available providers based on new API keys
+            self._update_provider_options()
             self.status_label.setText("Settings saved")
 
     def _update_provider_options(self) -> None:
