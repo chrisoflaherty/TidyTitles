@@ -26,7 +26,10 @@
 ; General Configuration
 
 !define APP_NAME "TidyTitles"
-!define APP_VERSION "0.1.0"
+; APP_VERSION can be passed via command line: makensis -DAPP_VERSION=x.x.x
+!ifndef APP_VERSION
+    !define APP_VERSION "0.1.0"
+!endif
 !define APP_PUBLISHER "Chris O'Flaherty"
 !define APP_URL "https://github.com/chrisoflaherty/TidyTitles"
 !define APP_EXE "TidyTitles.exe"
