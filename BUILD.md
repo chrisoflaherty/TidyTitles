@@ -2,51 +2,134 @@
 
 This guide shows you how to build TidyTitles as a **standalone executable** and create **platform-specific installers** that can be shared with friends and family who don't have Python installed.
 
-## Quick Start
+## Building from Scratch
 
-### 1. Install Build Dependencies (One Time Only)
+Complete step-by-step instructions for each platform.
 
-```bash
+### Windows
+
+**Prerequisites:**
+```cmd
+:: Install Python 3.11+ (from python.org or Microsoft Store)
+winget install Python.Python.3.12
+
+:: Install NSIS (for creating the installer)
+winget install NSIS.NSIS
+
+:: Install Git
+winget install Git.Git
+```
+
+**Build Steps:**
+```cmd
+:: 1. Clone the repository
+git clone https://github.com/chrisoflaherty/TidyTitles.git
+cd TidyTitles
+
+:: 2. Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+:: 3. Install dependencies
 pip install -e ".[build,gui]"
+
+:: 4. Build executable + installer
+python build.py --installer
+
+:: 5. Find your files in dist\
+::    - TidyTitles.exe (standalone)
+::    - TidyTitles-0.1.0-windows-setup.exe (installer)
 ```
 
-This installs PyInstaller and all necessary dependencies.
+### macOS
 
-### 2. Build the Executable
+**Prerequisites:**
+- Python 3.11+ (pre-installed or `brew install python`)
+- Xcode Command Line Tools: `xcode-select --install`
 
+**Build Steps:**
 ```bash
-python build.py
+# 1. Clone the repository
+git clone https://github.com/chrisoflaherty/TidyTitles.git
+cd TidyTitles
+
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install -e ".[build,gui]"
+
+# 4. Build executable + installer
+python build.py --installer
+
+# 5. Find your files in dist/
+#    - TidyTitles.app (app bundle)
+#    - TidyTitles-0.1.0-macos.dmg (installer)
 ```
 
-That's it! The build script handles everything automatically.
+### Linux
 
-### 3. Create an Installer (Optional)
+**Prerequisites:**
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3 python3-venv python3-pip git
 
-For a professional distribution experience with easy install/uninstall:
+# For AppImage creation
+wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+chmod +x appimagetool-x86_64.AppImage
+sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+```
+
+**Build Steps:**
+```bash
+# 1. Clone the repository
+git clone https://github.com/chrisoflaherty/TidyTitles.git
+cd TidyTitles
+
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install -e ".[build,gui]"
+
+# 4. Build executable + installer
+python build.py --installer
+
+# 5. Find your files in dist/
+#    - TidyTitles (executable)
+#    - TidyTitles-0.1.0-x86_64.AppImage (installer)
+```
+
+---
+
+## Quick Reference
+
+For developers who already have the prerequisites:
 
 ```bash
+# Clone and setup
+git clone https://github.com/chrisoflaherty/TidyTitles.git
+cd TidyTitles
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -e ".[build,gui]"
+
+# Build
 python build.py --installer
 ```
 
-Or create an installer from an existing build:
+## Output Files
 
-```bash
-python build.py --installer-only
-```
+After building with `--installer`, look in `dist/`:
 
-### 4. Find Your Files
-
-After building, look in the `dist/` directory:
-
-**Executables:**
-- **Windows**: `dist/TidyTitles.exe` (50-100 MB)
-- **macOS**: `dist/TidyTitles.app` (folder)
-- **Linux**: `dist/TidyTitles` (executable file)
-
-**Installers (with --installer flag):**
-- **Windows**: `dist/TidyTitles-x.x.x-windows-setup.exe`
-- **macOS**: `dist/TidyTitles-x.x.x-macos.dmg`
-- **Linux**: `dist/TidyTitles-x.x.x-x86_64.AppImage`
+| Platform | Executable | Installer |
+|----------|------------|-----------|
+| Windows | `TidyTitles.exe` | `TidyTitles-x.x.x-windows-setup.exe` |
+| macOS | `TidyTitles.app` | `TidyTitles-x.x.x-macos.dmg` |
+| Linux | `TidyTitles` | `TidyTitles-x.x.x-x86_64.AppImage` |
 
 ## Sharing With Others
 
