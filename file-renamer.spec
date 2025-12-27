@@ -29,8 +29,14 @@ hiddenimports += [
     'platformdirs',
 ]
 
-# Collect data files (add icons, templates, etc. here if needed in the future)
+# Collect data files
 datas = []
+
+# Babelfish and rebulk data files (required by guessit)
+datas += collect_data_files('babelfish')
+datas += collect_data_files('rebulk')
+datas += collect_data_files('guessit')
+
 # Example for future: datas += [('src/file_renamer/icons', 'file_renamer/icons')]
 
 block_cipher = None
