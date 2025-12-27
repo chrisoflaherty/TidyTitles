@@ -374,6 +374,22 @@ async def _process_files(
 
         # Show results
         _show_results(operations)
+
+        # Save history for undo
+        completed_ops = [op for op in operations if op.status == RenameStatus.COMPLETED]
+        if completed_ops:
+            history_data = []
+            for op in completed_ops:
+                entry = {
+                    "source": str(op.source),
+                    "destination": str(op.destination),
+                    "associated_files": [
+                        {"source": str(a.source), "destination": str(a.destination)}
+                        for a in op.associated_files
+                    ],
+                }
+                history_data.append(entry)
+            config.save_history(history_data)
     finally:
         # Clean up providers
         if tmdb:
@@ -486,6 +502,88 @@ def preview(path: Path, recursive: bool) -> None:
         )
 
     console.print(table)
+
+
+@cli.command()
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+def undo(yes: bool) -> None:
+    """Undo the last rename operation.
+
+    Reverts files to their original names using saved history.
+    """
+    config = get_config_service()
+    config.load()
+
+    operations = config.get_last_operations()
+    if not operations:
+        console.print("[yellow]No rename history found.[/yellow]")
+        return
+
+    # Show what will be undone
+    console.print(f"[bold]Found {len(operations)} file(s) to undo:[/bold]")
+    for op in operations:
+        dest = Path(op["destination"])
+        source = Path(op["source"])
+        console.print(f"  {dest.name} → {source.name}")
+
+    if not yes:
+        if not click.confirm("\nProceed with undo?"):
+            console.print("[yellow]Aborted.[/yellow]")
+            return
+
+    # Perform undo
+    from file_renamer.core.renamer import FileRenamer
+
+    renamer = FileRenamer()
+    success_count = 0
+    fail_count = 0
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Undoing renames...", total=len(operations))
+
+        for op in operations:
+            dest = Path(op["destination"])
+            source = Path(op["source"])
+
+            try:
+                # Undo main file
+                if dest.exists():
+                    renamer.rename(dest, source)
+
+                # Undo associated files
+                for assoc in op.get("associated_files", []):
+                    assoc_dest = Path(assoc["destination"])
+                    assoc_source = Path(assoc["source"])
+                    if assoc_dest.exists():
+                        renamer.rename(assoc_dest, assoc_source)
+
+                success_count += 1
+            except Exception as e:
+                console.print(f"[red]Failed to undo {dest.name}: {e}[/red]")
+                fail_count += 1
+
+            progress.advance(task)
+
+    # Clear history entry after successful undo
+    if success_count > 0:
+        config.clear_last_history()
+
+    console.print()
+    console.print(f"[green]Undone:[/green] {success_count}")
+    if fail_count:
+        console.print(f"[red]Failed:[/red] {fail_count}")
 
 
 @cli.group()

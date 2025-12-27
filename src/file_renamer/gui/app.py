@@ -404,6 +404,7 @@ class FileRenamerApp(QMainWindow):
 
         self.files: list[Path] = []
         self.operations: list[RenameOperation] = []
+        self.last_completed_operations: list[RenameOperation] = []
         self.worker: Optional[FetchWorker] = None
         self.progress: Optional[QProgressDialog] = None
 
@@ -487,6 +488,11 @@ class FileRenamerApp(QMainWindow):
         self.rename_btn.clicked.connect(self._on_rename)
         self.rename_btn.setEnabled(False)
         bottom_bar.addWidget(self.rename_btn)
+
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.clicked.connect(self._on_undo)
+        self.undo_btn.setEnabled(False)
+        bottom_bar.addWidget(self.undo_btn)
 
         layout.addLayout(bottom_bar)
 
@@ -817,4 +823,61 @@ class FileRenamerApp(QMainWindow):
 
         QMessageBox.information(self, "Rename Complete", message)
         self.rename_btn.setEnabled(False)
+
+        # Store completed operations for undo
+        completed_ops = [op for op in self.operations if op.status == RenameStatus.COMPLETED]
+        if completed_ops:
+            self.last_completed_operations = completed_ops
+            self.undo_btn.setEnabled(True)
+
         self.status_label.setText("Rename complete")
+
+    def _on_undo(self) -> None:
+        """Handle undo button click."""
+        if not self.last_completed_operations:
+            return
+
+        total_files = sum(op.total_files for op in self.last_completed_operations)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Undo",
+            f"Undo {len(self.last_completed_operations)} rename operation(s) ({total_files} file(s))?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Create progress dialog
+        progress = QProgressDialog(
+            "Undoing renames...", "Cancel", 0, len(self.last_completed_operations), self
+        )
+        progress.setWindowTitle("Undo")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+
+        def on_undo_progress(current: int, total: int, message: str) -> None:
+            progress.setValue(current)
+            progress.setLabelText(message)
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+        # Execute undo
+        renamer = FileRenamer()
+        renamer.undo(self.last_completed_operations, progress_callback=on_undo_progress)
+
+        progress.close()
+
+        # Count results
+        undone = sum(1 for op in self.last_completed_operations if op.status == RenameStatus.PENDING)
+
+        QMessageBox.information(self, "Undo Complete", f"Undone: {undone} operation(s)")
+
+        # Clear undo state
+        self.last_completed_operations = []
+        self.undo_btn.setEnabled(False)
+        self.operations = []
+        self.table.setRowCount(0)
+        self.status_label.setText("Undo complete")

@@ -1,6 +1,8 @@
 """Configuration management service."""
 
+import json
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -206,3 +208,67 @@ class ConfigService:
         elif provider == "tvdb":
             settings.api.tvdb_api_key = key
         self.save(settings)
+
+    @property
+    def history_file(self) -> Path:
+        """Get path to the history file."""
+        return self.config_dir / "history.json"
+
+    def save_history(self, operations: list[dict[str, Any]]) -> None:
+        """Save rename operations to history for undo.
+
+        Args:
+            operations: List of operation dicts with source/destination paths.
+        """
+        self._ensure_dirs()
+
+        # Load existing history
+        history = self.load_history()
+
+        # Add new entry with timestamp
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "operations": operations,
+        }
+        history.insert(0, entry)  # Most recent first
+
+        # Keep only last 10 entries
+        history = history[:10]
+
+        # Save
+        with open(self.history_file, "w") as f:
+            json.dump(history, f, indent=2)
+
+    def load_history(self) -> list[dict[str, Any]]:
+        """Load rename history.
+
+        Returns:
+            List of history entries, most recent first.
+        """
+        if not self.history_file.exists():
+            return []
+
+        try:
+            with open(self.history_file) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return []
+
+    def get_last_operations(self) -> list[dict[str, str]]:
+        """Get the most recent rename operations for undo.
+
+        Returns:
+            List of dicts with 'source' and 'destination' paths.
+        """
+        history = self.load_history()
+        if not history:
+            return []
+        return history[0].get("operations", [])
+
+    def clear_last_history(self) -> None:
+        """Remove the most recent history entry (after successful undo)."""
+        history = self.load_history()
+        if history:
+            history.pop(0)
+            with open(self.history_file, "w") as f:
+                json.dump(history, f, indent=2)
