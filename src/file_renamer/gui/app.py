@@ -1,8 +1,10 @@
 """Main application window."""
 
 import asyncio
+import queue
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtWidgets import (
@@ -16,6 +18,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
@@ -28,7 +32,15 @@ from PySide6.QtWidgets import (
 )
 
 from file_renamer.core.conflict_resolution import ConflictStrategy
-from file_renamer.core.models import MediaType, RenameOperation, RenameStatus
+from file_renamer.core.models import (
+    Episode,
+    MediaType,
+    Movie,
+    RenameOperation,
+    RenameStatus,
+    Track,
+    TVShow,
+)
 from file_renamer.core.music_parser import MUSIC_EXTENSIONS
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
@@ -80,6 +92,102 @@ class DummyMusicProvider:
 
     async def get_release(self, release_id: str):
         return None
+
+
+class SelectionDialog(QDialog):
+    """Dialog for selecting from multiple metadata matches."""
+
+    def __init__(
+        self,
+        options: list[Union[Movie, TVShow, Track]],
+        filename: str,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.options = options
+        self.selected_index: Optional[int] = None
+
+        self.setWindowTitle("Select Match")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(300)
+        self._setup_ui(filename)
+
+    def _setup_ui(self, filename: str) -> None:
+        """Set up the dialog UI."""
+        layout = QVBoxLayout(self)
+
+        # Filename label
+        file_label = QLabel(f"<b>File:</b> {filename}")
+        file_label.setWordWrap(True)
+        layout.addWidget(file_label)
+
+        info_label = QLabel("Multiple matches found. Please select the correct one:")
+        layout.addWidget(info_label)
+
+        # Options list
+        self.list_widget = QListWidget()
+        self.list_widget.setAlternatingRowColors(True)
+        self.list_widget.itemDoubleClicked.connect(self._on_double_click)
+
+        for i, option in enumerate(self.options):
+            item_text = self._format_option(option)
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, i)
+            self.list_widget.addItem(item)
+
+        # Select first item by default
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+
+        layout.addWidget(self.list_widget)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        skip_btn = QPushButton("Skip This File")
+        skip_btn.clicked.connect(self._on_skip)
+        button_layout.addWidget(skip_btn)
+
+        button_layout.addStretch()
+
+        select_btn = QPushButton("Select")
+        select_btn.setDefault(True)
+        select_btn.clicked.connect(self._on_select)
+        button_layout.addWidget(select_btn)
+
+        layout.addLayout(button_layout)
+
+    def _format_option(self, option: Union[Movie, TVShow, Track]) -> str:
+        """Format an option for display."""
+        if isinstance(option, Movie):
+            year_str = f" ({option.year})" if option.year else ""
+            return f"{option.title}{year_str}"
+        elif isinstance(option, TVShow):
+            year_str = f" ({option.year})" if option.year else ""
+            return f"{option.title}{year_str}"
+        elif isinstance(option, Track):
+            artist = option.artist.name if option.artist else "Unknown Artist"
+            album = option.album.title if option.album else "Unknown Album"
+            return f"{artist} - {option.title} [{album}]"
+        else:
+            return str(option)
+
+    def _on_double_click(self, item: QListWidgetItem) -> None:
+        """Handle double-click on an item."""
+        self.selected_index = item.data(Qt.UserRole)
+        self.accept()
+
+    def _on_select(self) -> None:
+        """Handle select button click."""
+        current = self.list_widget.currentItem()
+        if current:
+            self.selected_index = current.data(Qt.UserRole)
+            self.accept()
+
+    def _on_skip(self) -> None:
+        """Handle skip button click."""
+        self.selected_index = None
+        self.reject()
 
 
 class SettingsDialog(QDialog):
@@ -367,6 +475,8 @@ class FetchWorker(QThread):
     progress = Signal(int, int, str)
     finished = Signal(list)
     error = Signal(str)
+    # Signal for requesting user selection: (options, filename)
+    selection_request = Signal(list, str)
 
     def __init__(
         self,
@@ -381,6 +491,54 @@ class FetchWorker(QThread):
         self.config = config
         self.provider = provider
         self._operations: list[RenameOperation] = []
+        # Queue for receiving selection responses from main thread
+        self._selection_response: queue.Queue[Optional[int]] = queue.Queue()
+        self._selection_event = threading.Event()
+
+    def provide_selection(self, index: Optional[int]) -> None:
+        """Provide the selection response from the main thread.
+
+        Args:
+            index: Selected index or None to skip.
+        """
+        self._selection_response.put(index)
+        self._selection_event.set()
+
+    def _selection_callback(
+        self,
+        options: list[Union[Movie, TVShow, Track]],
+        filename: str,
+    ) -> Optional[int]:
+        """Callback invoked when multiple matches are found.
+
+        This method emits a signal to the main thread and blocks
+        until a response is received.
+
+        Args:
+            options: List of match options.
+            filename: The filename being processed.
+
+        Returns:
+            Selected index or None to skip.
+        """
+        # Clear any previous state
+        self._selection_event.clear()
+        while not self._selection_response.empty():
+            try:
+                self._selection_response.get_nowait()
+            except queue.Empty:
+                break
+
+        # Emit signal to main thread
+        self.selection_request.emit(options, filename)
+
+        # Wait for response (with timeout to prevent deadlock)
+        self._selection_event.wait(timeout=300)  # 5 minute timeout
+
+        try:
+            return self._selection_response.get_nowait()
+        except queue.Empty:
+            return None
 
     def run(self) -> None:
         """Run the fetch operation in a background thread."""
@@ -458,6 +616,7 @@ class FetchWorker(QThread):
                 associated_files_settings=settings.associated_files,
                 conflict_strategy=conflict_strategy,
                 music_provider=music_provider,
+                selection_callback=self._selection_callback,
             )
 
             self._operations = await service.process_files(
@@ -805,6 +964,7 @@ class FileRenamerApp(QMainWindow):
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_fetch_complete)
         self.worker.error.connect(self._on_fetch_error)
+        self.worker.selection_request.connect(self._on_selection_request)
 
         # Use a timer to start the worker after the dialog is shown
         QTimer.singleShot(100, self.worker.start)
@@ -821,6 +981,37 @@ class FileRenamerApp(QMainWindow):
                     self.worker.terminate()
                 self.fetch_btn.setEnabled(True)
                 self.status_label.setText("Canceled")
+
+    def _on_selection_request(
+        self,
+        options: list[Union[Movie, TVShow, Track]],
+        filename: str,
+    ) -> None:
+        """Handle selection request from worker thread.
+
+        Shows a dialog for the user to select from multiple matches.
+
+        Args:
+            options: List of match options.
+            filename: The filename being processed.
+        """
+        # Hide progress dialog temporarily so selection dialog is visible
+        if self.progress:
+            self.progress.hide()
+
+        dialog = SelectionDialog(options, filename, self)
+        result = dialog.exec()
+
+        # Provide the selection back to the worker
+        if self.worker:
+            if result == QDialog.Accepted:
+                self.worker.provide_selection(dialog.selected_index)
+            else:
+                self.worker.provide_selection(None)
+
+        # Show progress dialog again
+        if self.progress:
+            self.progress.show()
 
     def _on_fetch_complete(self, operations: list[RenameOperation]) -> None:
         """Handle fetch completion."""
