@@ -25,6 +25,14 @@ class RenameStatus(Enum):
     SKIPPED = auto()
 
 
+class VerificationStatus(Enum):
+    """Verification status for music metadata from file tags."""
+
+    VERIFIED = auto()      # Tags verified against MusicBrainz
+    UNVERIFIED = auto()    # Tags exist but not found in MusicBrainz
+    FROM_PROVIDER = auto() # Metadata came directly from provider search
+
+
 @dataclass
 class ParsedInfo:
     """Information extracted from filename parsing."""
@@ -122,6 +130,7 @@ class Track:
     disc_number: Optional[int] = None
     duration_ms: Optional[int] = None
     genres: list[str] = field(default_factory=list)
+    verification_status: Optional["VerificationStatus"] = None
 
 
 @dataclass
@@ -139,6 +148,16 @@ class ParsedMusicInfo:
     duration_ms: Optional[int] = None
     raw_filename: str = ""
     source: str = "unknown"  # "tags" or "filename"
+
+    def is_complete(self) -> bool:
+        """Check if all required fields for renaming are present."""
+        return all([
+            self.title,
+            self.artist,
+            self.album,
+            self.track_number is not None,
+            self.year is not None,
+        ])
 
 
 @dataclass
@@ -190,3 +209,46 @@ class RenameOperation:
     def total_files(self) -> int:
         """Get total number of files that will be renamed (main + associated)."""
         return 1 + len(self.associated_files)
+
+
+def track_from_parsed_info(
+    parsed: ParsedMusicInfo,
+    verification_status: VerificationStatus,
+) -> Track:
+    """Create a Track from ParsedMusicInfo (file tags).
+
+    Args:
+        parsed: Parsed music info from file tags.
+        verification_status: The verification status to assign.
+
+    Returns:
+        A Track object created from the parsed info.
+    """
+    # Create Artist from parsed info
+    artist = Artist(
+        id="local",
+        name=parsed.artist or "Unknown Artist",
+        provider="local",
+    )
+
+    # Create Album if we have album info
+    album = None
+    if parsed.album:
+        album = Album(
+            id="local",
+            title=parsed.album,
+            artist=artist,
+            year=parsed.year,
+            provider="local",
+        )
+
+    return Track(
+        id="local",
+        title=parsed.title or "",
+        artist=artist,
+        album=album,
+        track_number=parsed.track_number,
+        disc_number=parsed.disc_number,
+        duration_ms=parsed.duration_ms,
+        verification_status=verification_status,
+    )

@@ -18,9 +18,13 @@ from file_renamer.core.models import (
     MediaFile,
     MediaType,
     Movie,
+    ParsedMusicInfo,
     RenameOperation,
+    RenameStatus,
     Track,
     TVShow,
+    VerificationStatus,
+    track_from_parsed_info,
 )
 from file_renamer.core.music_parser import MusicParser, create_music_parser, is_music_file
 from file_renamer.core.parser import FilenameParser
@@ -170,9 +174,9 @@ class RenameService:
             parsed_music = None
             if is_music_file(path):
                 parsed_music = self._music_parser.parse(path)
-                # Set media type to music if not already detected
-                if parsed.media_type == MediaType.UNKNOWN:
-                    parsed.media_type = MediaType.MUSIC
+                # Music files (by extension) should always be treated as music
+                # regardless of what guessit thinks (it often misdetects "01 - Title" as TV episodes)
+                parsed.media_type = MediaType.MUSIC
 
             media_files.append(
                 MediaFile(path=path, parsed_info=parsed, parsed_music_info=parsed_music)
@@ -267,8 +271,134 @@ class RenameService:
             if episode:
                 media_file.matched_metadata = episode
 
+    def _clean_title_for_search(self, title: str) -> str:
+        """Clean a title for MusicBrainz search by removing featured artist suffixes."""
+        import re
+        # Remove featured artist suffixes: (feat. X), (with X), (ft. X), etc.
+        cleaned = re.sub(
+            r"\s*\((?:feat\.?|ft\.?|with|featuring)\s+[^)]+\)",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        )
+        return cleaned.strip()
+
     async def _fetch_music_metadata(self, media_file: MediaFile) -> None:
-        """Fetch music metadata for a media file."""
+        """Fetch music metadata using tag-first approach with MusicBrainz verification.
+
+        Flow:
+        1. If tags are complete -> verify against MusicBrainz -> use tags with status
+        2. If tags are incomplete -> search MusicBrainz -> present options
+        """
+        parsed = media_file.parsed_music_info
+        if not parsed:
+            return
+
+        # Check if file tags are complete
+        if parsed.is_complete():
+            # Tags are complete - create Track from tags and verify against MusicBrainz
+            if self._music_provider:
+                try:
+                    # Clean title for search (remove "(Feat. X)" etc.)
+                    search_title = self._clean_title_for_search(parsed.title or "")
+
+                    # Search MusicBrainz to verify the metadata exists
+                    tracks = await self._music_provider.search_recording(
+                        title=search_title,
+                        artist=parsed.artist,
+                        album=parsed.album,
+                    )
+
+                    # Check if any result is a close enough match
+                    verified = self._verify_track_match(parsed, tracks)
+
+                    if verified:
+                        # Create Track from file tags, mark as VERIFIED
+                        media_file.matched_metadata = track_from_parsed_info(
+                            parsed,
+                            VerificationStatus.VERIFIED,
+                        )
+                    else:
+                        # Create Track from file tags, mark as UNVERIFIED
+                        media_file.matched_metadata = track_from_parsed_info(
+                            parsed,
+                            VerificationStatus.UNVERIFIED,
+                        )
+                except Exception:
+                    # Network error or other issue - use tags as unverified
+                    media_file.matched_metadata = track_from_parsed_info(
+                        parsed,
+                        VerificationStatus.UNVERIFIED,
+                    )
+            else:
+                # No provider available - use tags as unverified
+                media_file.matched_metadata = track_from_parsed_info(
+                    parsed,
+                    VerificationStatus.UNVERIFIED,
+                )
+        else:
+            # Tags are incomplete - use MusicBrainz search (original behavior)
+            await self._fetch_music_metadata_from_provider(media_file)
+
+    def _verify_track_match(
+        self,
+        parsed: ParsedMusicInfo,
+        tracks: list[Track],
+    ) -> bool:
+        """Check if any MusicBrainz result matches the parsed tags.
+
+        Uses fuzzy matching to account for slight variations in:
+        - Punctuation and special characters
+        - "The" prefix
+        - Case differences
+        - Featured artist suffixes like "(Feat. X)" or "(With X)"
+
+        Args:
+            parsed: Parsed music info from file tags.
+            tracks: List of Track results from MusicBrainz.
+
+        Returns:
+            True if a match is found, False otherwise.
+        """
+        import re
+
+        if not tracks:
+            return False
+
+        def normalize(text: str) -> str:
+            """Normalize text for comparison."""
+            text = text.lower().strip()
+            # Remove featured artist suffixes: (feat. X), (with X), (ft. X), etc.
+            text = re.sub(r"\s*\((?:feat\.?|ft\.?|with|featuring)\s+[^)]+\)", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"^the\s+", "", text)  # Remove leading "The "
+            text = re.sub(r"[^\w\s]", "", text)  # Remove punctuation
+            text = re.sub(r"\s+", " ", text)  # Normalize whitespace
+            return text.strip()
+
+        parsed_title = normalize(parsed.title or "")
+        parsed_artist = normalize(parsed.artist or "")
+
+        for track in tracks:
+            track_title = normalize(track.title)
+            track_artist = normalize(track.artist.name if track.artist else "")
+
+            # Check if artist matches
+            artist_match = parsed_artist == track_artist
+
+            # Check if title matches (exact or one contains the other)
+            title_match = (
+                parsed_title == track_title
+                or (parsed_title and track_title and parsed_title in track_title)
+                or (parsed_title and track_title and track_title in parsed_title)
+            )
+
+            if title_match and artist_match:
+                return True
+
+        return False
+
+    async def _fetch_music_metadata_from_provider(self, media_file: MediaFile) -> None:
+        """Fetch music metadata from provider (for incomplete tags)."""
         if not self._music_provider:
             return
 
@@ -276,7 +406,6 @@ class RenameService:
         if not parsed:
             return
 
-        # Search using info from tags (preferred) or filename
         title = parsed.title or ""
         artist = parsed.artist
         album = parsed.album
@@ -284,18 +413,34 @@ class RenameService:
         if not title:
             return
 
-        # Search for recordings
-        tracks = await self._music_provider.search_recording(
-            title=title,
-            artist=artist,
-            album=album,
-        )
+        try:
+            # Search for recordings
+            tracks = await self._music_provider.search_recording(
+                title=title,
+                artist=artist,
+                album=album,
+            )
+        except Exception:
+            # Network error - create from partial tags if we have useful info
+            if parsed.title:
+                media_file.matched_metadata = track_from_parsed_info(
+                    parsed,
+                    VerificationStatus.UNVERIFIED,
+                )
+            return
 
         if not tracks:
+            # No matches found - create Track from partial tags if we have title
+            if parsed.title:
+                media_file.matched_metadata = track_from_parsed_info(
+                    parsed,
+                    VerificationStatus.UNVERIFIED,
+                )
             return
 
         # If only one result, use it automatically
         if len(tracks) == 1:
+            tracks[0].verification_status = VerificationStatus.FROM_PROVIDER
             media_file.matched_metadata = tracks[0]
             return
 
@@ -303,9 +448,11 @@ class RenameService:
         if self._selection_callback:
             selected_index = self._selection_callback(tracks, media_file.filename)
             if selected_index is not None and 0 <= selected_index < len(tracks):
+                tracks[selected_index].verification_status = VerificationStatus.FROM_PROVIDER
                 media_file.matched_metadata = tracks[selected_index]
         else:
             # No callback - use first match (default behavior)
+            tracks[0].verification_status = VerificationStatus.FROM_PROVIDER
             media_file.matched_metadata = tracks[0]
 
     def generate_preview(
@@ -326,7 +473,17 @@ class RenameService:
         operations = []
 
         for media_file in media_files:
+            # If no metadata match found, create a skipped operation to keep the file visible
             if not media_file.matched_metadata:
+                operations.append(
+                    RenameOperation(
+                        source=media_file.path,
+                        destination=media_file.path,  # Keep original path
+                        media_file=media_file,
+                        status=RenameStatus.SKIPPED,
+                        error_message="No metadata match found",
+                    )
+                )
                 continue
 
             # Build extra context from parsed info
@@ -351,12 +508,29 @@ class RenameService:
                     extra_context,
                 )
             elif isinstance(media_file.matched_metadata, Track):
+                track = media_file.matched_metadata
+                # If MusicBrainz didn't provide track/disc number, use values from file tags
+                if media_file.parsed_music_info:
+                    if track.track_number is None and media_file.parsed_music_info.track_number:
+                        track.track_number = media_file.parsed_music_info.track_number
+                    if track.disc_number is None and media_file.parsed_music_info.disc_number:
+                        track.disc_number = media_file.parsed_music_info.disc_number
                 new_name = self._template.render_track(
-                    media_file.matched_metadata,
+                    track,
                     media_file.extension,
                     extra_context,
                 )
             else:
+                # Unknown metadata type, create skipped operation
+                operations.append(
+                    RenameOperation(
+                        source=media_file.path,
+                        destination=media_file.path,
+                        media_file=media_file,
+                        status=RenameStatus.SKIPPED,
+                        error_message="Unknown metadata type",
+                    )
+                )
                 continue
 
             # Determine destination path

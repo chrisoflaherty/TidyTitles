@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -41,7 +42,13 @@ from file_renamer.core.models import (
     RenameStatus,
     Track,
     TVShow,
+    VerificationStatus,
 )
+
+# Row background colors for verification status (muted for dark theme)
+VERIFIED_COLOR = QColor(40, 80, 40)         # Dark muted green
+UNVERIFIED_COLOR = QColor(80, 70, 30)       # Dark muted amber/yellow
+SKIPPED_COLOR = QColor(80, 40, 40)          # Dark muted red
 from file_renamer.core.music_parser import MUSIC_EXTENSIONS
 from file_renamer.core.parser import create_parser
 from file_renamer.core.renamer import FileRenamer
@@ -1064,10 +1071,43 @@ class FileRenamerApp(QMainWindow):
                 file_type = "Audio"
             else:
                 file_type = "Video"
-            self.table.setItem(row, 0, QTableWidgetItem(file_type))
-            self.table.setItem(row, 1, QTableWidgetItem(op.source.name))
-            self.table.setItem(row, 2, QTableWidgetItem(op.destination.name))
-            self.table.setItem(row, 3, QTableWidgetItem(op.status.name.capitalize()))
+
+            # Create table items
+            type_item = QTableWidgetItem(file_type)
+            source_item = QTableWidgetItem(op.source.name)
+            dest_item = QTableWidgetItem(op.destination.name)
+
+            # Determine status text and row color based on verification status
+            status_text = op.status.name.capitalize()
+            row_color = None
+
+            if op.status == RenameStatus.SKIPPED:
+                row_color = SKIPPED_COLOR
+            elif isinstance(op.media_file.matched_metadata, Track):
+                track = op.media_file.matched_metadata
+                if track.verification_status == VerificationStatus.VERIFIED:
+                    status_text = "Verified"
+                    row_color = VERIFIED_COLOR
+                elif track.verification_status == VerificationStatus.UNVERIFIED:
+                    status_text = "Unverified"
+                    row_color = UNVERIFIED_COLOR
+                elif track.verification_status == VerificationStatus.FROM_PROVIDER:
+                    status_text = "From MusicBrainz"
+
+            status_item = QTableWidgetItem(status_text)
+
+            # Apply color to all cells in the row
+            if row_color:
+                brush = QBrush(row_color)
+                type_item.setBackground(brush)
+                source_item.setBackground(brush)
+                dest_item.setBackground(brush)
+                status_item.setBackground(brush)
+
+            self.table.setItem(row, 0, type_item)
+            self.table.setItem(row, 1, source_item)
+            self.table.setItem(row, 2, dest_item)
+            self.table.setItem(row, 3, status_item)
             row += 1
 
             # Associated files
