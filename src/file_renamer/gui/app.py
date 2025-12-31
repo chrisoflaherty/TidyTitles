@@ -1093,6 +1093,14 @@ class FileRenamerApp(QMainWindow):
                     row_color = UNVERIFIED_COLOR
                 elif track.verification_status == VerificationStatus.FROM_PROVIDER:
                     status_text = "From MusicBrainz"
+            elif isinstance(op.media_file.matched_metadata, (Movie, Episode)):
+                metadata = op.media_file.matched_metadata
+                if metadata.verification_status == VerificationStatus.AUTO_MATCHED:
+                    status_text = "Auto Matched"
+                    row_color = VERIFIED_COLOR
+                elif metadata.verification_status == VerificationStatus.MANUAL_SELECTION:
+                    status_text = "Manual Selection"
+                    row_color = VERIFIED_COLOR
 
             status_item = QTableWidgetItem(status_text)
 
