@@ -26,11 +26,16 @@ class RenameStatus(Enum):
 
 
 class VerificationStatus(Enum):
-    """Verification status for music metadata from file tags."""
+    """Verification status for metadata from various sources."""
 
+    # Music-specific statuses
     VERIFIED = auto()      # Tags verified against MusicBrainz
     UNVERIFIED = auto()    # Tags exist but not found in MusicBrainz
     FROM_PROVIDER = auto() # Metadata came directly from provider search
+
+    # Movie/TV statuses
+    AUTO_MATCHED = auto()      # System automatically found a match
+    MANUAL_SELECTION = auto()  # User manually selected this result
 
 
 @dataclass
@@ -63,6 +68,7 @@ class Movie:
     genres: list[str] = field(default_factory=list)
     poster_path: Optional[str] = None
     provider: str = "tmdb"
+    verification_status: Optional["VerificationStatus"] = None
 
 
 @dataclass
@@ -90,6 +96,7 @@ class Episode:
     title: str
     air_date: Optional[date] = None
     overview: Optional[str] = None
+    verification_status: Optional["VerificationStatus"] = None
 
 
 @dataclass

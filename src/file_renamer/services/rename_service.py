@@ -1,5 +1,6 @@
 """Main rename service orchestrating the rename workflow."""
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -229,17 +230,24 @@ class RenameService:
 
         # If only one result, use it automatically
         if len(movies) == 1:
-            media_file.matched_metadata = movies[0]
+            media_file.matched_metadata = replace(
+                movies[0], verification_status=VerificationStatus.AUTO_MATCHED
+            )
             return
 
         # Multiple results - use selection callback if available
         if self._selection_callback:
             selected_index = self._selection_callback(movies, media_file.filename)
             if selected_index is not None and 0 <= selected_index < len(movies):
-                media_file.matched_metadata = movies[selected_index]
+                media_file.matched_metadata = replace(
+                    movies[selected_index],
+                    verification_status=VerificationStatus.MANUAL_SELECTION,
+                )
         else:
             # No callback - use first match (default behavior)
-            media_file.matched_metadata = movies[0]
+            media_file.matched_metadata = replace(
+                movies[0], verification_status=VerificationStatus.AUTO_MATCHED
+            )
 
     async def _fetch_tv_metadata(self, media_file: MediaFile) -> None:
         """Fetch TV episode metadata for a media file."""
@@ -253,12 +261,14 @@ class RenameService:
 
         # Select the show (with callback if multiple results)
         selected_show = None
+        user_selected = False
         if len(shows) == 1:
             selected_show = shows[0]
         elif self._selection_callback:
             selected_index = self._selection_callback(shows, media_file.filename)
             if selected_index is not None and 0 <= selected_index < len(shows):
                 selected_show = shows[selected_index]
+                user_selected = True
         else:
             # No callback - use first match (default behavior)
             selected_show = shows[0]
@@ -269,7 +279,13 @@ class RenameService:
                 selected_show.id, parsed.season, parsed.episode
             )
             if episode:
-                media_file.matched_metadata = episode
+                # Set verification status based on whether user made selection
+                status = (
+                    VerificationStatus.MANUAL_SELECTION
+                    if user_selected
+                    else VerificationStatus.AUTO_MATCHED
+                )
+                media_file.matched_metadata = replace(episode, verification_status=status)
 
     def _clean_title_for_search(self, title: str) -> str:
         """Clean a title for MusicBrainz search by removing featured artist suffixes."""
