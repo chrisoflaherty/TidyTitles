@@ -292,7 +292,21 @@ npm run build    # afterward: put the production build back in out/
 
 Use `CSC_IDENTITY_AUTO_DISCOVERY=false` instead of `CSC_NAME` for the first build to see the ad-hoc path (**Download** instead of a download). The test leaves `~/Library/Caches/@tidytitlesdesktop-updater`, `~/Library/Caches/com.filerenamer.tidytitles`, and `~/Library/Caches/com.filerenamer.tidytitles.ShipIt`; delete them afterward.
 
-What was verified this way on an Apple silicon Mac (macOS 27), with both builds signed with an Apple Development identity and hardened runtime: the 0.2.0-beta.90 app found 0.2.0-beta.91, downloaded it with progress, showed **Restart to Update**, and **Restart to Update** installed 0.2.0-beta.91 and relaunched it. An ad-hoc signed 0.2.0-beta.90 found the update, did not download it, and offered **Download**. Not verified: updates from the real GitHub feed, Intel Macs, notarized Developer ID builds, Windows, and Linux.
+What was verified this way on an Apple silicon Mac (macOS 27), with both builds signed with an Apple Development identity and hardened runtime: the 0.2.0-beta.90 app found 0.2.0-beta.91, downloaded it with progress, showed **Restart to Update**, and **Restart to Update** installed 0.2.0-beta.91 and relaunched it. An ad-hoc signed 0.2.0-beta.90 found the update, did not download it, and offered **Download**.
+
+### Testing updates against real releases
+
+The released, notarized builds were also tested against the real GitHub feed on the same Mac (0.2.0-beta.5 updating to 0.2.0-beta.6): the app found the new release, downloaded it, and installed it both ways, on a normal quit and with **Restart to Update** (which reopened as 0.2.0-beta.6). Not verified: Intel Macs, Windows, and Linux.
+
+To repeat that test without touching your installed copy, extract an older release zip into a scratch folder and start it **with `open`**, the way Finder does:
+
+```bash
+launchctl setenv TIDYTITLES_CONFIG_DIR /tmp/tt/cfg     # also applies to the relaunched app; unset afterward
+open -n /tmp/tt/app/TidyTitles.app --args --user-data-dir=/tmp/tt/userdata
+launchctl unsetenv TIDYTITLES_CONFIG_DIR
+```
+
+Do not start the app's binary directly from a terminal (`TidyTitles.app/Contents/MacOS/TidyTitles`) for this. macOS then attributes the process to the terminal, denies it write access to its own notarized bundle, and the system updater stalls without any error: the update downloads, **Restart to Update** appears, and nothing ever installs. The installer's log is `~/Library/Caches/com.filerenamer.tidytitles.ShipIt/ShipIt_stderr.log`. A test leaves a `com.filerenamer.tidytitles.ShipIt` launchd job pointing into the scratch folder; remove it with `launchctl remove com.filerenamer.tidytitles.ShipIt`, along with the caches listed above.
 
 ## Code signing
 
