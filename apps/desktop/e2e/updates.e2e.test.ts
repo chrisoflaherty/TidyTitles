@@ -8,6 +8,7 @@
  * out-e2e/screenshots, named updates-*.
  */
 
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -26,7 +27,11 @@ declare global {
 const APP_DIR = path.resolve(import.meta.dirname, "..");
 const MAIN = path.join(APP_DIR, "out-e2e", "main", "index.js");
 const SHOTS = process.env.TIDYTITLES_SCREENSHOT_DIR ?? path.join(APP_DIR, "out-e2e", "screenshots");
-const NEW = "0.2.0-beta.3";
+/** A version newer than the app's own, whatever it is now (the scripted feed offers it). */
+const NEW = (() => {
+  const { version } = JSON.parse(readFileSync(path.join(APP_DIR, "package.json"), "utf8")) as { version: string };
+  return version.replace(/(\d+)$/, (n) => String(Number(n) + 1));
+})();
 
 let tmp: string | undefined;
 let electronApp: ElectronApplication | undefined;
