@@ -1,169 +1,126 @@
 # API Keys
 
-File Renamer uses external APIs to fetch accurate metadata for your media files. This guide explains how to obtain and configure API keys.
+TidyTitles looks up movies and TV shows on TMDB and TVDB, which require a free API key. Music lookups use MusicBrainz, which needs no key. This page explains which keys you need, how to get them, and where to put them.
 
-## Overview
+## Which keys you need
 
-| Provider | Used For | Cost | Required? |
-|----------|----------|------|-----------|
-| TMDB | Movies | Free | Yes (for movies) |
-| TVDB | TV Shows | Free tier available | Optional |
+| Service | Used for | Cost | Key needed? |
+|---------|----------|------|-------------|
+| [TMDB](https://www.themoviedb.org/) (The Movie Database) | Movies, and TV if you prefer it | Free for personal use | Yes |
+| [TVDB](https://thetvdb.com/) (TheTVDB) | TV shows | See TVDB's plans | Yes |
+| [MusicBrainz](https://musicbrainz.org/) | Music | Free | No |
 
-## TMDB (The Movie Database)
+- **Movies** need a TMDB key. TVDB is never used for movies.
+- **TV** works with either key. With both, TVDB is used by default; change that in **Settings** → **Providers** or with `[providers] tv = "tmdb"` in `config.toml`.
+- **Music** needs nothing.
 
-TMDB provides movie metadata including titles, release dates, and more.
+So one TMDB key is enough for everything. Without any key, the desktop app still runs but only looks up music, and the CLI asks you to set a key unless you use `--type music` or `--provider musicbrainz`.
 
-### Getting a TMDB API Key
+## Getting a TMDB key
 
-1. **Create an account**
-   - Go to https://www.themoviedb.org/signup
-   - Fill out the registration form
-   - Verify your email address
+1. Create a free account at https://www.themoviedb.org/signup and confirm your email address.
+2. Go to https://www.themoviedb.org/settings/api (in the desktop app, **Settings** → **API Keys** → **Get a TMDB API key** opens it).
+3. Request an API key. Choose the developer/personal option and fill out the form; for the application name and description, something like "TidyTitles, personal media renaming" is fine.
+4. Copy one of the two values shown:
+   - **API Key** (a 32-character string), or
+   - **API Read Access Token** (a much longer string starting with `eyJ`).
 
-2. **Request an API key**
-   - Log in to your account
-   - Go to https://www.themoviedb.org/settings/api
-   - Click "Create" under "Request an API Key"
-   - Select "Developer"
-   - Fill out the application form:
-     - **Application Name**: File Renamer (or any name)
-     - **Application URL**: Can be left blank or use a placeholder
-     - **Application Summary**: Personal media file organization tool
+Either works. TidyTitles sends a value longer than 50 characters as a Read Access Token (an `Authorization: Bearer` header) and a shorter one as an API key (the `api_key` parameter).
 
-3. **Get your key**
-   - After approval (usually instant), you'll see your API keys
-   - Copy the **"API Key (v3 auth)"** - this is a 32-character string
-   - Alternatively, you can use the **"API Read Access Token"** (longer string)
+## Getting a TVDB key
 
-### TMDB Key Types
+1. Create an account at https://thetvdb.com/.
+2. Go to https://thetvdb.com/api-information (or **Settings** → **API Keys** → **Get a TVDB API key** in the app) and follow the steps for an API key. TVDB's terms and plans change from time to time; check that page for the current options.
+3. Copy the API key.
+4. If your TVDB plan gives you a **subscriber PIN**, you can enter it too. It is optional; TidyTitles sends it along when it logs in to TVDB.
 
-File Renamer supports both key types:
+TidyTitles uses TVDB's v4 API.
 
-| Key Type | Length | Header |
-|----------|--------|--------|
-| API Key (v3) | ~32 chars | Added as URL parameter |
-| Read Access Token | ~200 chars | Added as Bearer token |
+## Entering your keys
 
-Both work identically. Use whichever you prefer.
+### Desktop app
 
-### Configure TMDB
+**Settings** → **API Keys**. Paste the key into **TMDB API key** and/or **TVDB API key** (and **TVDB subscriber PIN** if you have one), then click **Save**. Click **Show** to check what you pasted. Leading and trailing spaces are removed.
+
+![The API Keys tab of the Settings window](../docs/images/desktop-settings-api-keys.png)
+
+The **Provider** menu in the main window updates to offer the services you now have keys for.
+
+### Command line
 
 ```bash
-file-renamer config set-key tmdb YOUR_API_KEY
+tidytitles config set-key tmdb YOUR_TMDB_API_KEY
+tidytitles config set-key tvdb YOUR_TVDB_API_KEY
 ```
 
-## TVDB (TheTVDB)
-
-TVDB provides TV show and episode metadata.
-
-### Getting a TVDB API Key
-
-1. **Create an account**
-   - Go to https://thetvdb.com/
-   - Click "Register" and create an account
-
-2. **Subscribe to API access**
-   - Go to https://thetvdb.com/api-information
-   - Choose a subscription tier:
-     - **Free**: Limited requests, personal use
-     - **Paid**: Higher limits, commercial use
-
-3. **Generate API key**
-   - Go to your dashboard
-   - Navigate to API Keys section
-   - Generate a new API key
-   - Copy the key
-
-### TVDB Subscriber PIN
-
-Some TVDB features require a subscriber PIN in addition to the API key. If you have a paid subscription, you can find your PIN in your account settings.
-
-### Configure TVDB
+Check which keys are set (the keys themselves are never printed):
 
 ```bash
-# API key only
-file-renamer config set-key tvdb YOUR_API_KEY
-
-# With subscriber PIN (edit config file directly)
-# Add to [api] section: tvdb_pin = "YOUR_PIN"
+tidytitles config show
 ```
 
-## Using Environment Variables
+```
+API Keys:
+  TMDB: configured
+  TVDB: not set
+```
 
-For security or automation, you can use environment variables instead of storing keys in the config file:
+There is no command for the TVDB PIN; set it in the desktop app or in `config.toml`.
+
+### config.toml
+
+Both the app and the CLI store keys in the `[api]` section of `config.toml` (see [Configuration](Configuration.md#where-files-are-stored) for its location):
+
+```toml
+[api]
+tmdb_api_key = "your TMDB key"
+tvdb_api_key = "your TVDB key"
+tvdb_pin = ""
+```
+
+The app and the CLI share this file, so a key entered in one works in the other. The Python version of TidyTitles used the same file, so if you set keys there, they are already in place.
+
+## Using environment variables
+
+You can supply keys through `FILE_RENAMER_API__TMDB_API_KEY`, `FILE_RENAMER_API__TVDB_API_KEY`, and `FILE_RENAMER_API__TVDB_PIN` instead of storing them:
 
 ```bash
-# Set keys
 export FILE_RENAMER_API__TMDB_API_KEY=your_tmdb_key
-export FILE_RENAMER_API__TVDB_API_KEY=your_tvdb_key
-
-# Run command
-file-renamer rename /path/to/media
+tidytitles rename /media/movies --type movie --yes --auto-select
 ```
 
-### In Scripts
+A value in `config.toml` wins over the environment, **even an empty one**. Once `config.toml` exists (any save writes `tmdb_api_key = ""`), remove the `tmdb_api_key` / `tvdb_api_key` lines from it, or the environment variables are ignored. See [Precedence](Configuration.md#precedence).
+
+## Keeping keys safe
+
+- `config.toml` stores keys as plain text in your user folder. Do not share the file or commit it to a repository.
+- `config set-key` puts the key in your shell history. Use the desktop app or edit `config.toml` if you would rather avoid that.
+- TidyTitles never prints keys: `config show` and `config show --json` only say "configured" or "not set".
+- The TMDB and TVDB keys only allow reading data. If a key leaks, generate a new one on the service's website and revoke the old one.
+
+## When a key is rejected
+
+If a service rejects your key, the affected files are skipped and the rest of the batch continues:
+
+- **Desktop app:** the files show the status **API key rejected**. Open **Settings** → **API Keys** and check the key.
+- **CLI:** you see `Error: Metadata lookup failed for N file(s): Invalid TMDB API key` (or `Invalid TVDB API key`), followed by a hint to check `tidytitles config show`, and the command exits with status 1.
+
+Things to check:
+
+- The whole key was copied, with no extra characters.
+- For TMDB, try the other value (API Key versus Read Access Token).
+- For TVDB, make sure your account and API access are active.
+
+You can test a TMDB key outside TidyTitles with curl. A working key returns JSON about *Fight Club* (movie 550):
 
 ```bash
-#!/bin/bash
-export FILE_RENAMER_API__TMDB_API_KEY=your_key
-file-renamer rename /media/movies --type movie --yes
-```
-
-### In CI/CD
-
-Store keys as secrets and inject them as environment variables.
-
-## Security Best Practices
-
-1. **Don't commit keys to version control**
-   - The config file is in `.gitignore` by default
-   - Never hardcode keys in scripts you share
-
-2. **Use environment variables for automation**
-   - Keeps keys out of config files
-   - Easier to rotate keys
-
-3. **Limit key permissions**
-   - TMDB and TVDB keys are read-only by design
-   - They can only fetch data, not modify anything
-
-4. **Rotate keys periodically**
-   - Generate new keys occasionally
-   - Revoke old keys you're no longer using
-
-## Troubleshooting
-
-### "Invalid TMDB API key"
-
-- Verify you copied the complete key
-- Check for extra spaces
-- Try the API Read Access Token instead of the v3 key
-- Verify your TMDB account is in good standing
-
-### "Invalid TVDB API key"
-
-- Ensure your subscription is active
-- Check if your API key has expired
-- Try generating a new key
-- Verify you're using the correct key type
-
-### "Authentication failed"
-
-- Check your internet connection
-- Verify the API service is online
-- Try again in a few minutes (rate limiting)
-
-### Testing API Keys
-
-You can test your TMDB key with curl:
-
-```bash
-# Test TMDB v3 key
+# API Key (32 characters)
 curl "https://api.themoviedb.org/3/movie/550?api_key=YOUR_KEY"
 
-# Test TMDB Read Access Token
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  "https://api.themoviedb.org/3/movie/550"
+# Read Access Token
+curl -H "Authorization: Bearer YOUR_TOKEN" "https://api.themoviedb.org/3/movie/550"
 ```
 
-A successful response returns JSON data about "Fight Club" (movie ID 550).
+If the services limit your requests, files show **Rate limited** (app) or `TMDB rate limit exceeded` (CLI). Wait a minute and try again; cached responses are reused for 24 hours, so a second run makes fewer requests.
+
+More help: [Troubleshooting](Troubleshooting.md#metadata-lookups).

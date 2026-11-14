@@ -1,286 +1,144 @@
 # TidyTitles
 
-A cross-platform media file renaming application inspired by FileBot. Automatically fetches metadata from TMDB, TVDB, and MusicBrainz to rename your movies, TV shows, and music files with clean, consistent naming.
+TidyTitles renames movie, TV, and music files to clean, consistent names. It reads each filename (and, for music, the file's tags), looks the file up on [TMDB](https://www.themoviedb.org/) (movies and TV), [TVDB](https://thetvdb.com/) (TV), or [MusicBrainz](https://musicbrainz.org/) (music), and builds the new name from a template you can change. You see every new name before anything is renamed, and you can undo the last rename.
 
-## Features
+There are two ways to use it, and they share the same settings and rename history:
 
-- **Smart Detection** - Automatically identifies movies, TV episodes, and music from filenames
-- **Metadata Lookup** - Fetches accurate titles from TMDB (movies), TVDB (TV), and MusicBrainz (music)
-- **Music Support** - Reads ID3/Vorbis/FLAC tags with filename fallback, no API key required
-- **Cover Art Download** - Automatically download movie posters and album covers
-- **Interactive Selection** - Choose the correct match when multiple results are found (CLI + GUI)
-- **Associated Files** - Automatically renames subtitles, NFO files, and images alongside videos
-- **Smart Conflict Resolution** - Auto-versioning prevents accidental overwrites
-- **Recursive Scanning** - Scan subdirectories for media files
-- **Progress Indicators** - Real-time progress bars show scanning, fetching, and renaming status
-- **Preview Mode** - See exactly what will be renamed before committing changes
-- **Custom Templates** - Define your own naming patterns with powerful placeholders
-- **Dual Interface** - Full CLI for automation + GUI for visual file management
-- **Cross-Platform** - Works on macOS, Windows, and Linux
-- **Caching** - API responses are cached to minimize requests and speed up bulk operations
+- a **desktop app** for macOS, Windows, and Linux, and
+- a **command-line tool**, `tidytitles`, for scripts and terminals.
 
-## Installation
+![The TidyTitles window after fetching metadata: each file shows its original name, the new name, and a status such as Auto-matched, Verified, or No match](docs/images/desktop-file-list.png)
 
-### For End Users (No Python Required)
+## What it does
 
-Download the standalone executable for your platform:
+- **Reads filenames and tags.** Works out whether a file is a movie, a TV episode, or music. Music files are always treated as music, and their tags (ID3, Vorbis, FLAC, MP4, and others) are read first, with the filename as a fallback.
+- **Looks up metadata.** TMDB for movies (and TV, if you prefer it), TVDB for TV, MusicBrainz for music. TMDB and TVDB need a free API key; MusicBrainz needs none.
+- **Asks when a search is ambiguous.** When several results match, you pick one or skip the file.
+- **Renames with templates.** `{title} ({year})`, `{title} - S{season2}E{episode2} - {episode_title}`, and so on. A `/` in a template creates folders.
+- **Moves associated files along.** Subtitles (`Movie.en.srt`), `.nfo` files, and images with the same base name get the matching new name.
+- **Handles name clashes your way.** Skip the file, replace the existing file, or add a number such as `(1)`.
+- **Downloads cover art** (optional). Movie and TV posters from TMDB, album covers from the Cover Art Archive.
+- **Undoes the last rename,** from either the app or the command line, even after a restart.
 
-- **Windows**: Download `TidyTitles.exe` - double-click to run
-- **macOS**: Download `TidyTitles.app` - drag to Applications folder
-- **Linux**: Download `TidyTitles` - make executable and run
+## Examples
 
-No installation needed! Just download and run. The app includes everything it needs.
+With the default templates:
 
-> **Building from source?** See [BUILD.md](BUILD.md) for instructions on creating your own executable.
+```
+One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.mkv
+  → One Battle After Another (2025).mkv
 
-### For Developers
+Breaking.Bad.S01E01.720p.BluRay.x264.mkv
+  → Breaking Bad - S01E01 - Pilot.mkv
+Breaking.Bad.S01E01.720p.BluRay.x264.en.srt
+  → Breaking Bad - S01E01 - Pilot.en.srt
+
+06 - Comfortably Numb.flac  (tags: Pink Floyd, The Wall, 1979, track 6)
+  → Pink Floyd/The Wall (1979)/06 - Comfortably Numb.flac
+```
+
+The music template creates an artist folder and an album folder next to the original file.
+
+## Install
+
+Download the installer for your system from the [Releases page](https://github.com/chrisoflaherty/TidyTitles/releases):
+
+| System | File |
+|--------|------|
+| macOS, Apple silicon (M1 and later) | `TidyTitles-<version>-macos-arm64.dmg` |
+| macOS, Intel | `TidyTitles-<version>-macos-x64.dmg` |
+| Windows (64-bit) | `TidyTitles-<version>-windows-setup.exe` |
+| Linux (64-bit) | `TidyTitles-<version>-x86_64.AppImage` |
+
+The installers are **not code signed**, so macOS and Windows warn you the first time. [Installation](wiki/Installation.md) explains each warning and how to get past it, and how to add the `tidytitles` command to your terminal.
+
+To build from source instead, you need Node.js 22.12 or newer:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/file-renamer.git
-cd file-renamer
-
-# Install (CLI only)
-pip install -e .
-
-# Install with GUI support
-pip install -e ".[gui]"
+git clone https://github.com/chrisoflaherty/TidyTitles.git
+cd TidyTitles
+npm install
+npm run build
+npx tidytitles --help
 ```
 
-## Quick Start
+## Quick start
 
-### 1. Get API Keys
+### Desktop app
 
-- **TMDB** (for movies): https://www.themoviedb.org/settings/api
-- **TVDB** (for TV shows): https://thetvdb.com/api-information
-- **MusicBrainz** (for music): No API key required!
+1. Open TidyTitles, click **Settings**, and enter a TMDB API key on the **API Keys** tab (see [API Keys](wiki/API-Keys.md)). Skip this if you only rename music.
+2. Drag files or folders into the window, or use **Add Files…** / **Add Folder…**.
+3. Click **Fetch Metadata**. If a search finds several matches, choose one.
+4. Check the **New name** column, then click **Rename**.
+5. Changed your mind? Click **Undo**.
 
-### 2. Configure
+The [GUI Guide](wiki/GUI-Guide.md) covers every control.
+
+### Command line
 
 ```bash
-file-renamer config init
-file-renamer config set-key tmdb YOUR_TMDB_API_KEY
-file-renamer config set-key tvdb YOUR_TVDB_API_KEY  # optional
+# Save your TMDB key (once)
+tidytitles config set-key tmdb YOUR_TMDB_API_KEY
+
+# See what would happen, without renaming anything
+tidytitles rename ~/Downloads --dry-run
+
+# Rename for real (asks "Proceed with rename?" first)
+tidytitles rename ~/Downloads
+
+# Music needs no API key
+tidytitles rename ~/Music/Inbox --type music
+
+# Put things back
+tidytitles undo
 ```
 
-### 3. Rename Files
+The [CLI Reference](wiki/CLI-Reference.md) lists every command and option.
 
-```bash
-# Preview what will happen
-file-renamer rename /path/to/media --dry-run
+## Moving from the Python version
 
-# Rename movies
-file-renamer rename /path/to/movies --type movie
+TidyTitles was first written in Python (the `file-renamer` command and a PySide6 window). This version replaces it:
 
-# Rename TV shows
-file-renamer rename /path/to/shows --type tv
+- **Same settings and history.** It reads and writes the same `config.toml` and `history.json` in the same folder, so your API keys, templates, and last 10 renames carry over. You can even undo a rename the Python app made.
+- **Same command name.** `file-renamer` still works as another name for `tidytitles` when you run the CLI from a source checkout. (The desktop app's **Install Command Line Tool…** installs only `tidytitles`.)
+- **Some behavior changed:**
+  - Renames that only change letter case (`the matrix (1999).mkv` → `The Matrix (1999).mkv`) now work, also on case-insensitive disks.
+  - A failed lookup for one file (a network error, a rejected key) no longer stops the whole batch; that file is skipped and reported.
+  - The CLI exits with status 1 when any rename or lookup failed.
+  - `conflict_resolution = "overwrite"` now really replaces the existing file (the Python app quietly skipped it). It never replaces another file that is part of the same batch.
+  - Undo works from the saved history in both the desktop app and the CLI, including after you restart the app.
+  - Scanning skips hidden files and folders and matches extensions regardless of case (`.MKV` counts).
+  - Music files are always looked up as music, even when you choose Movies or TV Shows.
 
-# Rename music files
-file-renamer rename /path/to/music --type music
-
-# Auto-detect and rename
-file-renamer rename /path/to/media
-
-# Download cover art alongside renaming
-file-renamer rename /path/to/media --cover-art
-
-# Scan subdirectories
-file-renamer rename /path/to/media --recursive
-```
-
-### 4. Or Use the GUI
-
-```bash
-file-renamer-gui
-```
-
-The GUI supports:
-- **Drag and drop** - Drop multiple files or folders directly into the window
-- **Multi-file selection** - Add files from different locations
-- **Accumulative list** - Files are added to the existing list (use Clear to reset)
-- **Media type selection** - Choose Auto-detect, Movies, TV Shows, or Music
-- **Recursive scanning** - Check "Recursive" to scan subdirectories
-- **Cover art download** - Check "Cover Art" to download posters/album covers
-- **Interactive selection** - Pick the correct match when multiple results found
-
-## Example
-
-**Movies:**
-```
-Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.mkv
-After:  One Battle After Another (2025).mkv
-
-Before: One.Battle.After.Another.2025.1080p.AMZN.WEB-DL.DDP5.1.H.264-KyoGo.srt
-After:  One Battle After Another (2025).srt
-```
-
-**TV Shows:**
-```
-Before: Breaking.Bad.S01E01.720p.BluRay.x264.mkv
-After:  Breaking Bad - S01E01 - Pilot.mkv
-
-Before: Breaking.Bad.S01E01.en.srt
-After:  Breaking Bad - S01E01 - Pilot.en.srt
-```
-
-**Music:**
-```
-Before: 06 - Comfortably Numb.flac
-After:  Pink Floyd/The Wall (1979)/06 - Comfortably Numb.flac
-```
-
-**Associated Files:**
-TidyTitles automatically renames associated files along with your videos:
-- Subtitles (`.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx`)
-- NFO metadata files (`.nfo`)
-- Cover images (`.jpg`, `.png`, `.tbn`)
-
-## CLI Reference
-
-| Command | Description |
-|---------|-------------|
-| `file-renamer rename PATH` | Rename files in PATH |
-| `file-renamer preview PATH` | Preview parsed file info |
-| `file-renamer config show` | Show current configuration |
-| `file-renamer config set-key PROVIDER KEY` | Set API key |
-| `file-renamer config set-template TYPE TEMPLATE` | Set naming template |
-
-### Rename Options
-
-```
--t, --type [movie|tv|music|auto]  Force media type detection
--r, --recursive                   Scan subdirectories
--o, --output PATH                 Move renamed files to this directory
--n, --dry-run                     Preview only, don't rename
--y, --yes                         Skip confirmation prompt
--a, --auto-select                 Automatically select first match (no prompts)
--c, --cover-art                   Download movie posters and album covers
--p, --provider [tmdb|tvdb|musicbrainz|auto]  Metadata provider
-```
-
-**Interactive Selection:**
-
-When TidyTitles finds multiple matches for a file, it prompts you to choose:
-
-```
-Multiple matches found for: Movie.2024.mkv
-
-┏━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━┓
-┃ # ┃ Title               ┃ Year ┃ Type  ┃
-┡━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━┩
-│ 1 │ The Movie Title     │ 2024 │ Movie │
-│ 2 │ Movie Title (Remake)│ 2024 │ Movie │
-│ 3 │ Different Movie     │ 2024 │ Movie │
-└───┴─────────────────────┴──────┴───────┘
-
-Select match (1-3) or 's' to skip:
-```
-
-Use `--auto-select` to always pick the first match without prompting.
-
-**Progress Tracking:**
-
-For large batch operations, TidyTitles shows real-time progress:
-
-**CLI:**
-```
-⠋ Parsing: movie_name.mkv                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45/100 0:00:12
-⠙ Fetching: The Movie Title                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23/100 0:01:05
-⠹ Renaming: The Movie (2024).mkv             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67/100 0:00:03
-```
-
-**GUI:**
-- Progress dialog with bar and percentage
-- Shows current file being processed
-- Displays time remaining estimate
-
-## Templates
-
-Customize how files are named using placeholders:
-
-**Common:**
-| Placeholder | Description | Example |
-|-------------|-------------|---------|
-| `{title}` | Title | "The Matrix" |
-| `{year}` | Year | "1999" |
-| `{quality}` | Quality | "1080p" |
-
-**TV Shows:**
-| Placeholder | Description | Example |
-|-------------|-------------|---------|
-| `{season2}` | Season (2-digit) | "01" |
-| `{episode2}` | Episode (2-digit) | "05" |
-| `{episode_title}` | Episode title | "Pilot" |
-
-**Music:**
-| Placeholder | Description | Example |
-|-------------|-------------|---------|
-| `{artist}` | Artist name | "Pink Floyd" |
-| `{album}` | Album title | "The Wall" |
-| `{track2}` | Track number (2-digit) | "06" |
-| `{disc2}` | Disc number (2-digit) | "01" |
-| `{genre}` | Genre | "Rock" |
-
-**Default templates:**
-- Movies: `{title} ({year})`
-- TV: `{title} - S{season2}E{episode2} - {episode_title}`
-- Music: `{artist}/{album} ({year})/{track2} - {title}`
-
-**Custom examples:**
-```bash
-# Movie with quality tag
-file-renamer config set-template movie "{title} ({year}) [{quality}]"
-# Result: The Matrix (1999) [1080p].mkv
-
-# Music with disc number
-file-renamer config set-template music "{artist}/{album}/Disc {disc2}/{track2} - {title}"
-# Result: Pink Floyd/The Wall/Disc 02/06 - Comfortably Numb.flac
-```
+More detail is in [Getting Started](wiki/Getting-Started.md#coming-from-the-python-version).
 
 ## Documentation
 
-See the [Wiki](wiki/) for detailed documentation:
-
-- [Installation Guide](wiki/Installation.md)
-- [Getting Started](wiki/Getting-Started.md)
-- [CLI Reference](wiki/CLI-Reference.md)
-- [GUI Guide](wiki/GUI-Guide.md)
-- [Template Syntax](wiki/Templates.md)
-- [Configuration](wiki/Configuration.md)
-- [Troubleshooting](wiki/Troubleshooting.md)
+- [Installation](wiki/Installation.md): installers, unsigned-app warnings, the command-line tool, building from source
+- [Getting Started](wiki/Getting-Started.md): first rename, step by step
+- [GUI Guide](wiki/GUI-Guide.md): the desktop app
+- [CLI Reference](wiki/CLI-Reference.md): every command, option, exit code, and environment variable
+- [Templates](wiki/Templates.md): placeholders, formatters, folders, and how names are cleaned
+- [Configuration](wiki/Configuration.md): `config.toml`, file locations, history, cache
+- [API Keys](wiki/API-Keys.md): getting TMDB and TVDB keys
+- [Troubleshooting](wiki/Troubleshooting.md): common problems
+- [BUILD.md](BUILD.md): developing, testing, packaging, and releasing
 
 ## Development
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Lint
-ruff check src/
-
-# Type check
-mypy src/
+npm install          # all workspaces
+npm run build        # core, then CLI, then desktop (in that order)
+npm test             # unit tests in every workspace
+npm run typecheck
 ```
 
-### Building for Distribution
+The repository is an npm-workspace monorepo: `packages/core` (all the logic), `packages/cli` (the `tidytitles` command), and `apps/desktop` (the Electron app). See [BUILD.md](BUILD.md) for the layout, the desktop end-to-end tests, and how releases are made.
 
-Create standalone executables to share with others:
+## Legacy Python app
 
-```bash
-# Install build dependencies
-pip install -e ".[build,gui]"
-
-# Build executable for your platform
-python build.py
-
-# Output will be in dist/
-```
-
-See [BUILD.md](BUILD.md) for detailed instructions on building and distributing TidyTitles.
+The original Python implementation is still in `src/file_renamer/` for reference and will be removed later. To run it: `pip install -e ".[dev,gui]"`, then `file-renamer` (CLI) or `file-renamer-gui` (window).
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT, as declared in `package.json`.

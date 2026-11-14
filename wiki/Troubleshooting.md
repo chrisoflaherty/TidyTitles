@@ -1,239 +1,290 @@
 # Troubleshooting
 
-Common issues and their solutions.
+Common problems and how to solve them, grouped by where they show up.
 
-## Installation Issues
+- [Installing and opening the app](#installing-and-opening-the-app)
+- [The command-line tool](#the-command-line-tool)
+- [Metadata lookups](#metadata-lookups)
+- [Files and renaming](#files-and-renaming)
+- [Parsing: wrong title, year, or type](#parsing-wrong-title-year-or-type)
+- [Undo](#undo)
+- [Configuration](#configuration)
+- [Desktop app](#desktop-app)
+- [Getting help](#getting-help)
 
-### "Command not found: file-renamer"
+## Installing and opening the app
 
-The CLI isn't in your PATH. Try:
+The release builds are not code signed, so the first launch is blocked on macOS and Windows. This is expected. [Installation](Installation.md) has step-by-step instructions; the short versions are below.
+
+### macOS: "TidyTitles" cannot be opened / Apple could not verify it / "is damaged"
+
+Gatekeeper blocks apps that are not signed and notarized by a registered developer. Do one of these once:
+
+- **System Settings** → **Privacy & Security** → scroll to **Security** → **Open Anyway** next to the TidyTitles message, then confirm.
+- Or, in Terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/TidyTitles.app
+  ```
+
+The "is damaged and can't be opened" message usually means the same thing (a downloaded, unsigned app), and the `xattr` command fixes it. Do not choose **Move to Trash**.
+
+### macOS: the app does not start, or starts slowly, on an Intel Mac (or the reverse)
+
+Check that you downloaded the right disk image: `macos-arm64` for Apple silicon, `macos-x64` for Intel. Apple menu → **About This Mac** shows **Chip** (Apple silicon) or **Processor** (Intel). An x64 build runs on Apple silicon through Rosetta, but more slowly.
+
+### Windows: "Windows protected your PC"
+
+Microsoft Defender SmartScreen warns about installers without a code signature. Click **More info**, then **Run anyway**.
+
+### Windows: the installer asks for administrator permission
+
+The installer installs TidyTitles for all users (under Program Files by default), which requires administrator rights. Click **Yes** in the User Account Control prompt. If you do not have administrator rights on the computer, ask the person who manages it.
+
+### Windows: antivirus flags or removes the installer
+
+Some antivirus programs are wary of new unsigned programs. If you downloaded the installer from this project's Releases page, you can allow it in your antivirus settings. Please also report it on the [issue tracker](https://github.com/chrisoflaherty/TidyTitles/issues).
+
+### Linux: "Permission denied" when starting the AppImage
+
+Make it executable first:
 
 ```bash
-# Run with Python module syntax
-python3 -m file_renamer.cli.main --help
-
-# Or ensure pip scripts are in PATH
-export PATH="$PATH:$(python3 -m site --user-base)/bin"
+chmod +x TidyTitles-*-x86_64.AppImage
 ```
 
-### "No module named 'file_renamer'"
+### Linux: the AppImage fails with a FUSE error
 
-The package isn't installed correctly:
+AppImages need FUSE 2. Install it with your package manager (Ubuntu 22.04 and later: `sudo apt install libfuse2`).
+
+The Windows and Linux builds have not yet been tried by hand. If you hit a problem not listed here, please [report it](#getting-help).
+
+## The command-line tool
+
+### `tidytitles: command not found`
+
+- **Installed from the desktop app:** the launcher went into `/usr/local/bin` or `~/.local/bin`. The success dialog said which, and whether it is on your `PATH`. If it is not, add it to your shell profile (for example `~/.zshrc` or `~/.bashrc`) and open a new terminal:
+
+  ```bash
+  export PATH="$HOME/.local/bin:$PATH"
+  ```
+
+- **Windows:** the menu item does not install a file; it gives you a PowerShell function to add to your profile. Run `notepad $PROFILE`, paste it, and open a new PowerShell window. See [Installation](Installation.md#2-on-windows).
+- **Source checkout:** run it as `npx tidytitles` from inside the repository, after `npm run build`. Elsewhere, use `node /path/to/TidyTitles/packages/cli/dist/index.js`.
+
+### The launcher stopped working after moving or updating the app
+
+The launcher records the app's location. On macOS, keep `TidyTitles.app` in Applications. On Linux, the launcher points at the AppImage file and a copy of the CLI in `~/.local/share/TidyTitles/cli/`. After moving, renaming, or replacing the app or AppImage, choose **Install Command Line Tool…** again.
+
+### "Install Command Line Tool…" is grayed out ("Not included in this build")
+
+The app was built without the bundled CLI, typically a development build. Build the CLI (`npm run build` from the repository root) and package the app again, or use `npx tidytitles` from the source checkout.
+
+### `npx tidytitles` downloads something or says the command is not found
+
+Run it from inside the TidyTitles repository after `npm install` and `npm run build`. To make sure `npx` never downloads a package from the internet, use `npx --no-install tidytitles`.
+
+### `file-renamer` runs the old Python app
+
+If the Python package is still installed, its `file-renamer` command may come first on your `PATH`. Use `tidytitles` instead, or remove the Python package with `pip uninstall file-renamer`.
+
+### Something went wrong and the message is not enough
+
+Set `DEBUG=1` to print a stack trace with the error:
 
 ```bash
-# Reinstall
-cd /path/to/file-renamer
-pip install -e .
+DEBUG=1 tidytitles rename ~/Downloads --dry-run
 ```
 
-### "PySide6 not installed"
+## Metadata lookups
 
-Install GUI dependencies:
+### "No API keys configured" or "TMDB API key not configured"
+
+The CLI needs a TMDB or TVDB key for movies and TV:
 
 ```bash
-pip install PySide6
-# or
-pip install -e ".[gui]"
+tidytitles config set-key tmdb YOUR_TMDB_API_KEY
 ```
 
-## API Issues
+Or rename music only with `--type music` (no key needed). See [API Keys](API-Keys.md).
 
-### "Invalid TMDB API key"
+### I set `FILE_RENAMER_API__TMDB_API_KEY` but TidyTitles says no key is configured
 
-1. Verify your key is correct:
-   ```bash
-   file-renamer config show
-   ```
+A value in `config.toml` wins over the environment, even an empty `tmdb_api_key = ""`, which TidyTitles writes whenever it saves the file. Delete the `tmdb_api_key` line from `config.toml`. See [Precedence](Configuration.md#precedence).
 
-2. Test the key directly:
-   ```bash
-   curl "https://api.themoviedb.org/3/movie/550?api_key=YOUR_KEY"
-   ```
+### "API key rejected" (app) or "Invalid TMDB API key" / "Invalid TVDB API key" (CLI)
 
-3. Try using the API Read Access Token instead of the v3 key
+The service refused the key. Check it for missing or extra characters, try TMDB's other credential (API Key versus Read Access Token), and make sure your TVDB access is active. [API Keys](API-Keys.md#when-a-key-is-rejected) shows how to test a TMDB key with curl.
 
-4. Re-set the key:
-   ```bash
-   file-renamer config set-key tmdb YOUR_CORRECT_KEY
-   ```
+### "Rate limited" or "rate limit exceeded"
 
-### "Invalid TVDB API key"
+The service is limiting requests. Wait a minute and try again. Responses are cached for 24 hours, so files already looked up do not count again. MusicBrainz allows about one request per second, and TidyTitles waits between requests, so large music batches are slow but should not hit the limit.
 
-1. Verify your TVDB subscription is active
-2. Generate a new API key from your TVDB dashboard
-3. Check if your key has expired
+### "Lookup failed"
 
-### "Rate limit exceeded"
+The service could not be reached or returned an error (no internet connection, a firewall, or the service is down). Only the affected files are skipped. Check your connection and fetch again. In the CLI, the message appears as `Error: Metadata lookup failed for N file(s): ...` and the command exits 1.
 
-The APIs have rate limits. Wait a few minutes and try again. For large collections, the cache helps avoid repeated requests.
+### "No match"
 
-### "No matches found"
+Nothing was found for the parsed title, or you skipped the file when asked to choose. Also:
 
-The API couldn't find your media. Try:
+- Movies are only looked up when a TMDB key is set and the provider is **Auto** or **TMDB**.
+- TV episodes need a season and episode number in the filename (`S01E01`, `1x01`, ...); without them, no lookup is made.
+- With the **MusicBrainz** provider, movies and TV are not looked up at all.
 
-1. Check the parsed title with `file-renamer preview`
-2. Rename the file to include the correct title/year
-3. Use `--type movie` or `--type tv` to force detection
+Check what TidyTitles read from the filename with `tidytitles preview <file>`, then see [Parsing](#parsing-wrong-title-year-or-type).
 
-## File Issues
+### Files with several matches were skipped (CLI)
+
+When standard input is not a terminal (in a script, a cron job, or with input piped in), the CLI cannot ask you to choose, so files with several matches are skipped. Add `--auto-select` to take the first result, or run the command in a terminal.
+
+### Music shows "Unverified"
+
+The new name comes from the file's own tags (or, without tags, from its filename) and MusicBrainz could not confirm them, or was not asked (provider set to TMDB or TVDB). Check these names before renaming. Tags are confirmed when MusicBrainz has a recording with the same artist and title (ignoring case, punctuation, a leading "The", and "(feat. ...)").
+
+## Files and renaming
+
+### Files are not picked up
+
+- Only these extensions are scanned. Video: `.mkv`, `.mp4`, `.avi`, `.mov`, `.wmv`, `.flv`, `.webm`, `.m4v`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`. Audio: `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav`, `.aiff`, `.wma`, `.aac`, `.ape`.
+- The **Type** decides what a folder scan looks for: Movies and TV Shows find only video, Music only audio.
+- Files in subfolders are found only with **Include subfolders** (app, checked before adding the folder) or `--recursive` (CLI).
+- Hidden files and folders (starting with `.`) are always skipped.
+- `tidytitles preview` lists only video files.
+
+A file named directly on the command line, or chosen in **Add Files…**, is always processed.
+
+### "destination exists" / "Name taken"
+
+A file with the new name already exists, and the conflict setting is **Skip the file** (`conflict_resolution = "skip"`). Either move the existing file, or choose **Add a number** or **Replace the existing file** in **Settings** → **Files** (or set `conflict_resolution` in `config.toml`). See [Conflict resolution](Configuration.md#conflict-resolution).
+
+With **Replace the existing file**, a file is still not overwritten if it is part of the same batch.
+
+### "duplicate destination" / "Duplicate name"
+
+Two files in the batch would get the same new name (for example two copies of the same movie). The first one gets the name and the others are skipped. Choose **Add a number** (`auto_version`) to number the extras, or remove the duplicates from the list.
 
 ### "Source file does not exist"
 
-The file was moved or deleted between preview and rename. Re-run the command.
+The file was moved, renamed, or deleted after it was added to the list (or after the CLI scanned it). Fetch or run the command again.
 
-### "Destination already exists"
+### "Permission denied" or "Failed to rename file"
 
-A file with the new name already exists. Options:
+You do not have permission to change the file or its folder, or the file is in use (on Windows, close any program playing it). Check the permissions on the folder. Running TidyTitles as an administrator or with `sudo` is not recommended; fix the folder's permissions instead.
 
-1. Delete or rename the existing file
-2. Use a different output directory with `--output`
+### Renaming across disks is slow
 
-### "Permission denied"
+When `--output` points to another disk, each file is copied and then the original is deleted, which takes as long as copying the file.
 
-You don't have write permissions. Try:
+### Associated files were not renamed
 
-```bash
-# Check permissions
-ls -la /path/to/file
+They must be in the same folder and start with exactly the media file's base name: `Movie.2010.mkv` with `Movie.2010.srt` or `Movie.2010.en.srt`. Check that the type is enabled in **Settings** → **Files** (`[associated_files]` in `config.toml`). See [Associated files](Configuration.md#associated-files).
 
-# Run with sudo (not recommended)
-sudo file-renamer rename /path/to/file
-```
+### A folder was created with an odd name, or a "/" disappeared
 
-### Files not detected
+A `/` in the template creates folders, but a `/` inside a title or artist name is removed (`AC/DC` → `ACDC`), and characters like `:` and `?` are removed too. Empty placeholders leave empty brackets, such as `Album ()` when a track has no year. See [How names are cleaned](Templates.md#how-names-are-cleaned).
 
-File Renamer only processes video files with these extensions:
-- `.mkv`, `.mp4`, `.avi`, `.mov`, `.m4v`, `.wmv`, `.flv`, `.webm`
+## Parsing: wrong title, year, or type
 
-If your files have a different extension, rename them first.
-
-## Parsing Issues
-
-### Wrong title detected
-
-The filename parser may misinterpret complex filenames. Solutions:
-
-1. Check parsed results:
-   ```bash
-   file-renamer preview /path/to/file
-   ```
-
-2. Simplify the filename:
-   ```
-   Before: Movie.Title.REMASTERED.2024.Directors.Cut.1080p.mkv
-   After:  Movie Title 2024.mkv
-   ```
-
-3. Force the media type:
-   ```bash
-   file-renamer rename /path --type movie
-   ```
-
-### TV show detected as movie (or vice versa)
-
-Force the correct type:
+Check what TidyTitles reads from a name:
 
 ```bash
-file-renamer rename /path/to/shows --type tv
-file-renamer rename /path/to/movies --type movie
+tidytitles preview "/path/to/The.Movie.2024.1080p.mkv"
 ```
 
-### Wrong year detected
+### Wrong title
 
-The parser may pick up a year from quality info (e.g., "2160p" → 2160). Ensure the actual year is in the filename:
+Release names with extra words (edition names, languages, site tags) can confuse the parser. Rename the file to something simpler, such as `Movie Title 2024.mkv` or `Movie Title (2024).mkv`, and try again. In the app, when several matches are found you can also pick the right one.
 
-```
-Before: Movie.4K.2160p.mkv
-After:  Movie.2024.4K.2160p.mkv
-```
+### A TV episode is treated as a movie (or the reverse)
 
-## Configuration Issues
+Set the type explicitly: **Type** → **TV Shows** or **Movies** in the app, or `--type tv` / `--type movie` in the CLI.
 
-### "Config file not found"
+### No year, or the wrong year
 
-Initialize the configuration:
+Make sure the release year is in the filename. Resolutions such as `2160p` are not years.
 
-```bash
-file-renamer config init
-```
+### Music files are named "01" or "Unknown"
 
-### Settings not applying
+Music is named from its tags first. Without tags, the filename is used, and patterns such as `Artist - Album - 01 - Title` or `01 - Artist - Title` are recognized. The filename fallback splits at the first `-`, so a hyphenated artist name like `AC-DC` in a filename is misread. Tag your files (with a tag editor) for reliable results.
 
-1. Check current config:
-   ```bash
-   file-renamer config show
-   ```
+## Undo
 
-2. Environment variables override config file settings
+### "No rename history found" / "There is no rename to undo"
 
-3. Try removing and re-setting:
-   ```bash
-   file-renamer config set-template movie "{title} ({year})"
-   ```
+Nothing has been renamed since the history was last emptied, or `history.json` was deleted. Dry runs are not recorded.
 
-### Config file corrupted
+### Undo says "Not found"
 
-Reset to defaults:
+The file is no longer at its renamed location (it was moved or deleted after the rename), so there was nothing to move back.
 
-```bash
-# Remove old config
-rm ~/Library/Application\ Support/file-renamer/config.toml  # macOS
-rm ~/.config/file-renamer/config.toml                       # Linux
+### Undo failed for some files
 
-# Reinitialize
-file-renamer config init
-```
+Usually the original name is now taken by another file; undo never overwrites. Move that file out of the way and run undo again: files that failed stay in the history for another try.
 
-## GUI Issues
+### "The rename history changed since it was shown"
 
-### GUI won't launch
+Another rename was recorded (or undone), for example by the CLI while the app was open, between showing you what would be undone and doing it. Nothing was moved. Look at what Undo now offers and try again.
 
-1. Ensure PySide6 is installed:
-   ```bash
-   pip install PySide6
-   ```
+### Empty folders are left after undo
 
-2. Check for errors:
-   ```bash
-   python3 -m file_renamer.gui.main
-   ```
+Undo moves files back but does not delete the folders the rename created. Delete them by hand.
 
-### GUI freezes during fetch
+### I want to undo an older rename
 
-Normal for large collections. The progress dialog shows status. Wait for completion or click "Cancel".
+The history keeps the last 10 renames. Undo always reverts the newest one left, so undo repeatedly to go back further.
 
-### "No API keys configured" in GUI
+## Configuration
 
-Configure via CLI first:
+### "Invalid configuration" or "Could not parse config.toml"
 
-```bash
-file-renamer config set-key tmdb YOUR_KEY
-```
+`config.toml` has a syntax error or a value of the wrong type. The message names the problem, for example `behavior.dry_run: Invalid input: expected boolean, received string`. Fix the file in a text editor, or reset it with `tidytitles config init` (this also removes your API keys). In the desktop app, the error is shown in the window and the defaults are used; saving Settings then replaces the file with the defaults plus whatever you entered.
 
-## Performance Issues
+### A setting has no effect
 
-### Slow with many files
+`behavior.dry_run`, `behavior.overwrite`, `behavior.preview_before_rename`, `providers.movie`, and `providers.music` are stored for compatibility with the Python app but are not used. Use `--dry-run` and `conflict_resolution` instead. See [Settings reference](Configuration.md#settings-reference).
 
-1. Use the cache (enabled by default)
-2. Process in smaller batches
-3. Use CLI instead of GUI for large collections:
-   ```bash
-   file-renamer rename /path --type movie --yes
-   ```
+### Comments I added to config.toml disappeared
 
-### High memory usage
+Saving rewrites the whole file in a fixed layout, without comments or unknown keys.
 
-For very large collections (10,000+ files), process in batches or subdirectories.
+### The rename history is in use by another TidyTitles process
 
-## Getting Help
+The CLI and the app take turns writing `history.json`, using a lock file. If one process crashed while holding it, the lock is ignored after 30 seconds. If the message persists, make sure no other TidyTitles is running and delete `history.json.lock` from the settings folder.
 
-If you're still stuck:
+## Desktop app
 
-1. Check the full error message
-2. Run with verbose output (if available)
-3. Search existing issues on GitHub
-4. Open a new issue with:
-   - Your operating system
-   - Python version (`python3 --version`)
-   - Full error message
-   - Steps to reproduce
+### "Couldn't Fetch Metadata"
+
+Usually `config.toml` could not be loaded; the message says why. See [Configuration](#configuration).
+
+### Only "MusicBrainz (music only)" is in the Provider menu
+
+No TMDB or TVDB key is set. Add one in **Settings** → **API Keys**.
+
+### Rename is grayed out
+
+Fetch metadata first, and make sure at least one file is ready (not all skipped). Changing **Type**, **Provider**, the list, or the settings after fetching clears the new names; fetch again.
+
+### The window will not close
+
+It will not close while files are being renamed or restored. Wait for that to finish. Closing while fetching just stops the fetch.
+
+### Dropped files were not added
+
+A drop adds only files whose extension matches the selected **Type** (folders are scanned the same way). Nothing can be dropped while a task is running.
+
+### The CLI renamed files but the app's Undo offers something else
+
+The app reads the history when it starts and after each rename or undo it does. Restart the app, or just click **Undo**: if the history changed, it refuses and refreshes, and the next Undo offers the newest rename.
+
+## Getting help
+
+If you are still stuck, open an issue at https://github.com/chrisoflaherty/TidyTitles/issues (also **Help** → **Report an Issue** in the app). Please include:
+
+- your operating system and version, and whether you use the app or the CLI,
+- the TidyTitles version (`tidytitles --version`, or **About TidyTitles**),
+- the exact error message, and for the CLI the output with `DEBUG=1`,
+- an example filename and what you expected it to become.
+
+Never include your API keys or your whole `config.toml`.

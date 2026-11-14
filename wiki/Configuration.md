@@ -1,26 +1,55 @@
 # Configuration
 
-File Renamer stores its configuration in a TOML file and supports environment variable overrides.
+TidyTitles keeps its settings in a TOML file, `config.toml`, and the record of recent renames in `history.json`. The desktop app and the command-line tool share both files. They are also the files the Python version of TidyTitles used, in the same place and format, so you can switch between the versions freely.
 
-## Configuration File Location
+- [Where files are stored](#where-files-are-stored)
+- [Changing settings](#changing-settings)
+- [The config.toml file](#the-configtoml-file)
+- [Settings reference](#settings-reference)
+- [Conflict resolution](#conflict-resolution)
+- [Associated files](#associated-files)
+- [Cover art](#cover-art)
+- [Environment variables](#environment-variables)
+- [Using a different settings folder](#using-a-different-settings-folder)
+- [Rename history](#rename-history)
+- [Cache](#cache)
+- [Backing up and resetting](#backing-up-and-resetting)
 
-| Platform | Path |
-|----------|------|
-| macOS | `~/Library/Application Support/file-renamer/config.toml` |
-| Windows | `%LOCALAPPDATA%\file-renamer\config.toml` |
-| Linux | `~/.config/file-renamer/config.toml` |
+## Where files are stored
 
-## Cache Location
+| System | Settings (`config.toml`) and history (`history.json`) |
+|--------|-------------------------------------------------------|
+| macOS | `~/Library/Application Support/file-renamer/` |
+| Windows | `%LOCALAPPDATA%\file-renamer\file-renamer\` |
+| Linux | `$XDG_CONFIG_HOME/file-renamer/`, or `~/.config/file-renamer/` when `XDG_CONFIG_HOME` is not set |
 
-API responses are cached to reduce API calls:
-
-| Platform | Path |
-|----------|------|
+| System | Cache |
+|--------|-------|
 | macOS | `~/Library/Caches/file-renamer/` |
-| Windows | `%LOCALAPPDATA%\file-renamer\cache\` |
-| Linux | `~/.cache/file-renamer/` |
+| Windows | `%LOCALAPPDATA%\file-renamer\file-renamer\Cache\` |
+| Linux | `$XDG_CACHE_HOME/file-renamer/`, or `~/.cache/file-renamer/` |
 
-## Configuration File Format
+The folder name is `file-renamer`, not `TidyTitles`, for compatibility with the Python version. `tidytitles config show` prints the exact paths on your system, and the desktop app's Settings window shows the config file path in its footer.
+
+The desktop app also stores its window size and position in `window-state.json` in its own folder (`~/Library/Application Support/TidyTitles/` on macOS, `%APPDATA%\TidyTitles\` on Windows, `~/.config/TidyTitles/` on Linux). Nothing else is kept there.
+
+## Changing settings
+
+| Setting | Desktop app | Command line | `config.toml` |
+|---------|-------------|--------------|---------------|
+| Templates | Settings → Templates | `config set-template` | `[templates]` |
+| TMDB / TVDB API keys | Settings → API Keys | `config set-key` | `[api]` |
+| TVDB subscriber PIN | Settings → API Keys | | `[api] tvdb_pin` |
+| Associated files | Settings → Files | | `[associated_files]` |
+| Conflict resolution | Settings → Files → When the new name is taken | | `[behavior] conflict_resolution` |
+| Cover art | Settings → Cover Art | | `[cover_art]` |
+| Preferred TV service | Settings → Providers | | `[providers] tv` |
+
+To edit the file by hand, open it in any text editor. Changes are picked up the next time a command runs, or in the desktop app the next time you fetch metadata or open Settings.
+
+## The config.toml file
+
+This is the file as TidyTitles writes it, with every setting at its default:
 
 ```toml
 # File Renamer Configuration
@@ -28,10 +57,11 @@ API responses are cached to reduce API calls:
 [templates]
 movie = "{title} ({year})"
 tv = "{title} - S{season2}E{episode2} - {episode_title}"
+music = "{artist}/{album} ({year})/{track2} - {title}"
 
 [api]
-tmdb_api_key = "your_tmdb_key_here"
-tvdb_api_key = "your_tvdb_key_here"
+tmdb_api_key = ""
+tvdb_api_key = ""
 tvdb_pin = ""
 
 [associated_files]
@@ -39,6 +69,13 @@ enabled = true
 subtitles = true
 nfo = true
 images = true
+
+[cover_art]
+enabled = false
+filename = "poster.jpg"
+music_filename = "cover.jpg"
+overwrite = false
+size = "w500"
 
 [behavior]
 dry_run = false
@@ -49,237 +86,237 @@ conflict_resolution = "skip"
 [providers]
 movie = "tmdb"
 tv = "tvdb"
+music = "musicbrainz"
 ```
 
-## Configuration Options
+Every key is optional; a missing key takes its default. Booleans also accept `1`/`0` and strings such as `"yes"`/`"no"`. Unknown sections and keys are ignored when reading.
+
+Saving (from the desktop app, `config set-key`, `config set-template`, or `config init`) **rewrites the whole file** in exactly this layout. Comments you added and unknown keys are not kept.
+
+If the file cannot be parsed or a value has the wrong type, the CLI stops with an error such as `Error: Could not parse .../config.toml: Invalid TOML document: ...` or `Error: Invalid configuration (...): behavior.dry_run: Invalid input: expected boolean, received string`, and the desktop app shows the error and uses the defaults until the file is fixed. This applies to every key, including the ones that have no effect. See [Troubleshooting](Troubleshooting.md#configuration).
+
+## Settings reference
 
 ### Templates
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `movie` | Template for movie filenames | `{title} ({year})` |
-| `tv` | Template for TV episode filenames | `{title} - S{season2}E{episode2} - {episode_title}` |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `templates.movie` | `{title} ({year})` | Movie names |
+| `templates.tv` | `{title} - S{season2}E{episode2} - {episode_title}` | TV episode names |
+| `templates.music` | `{artist}/{album} ({year})/{track2} - {title}` | Music names (and folders) |
 
-See [Templates](Templates.md) for placeholder documentation.
+See [Templates](Templates.md).
 
-### API Keys
+### API keys
 
-| Key | Description |
-|-----|-------------|
-| `tmdb_api_key` | TMDB API key (v3 or Read Access Token) |
-| `tvdb_api_key` | TVDB API key |
-| `tvdb_pin` | TVDB subscriber PIN (optional) |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `api.tmdb_api_key` | `""` | TMDB API key (v3) or API Read Access Token |
+| `api.tvdb_api_key` | `""` | TVDB API key |
+| `api.tvdb_pin` | `""` | TVDB subscriber PIN, sent when logging in to TVDB (optional) |
 
-See [API Keys](API-Keys.md) for how to obtain these.
+Keys are stored as plain text. See [API Keys](API-Keys.md).
 
-### Associated Files
+### Associated files
 
-Controls which associated files are automatically renamed along with video files:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `associated_files.enabled` | `true` | Rename associated files with their media file |
+| `associated_files.subtitles` | `true` | `.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx` |
+| `associated_files.nfo` | `true` | `.nfo` |
+| `associated_files.images` | `true` | `.jpg`, `.jpeg`, `.png`, `.tbn` |
 
-| Key | Description | Default | Supported Extensions |
-|-----|-------------|---------|---------------------|
-| `enabled` | Enable/disable associated file renaming | `true` | - |
-| `subtitles` | Rename subtitle files | `true` | `.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx` |
-| `nfo` | Rename NFO metadata files | `true` | `.nfo` |
-| `images` | Rename cover/poster images | `true` | `.jpg`, `.jpeg`, `.png`, `.tbn` |
+See [Associated files](#associated-files) below.
 
-When enabled, TidyTitles will automatically find and rename files with the same base name as the video file. For example:
+### Cover art
 
-```
-Video:    movie.mkv     → Movie Title (2024).mkv
-Subtitle: movie.srt     → Movie Title (2024).srt
-Subtitle: movie.en.srt  → Movie Title (2024).en.srt  (language codes preserved)
-NFO:      movie.nfo     → Movie Title (2024).nfo
-Image:    movie.jpg     → Movie Title (2024).jpg
-```
-
-To disable associated file renaming entirely:
-
-```toml
-[associated_files]
-enabled = false
-```
-
-To selectively enable only certain types:
-
-```toml
-[associated_files]
-enabled = true
-subtitles = true
-nfo = false
-images = false
-```
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cover_art.enabled` | `false` | Download cover art after renaming. Desktop app: the default for the **Download cover art** checkbox. CLI: when `true`, every `rename` downloads cover art, as if `--cover-art` were given. |
+| `cover_art.filename` | `poster.jpg` | File name for movie and TV posters |
+| `cover_art.music_filename` | `cover.jpg` | File name for album covers |
+| `cover_art.overwrite` | `false` | Replace a poster or cover that is already there |
+| `cover_art.size` | `w500` | TMDB poster size: `w92`, `w154`, `w185`, `w342`, `w500`, `w780`, or `original` |
 
 ### Behavior
 
-| Key | Description | Default | Options |
-|-----|-------------|---------|---------|
-| `dry_run` | If true, never actually rename files | `false` | `true`, `false` |
-| `overwrite` | If true, overwrite existing files | `false` | `true`, `false` |
-| `preview_before_rename` | Show preview before renaming | `true` | `true`, `false` |
-| `conflict_resolution` | How to handle filename conflicts | `"skip"` | `"skip"`, `"overwrite"`, `"auto_version"` |
-
-#### Conflict Resolution Strategies
-
-The `conflict_resolution` setting controls what happens when a renamed file would overwrite an existing file:
-
-**`skip` (Default)**
-Skip files that would overwrite existing files. The original file is left unchanged.
-
-```
-Existing: Movie (2024).mkv
-Attempt:  Movie (2024).mkv  →  Skipped
-```
-
-**`overwrite`**
-Overwrite existing files. **Use with caution!**
-
-```
-Existing: Movie (2024).mkv (old version)
-Attempt:  Movie (2024).mkv  →  Replaced with new version
-```
-
-**`auto_version`** ⭐ **Recommended**
-Automatically add version numbers to avoid conflicts. Files are renamed with incrementing numbers: `(1)`, `(2)`, `(3)`, etc.
-
-```
-Existing: Movie (2024).mkv
-Attempt:  Movie (2024).mkv  →  Movie (2024) (1).mkv
-
-Existing: Movie (2024).mkv, Movie (2024) (1).mkv
-Attempt:  Movie (2024).mkv  →  Movie (2024) (2).mkv
-```
-
-This works for both main files and associated files:
-
-```
-Before:
-  Movie.mkv (existing)
-  Movie.srt (existing)
-
-After renaming new_movie.mkv with auto_version:
-  Movie.mkv (unchanged)
-  Movie.srt (unchanged)
-  Movie (1).mkv (new)
-  Movie (1).srt (new)
-```
-
-To enable auto-versioning:
-
-```toml
-[behavior]
-conflict_resolution = "auto_version"
-```
+| Key | Default | Description |
+|-----|---------|-------------|
+| `behavior.conflict_resolution` | `skip` | `skip`, `overwrite`, or `auto_version`. See [Conflict resolution](#conflict-resolution). Any other value acts as `skip`. |
+| `behavior.dry_run` | `false` | Stored for compatibility; has no effect. Use `--dry-run`. |
+| `behavior.overwrite` | `false` | Stored for compatibility; has no effect. Use `conflict_resolution = "overwrite"`. |
+| `behavior.preview_before_rename` | `true` | Stored for compatibility; has no effect. The CLI always shows the preview, and the app always shows the new names before renaming. |
 
 ### Providers
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `movie` | Provider for movies | `tmdb` |
-| `tv` | Provider for TV shows | `tvdb` |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `providers.tv` | `tvdb` | `tvdb` or `tmdb`: which service TV episodes use when the provider is Auto and both keys are set. If the preferred service has no key, the other is used. |
+| `providers.movie` | `tmdb` | Stored for compatibility; has no effect. Movies always use TMDB. |
+| `providers.music` | `musicbrainz` | Stored for compatibility; has no effect. Music always uses MusicBrainz. |
 
-## Managing Configuration
+## Conflict resolution
 
-### View Current Configuration
+`conflict_resolution` decides what happens when a file's new name is already taken. In the desktop app this is **Settings** → **Files** → **When the new name is taken**.
 
-```bash
-file-renamer config show
+A name is "taken" in two ways: a file with that name already exists on disk, or another file in the same batch would get the same new name.
+
+**`skip`** (the default; "Skip the file" in the app)
+
+The file keeps its old name and is reported as skipped. If two files in the batch would get the same name, the first one (in sorted order) gets it and the others are skipped as duplicates.
+
+```
+Existing:  The Matrix (1999).mkv
+Renaming:  The.Matrix.1999.REMASTERED.mkv  →  skipped (destination exists)
 ```
 
-### Initialize Configuration
+**`auto_version`** ("Add a number")
 
-Creates a config file with defaults:
+The file gets the next free name with a number before the extension: ` (1)`, ` (2)`, and so on. This applies both to files already on disk and to files in the same batch. Associated files get their own numbers the same way.
 
-```bash
-file-renamer config init
+```
+Existing:  The Matrix (1999).mkv
+Renaming:  The.Matrix.1999.REMASTERED.mkv  →  The Matrix (1999) (1).mkv
+
+Existing:  The Matrix (1999).mkv, The Matrix (1999) (1).mkv
+Renaming:  The.Matrix.1999.mkv              →  The Matrix (1999) (2).mkv
 ```
 
-### Set API Keys
+**`overwrite`** ("Replace the existing file")
 
-```bash
-file-renamer config set-key tmdb YOUR_KEY
-file-renamer config set-key tvdb YOUR_KEY
+The existing file at the new name is **replaced** and its contents are lost. Undo cannot bring it back. Two safeguards apply:
+
+- Another file in the same batch is never overwritten, so swapping or chaining names within one batch cannot destroy a file. Such an operation is skipped ("Name taken" in the app). This covers every file in the batch, including one that is itself skipped (for example because it already has its target name).
+- If two files in the batch would get the same new name, only the first gets it; the others are skipped as duplicates, exactly as with `skip`.
+
+A file that already has its new name, exactly or differing only in letter case, is never treated as a conflict with itself. Case-only renames (`the matrix (1999).mkv` → `The Matrix (1999).mkv`) work with every setting, including on case-insensitive disks.
+
+## Associated files
+
+When `associated_files.enabled` is `true`, TidyTitles looks in the media file's folder for files that share its base name and have one of the enabled extensions, and gives them the matching new name. Anything between the base name and the extension (usually a language code) is kept.
+
+```
+Inception.2010.720p.WEB-DL.mkv     →  Inception (2010).mkv
+Inception.2010.720p.WEB-DL.srt     →  Inception (2010).srt
+Inception.2010.720p.WEB-DL.en.srt  →  Inception (2010).en.srt
+Inception.2010.720p.WEB-DL.nfo     →  Inception (2010).nfo
+Inception.2010.720p.WEB-DL.jpg     →  Inception (2010).jpg
 ```
 
-### Set Templates
+- Associated files always go to the same folder as the media file's new name, including folders the template creates.
+- They are renamed after their media file. If one fails, the media file still counts as renamed and the failure is reported.
+- They are recorded in the history, so undo moves them back too.
+- This applies to music files as well as video.
+- Files such as `poster.jpg` or `cover.jpg` that do not share the base name are not associated files and are left alone.
 
-```bash
-file-renamer config set-template movie "{title} ({year}) [{quality}]"
-file-renamer config set-template tv "{title} S{season2}E{episode2}"
-```
+## Cover art
 
-## Environment Variables
+When cover art is on (the **Download cover art** checkbox, `--cover-art`, or `cover_art.enabled = true` for the CLI), TidyTitles downloads art after renaming and saves it in the folder of each renamed file:
 
-Environment variables override config file settings:
+- **Movies:** the movie's poster from TMDB, as `cover_art.filename`.
+- **TV episodes:** the show's poster, as `cover_art.filename`, when the show has one.
+- **Music:** the album cover, from the album's cover URL or, for MusicBrainz releases, the [Cover Art Archive](https://coverartarchive.org/), as `cover_art.music_filename`.
 
-| Variable | Config Key |
-|----------|------------|
+If the file is already there and `cover_art.overwrite` is `false`, nothing is downloaded. Files in one folder therefore share one poster or cover. The extension is changed to match the image (`.jpg`, `.png`, or `.webp`). Failed downloads are skipped without an error. Cover art is not downloaded in a dry run.
+
+## Environment variables
+
+Every setting can also come from an environment variable named `FILE_RENAMER_` plus the setting's name, with `__` (two underscores) between a section and a key. Names are not case-sensitive.
+
+| Variable | Setting |
+|----------|---------|
 | `FILE_RENAMER_API__TMDB_API_KEY` | `api.tmdb_api_key` |
 | `FILE_RENAMER_API__TVDB_API_KEY` | `api.tvdb_api_key` |
 | `FILE_RENAMER_API__TVDB_PIN` | `api.tvdb_pin` |
+| `FILE_RENAMER_TEMPLATES__MOVIE` | `templates.movie` (also `__TV`, `__MUSIC`) |
+| `FILE_RENAMER_ASSOCIATED_FILES__ENABLED` | `associated_files.enabled` (also `__SUBTITLES`, `__NFO`, `__IMAGES`) |
+| `FILE_RENAMER_COVER_ART__ENABLED` | `cover_art.enabled` (also `__FILENAME`, `__MUSIC_FILENAME`, `__OVERWRITE`, `__SIZE`) |
+| `FILE_RENAMER_CONFLICT_RESOLUTION` | `behavior.conflict_resolution` |
+| `FILE_RENAMER_TV_PROVIDER` | `providers.tv` |
 
-### Using Environment Variables
+The `[behavior]` and `[providers]` settings use flat names without a section: `FILE_RENAMER_CONFLICT_RESOLUTION`, `FILE_RENAMER_DRY_RUN`, `FILE_RENAMER_MOVIE_PROVIDER`, `FILE_RENAMER_TV_PROVIDER`, `FILE_RENAMER_MUSIC_PROVIDER`. A whole section can also be given as JSON, for example `FILE_RENAMER_API='{"tmdb_api_key": "..."}'`; the `__` variables win over the JSON.
 
-```bash
-# Set for current session
-export FILE_RENAMER_API__TMDB_API_KEY=your_key_here
+### Precedence
 
-# Or inline with command
-FILE_RENAMER_API__TMDB_API_KEY=your_key file-renamer rename /path
-```
+From highest to lowest:
 
-### Priority Order
+1. A value in `config.toml`
+2. An environment variable
+3. The default
 
-1. Environment variables (highest)
-2. Config file
-3. Default values (lowest)
-
-## Clearing Cache
-
-The cache stores API responses to speed up repeated operations. To clear it:
+So the environment only fills in what the file does not set. This is easy to trip over with API keys: as soon as TidyTitles has saved `config.toml` once, the file contains `tmdb_api_key = ""`, and that empty value beats `FILE_RENAMER_API__TMDB_API_KEY`. To use the environment variable, delete the `tmdb_api_key` line (or `tvdb_api_key`) from `config.toml`.
 
 ```bash
-# macOS/Linux
-rm -rf ~/Library/Caches/file-renamer/  # macOS
-rm -rf ~/.cache/file-renamer/          # Linux
-
-# Windows (PowerShell)
-Remove-Item -Recurse $env:LOCALAPPDATA\file-renamer\cache
+FILE_RENAMER_API__TMDB_API_KEY=your_key tidytitles rename ~/Downloads --dry-run
 ```
 
-Cache entries expire automatically after 24 hours.
+`config init` writes the defaults plus any `FILE_RENAMER_*` values into the new file.
 
-## Backup and Restore
+## Using a different settings folder
 
-### Backup
+For testing, or to keep separate setups, point TidyTitles at another folder. It then uses `config.toml` and `history.json` in that folder and keeps its cache in a `cache` subfolder.
+
+- CLI: `--config-dir <dir>`, or the `TIDYTITLES_CONFIG_DIR` environment variable (the option wins).
+- Desktop app: start its executable from a terminal with `TIDYTITLES_CONFIG_DIR` set, for example on macOS:
+
+  ```bash
+  TIDYTITLES_CONFIG_DIR=~/tidytitles-test /Applications/TidyTitles.app/Contents/MacOS/TidyTitles
+  ```
+
+  Only one copy of TidyTitles runs at a time, so quit the app first.
+
+## Rename history
+
+`history.json` records each batch of renames so it can be undone. The newest batch is first, and **only the last 10 batches are kept**. Only files that were actually renamed are recorded; a dry run records nothing.
+
+```json
+[
+  {
+    "timestamp": "2026-11-14T21:05:42.123000",
+    "operations": [
+      {
+        "source": "/Users/me/Downloads/Inception.2010.720p.WEB-DL.mkv",
+        "destination": "/Users/me/Downloads/Inception (2010).mkv",
+        "associated_files": [
+          {
+            "source": "/Users/me/Downloads/Inception.2010.720p.WEB-DL.en.srt",
+            "destination": "/Users/me/Downloads/Inception (2010).en.srt"
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+- `timestamp` is local time without a time zone (here November 14, 2026, 9:05 PM).
+- Paths are absolute.
+- The format is the Python app's, so either version can undo the other's renames.
+- Undo (`tidytitles undo`, or **Undo** in the app) reverts the first entry and removes it, or, if some files could not be moved back, keeps just those files in it.
+- While the history is being written, a lock file (`history.json.lock`) keeps the CLI and the app from overwriting each other's entries. A lock older than 30 seconds is treated as left over from a crash.
+
+Deleting `history.json` is safe; you just cannot undo earlier renames any more.
+
+## Cache
+
+Responses from TMDB, TVDB, and MusicBrainz are cached on disk for **24 hours**, one small JSON file per request, so looking up the same files again is fast and makes fewer requests. The cache format is shared with the Python version. Deleting the cache folder is always safe:
 
 ```bash
-# macOS
-cp ~/Library/Application\ Support/file-renamer/config.toml ~/config-backup.toml
-
-# Linux
-cp ~/.config/file-renamer/config.toml ~/config-backup.toml
+rm -rf ~/Library/Caches/file-renamer      # macOS
+rm -rf ~/.cache/file-renamer              # Linux
 ```
 
-### Restore
+```powershell
+Remove-Item -Recurse "$env:LOCALAPPDATA\file-renamer\file-renamer\Cache"   # Windows
+```
+
+## Backing up and resetting
+
+Back up by copying `config.toml` (it contains your API keys) and, if you like, `history.json`:
 
 ```bash
-# macOS
-cp ~/config-backup.toml ~/Library/Application\ Support/file-renamer/config.toml
-
-# Linux
-cp ~/config-backup.toml ~/.config/file-renamer/config.toml
+cp ~/Library/Application\ Support/file-renamer/config.toml ~/tidytitles-config-backup.toml   # macOS
+cp ~/.config/file-renamer/config.toml ~/tidytitles-config-backup.toml                        # Linux
 ```
 
-## Resetting Configuration
-
-To reset to defaults:
-
-```bash
-# Remove existing config
-rm ~/Library/Application\ Support/file-renamer/config.toml  # macOS
-rm ~/.config/file-renamer/config.toml                       # Linux
-
-# Reinitialize
-file-renamer config init
-```
+To reset everything to the defaults, run `tidytitles config init` and confirm the overwrite, or delete `config.toml`. Either way your API keys are removed too.

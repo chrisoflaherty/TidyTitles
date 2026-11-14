@@ -1,371 +1,251 @@
-# Building TidyTitles for Distribution
+# Building TidyTitles
 
-This guide shows you how to build TidyTitles as a **standalone executable** and create **platform-specific installers** that can be shared with friends and family who don't have Python installed.
+This guide is for working on TidyTitles itself: the repository layout, building, running from source, testing, making installers, and publishing a release. To install a released version, see [Installation](wiki/Installation.md).
 
-## Building from Scratch
+- [Requirements](#requirements)
+- [Repository layout](#repository-layout)
+- [Build](#build)
+- [Run from source](#run-from-source)
+- [Test](#test)
+- [Package the desktop app](#package-the-desktop-app)
+- [Release](#release)
+- [Code signing](#code-signing)
+- [Troubleshooting builds](#troubleshooting-builds)
 
-Complete step-by-step instructions for each platform.
+## Requirements
 
-### Windows
+- **Node.js 22.12 or newer** (the `engines` field in `package.json`). Check with `node --version`.
+- **npm**, which comes with Node.js. The repository uses npm workspaces and a committed `package-lock.json`.
+- **git**.
+- To make installers: a computer running the target system. The release workflow builds each installer on its own system (macOS for the DMGs, Windows for the NSIS installer, Linux for the AppImage).
+- Optional, for the parser parity check only: Python 3 with [guessit](https://pypi.org/project/guessit/) installed.
 
-**Prerequisites:**
-```cmd
-:: Install Python 3.11+ (from python.org or Microsoft Store)
-winget install Python.Python.3.12
+## Repository layout
 
-:: Install NSIS (for creating the installer)
-winget install NSIS.NSIS
-
-:: Install Git
-winget install Git.Git
+```
+TidyTitles/
+├── package.json              npm workspaces root: build, test, typecheck scripts
+├── packages/
+│   ├── core/                 @tidytitles/core: all the logic
+│   │   ├── src/
+│   │   │   ├── parser.ts         filename parser (reproduces guessit)
+│   │   │   ├── musicParser.ts    music tags (music-metadata) with filename fallback
+│   │   │   ├── template.ts       templates and name cleaning
+│   │   │   ├── providers/        TMDB, TVDB, MusicBrainz clients and the response cache
+│   │   │   ├── renameService.ts  parse → fetch → plan → rename → undo
+│   │   │   ├── session.ts        wiring shared by both front ends, history, undo
+│   │   │   ├── renamer.ts, associatedFiles.ts, conflictResolution.ts, coverArt.ts, scan.ts
+│   │   │   └── config.ts         config.toml and history.json
+│   │   ├── tests/
+│   │   └── scripts/parser-parity.ts
+│   └── cli/                  @tidytitles/cli: the tidytitles command (commander)
+│       ├── src/program.ts        the program, with injectable dependencies
+│       ├── src/commands/         rename, preview, undo, config
+│       └── tests/
+├── apps/
+│   └── desktop/              @tidytitles/desktop: the Electron app (electron-vite, React 19)
+│       ├── src/main/             main process: controller.ts (state, workflow), app.ts (window, menu, IPC)
+│       ├── src/preload/          the window.tidytitles API (contextBridge)
+│       ├── src/renderer/         React UI, plain CSS
+│       ├── src/shared/ipc.ts     IPC channel names and payload types
+│       ├── src/e2e/              test-only main entry with fake providers (never shipped)
+│       ├── tests/                unit tests (main in Node, renderer in jsdom)
+│       ├── e2e/                  end-to-end tests (Playwright driving Electron)
+│       ├── build/                app icons (icon.svg is the source)
+│       └── electron-builder.yml  packaging configuration
+├── .github/workflows/release.yml   builds installers for a version tag
+└── src/file_renamer/, tests/, build.py, installer/, pyproject.toml
+                              the legacy Python app (reference only)
 ```
 
-**Build Steps:**
-```cmd
-:: 1. Clone the repository
-git clone https://github.com/chrisoflaherty/TidyTitles.git
-cd TidyTitles
+How the parts fit together: the CLI and the Electron main process both call `@tidytitles/core`. Core uses `node:fs`, so it runs only in Node and the Electron main process, never in the renderer. The renderer is sandboxed and talks to the main process through the typed API in `src/preload`; the main process holds the state and validates every IPC argument.
 
-:: 2. Create virtual environment
-python -m venv venv
-venv\Scripts\activate
-
-:: 3. Install dependencies
-pip install -e ".[build,gui]"
-
-:: 4. Build executable + installer
-python build.py --installer
-
-:: 5. Find your files in dist\
-::    - TidyTitles.exe (standalone)
-::    - TidyTitles-0.1.0-windows-setup.exe (installer)
-```
-
-### macOS
-
-**Prerequisites:**
-- Python 3.11+ (pre-installed or `brew install python`)
-- Xcode Command Line Tools: `xcode-select --install`
-
-**Build Steps:**
-```bash
-# 1. Clone the repository
-git clone https://github.com/chrisoflaherty/TidyTitles.git
-cd TidyTitles
-
-# 2. Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install dependencies
-pip install -e ".[build,gui]"
-
-# 4. Build executable + installer
-python build.py --installer
-
-# 5. Find your files in dist/
-#    - TidyTitles.app (app bundle)
-#    - TidyTitles-0.1.0-macos.dmg (installer)
-```
-
-### Linux
-
-**Prerequisites:**
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install python3 python3-venv python3-pip git
-
-# For AppImage creation
-wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-chmod +x appimagetool-x86_64.AppImage
-sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
-```
-
-**Build Steps:**
-```bash
-# 1. Clone the repository
-git clone https://github.com/chrisoflaherty/TidyTitles.git
-cd TidyTitles
-
-# 2. Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install dependencies
-pip install -e ".[build,gui]"
-
-# 4. Build executable + installer
-python build.py --installer
-
-# 5. Find your files in dist/
-#    - TidyTitles (executable)
-#    - TidyTitles-0.1.0-x86_64.AppImage (installer)
-```
-
----
-
-## Quick Reference
-
-For developers who already have the prerequisites:
+## Build
 
 ```bash
-# Clone and setup
-git clone https://github.com/chrisoflaherty/TidyTitles.git
-cd TidyTitles
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -e ".[build,gui]"
-
-# Build
-python build.py --installer
+npm install
+npm run build
 ```
 
-## Output Files
+`npm run build` builds the workspaces **in order**: `packages/core`, then `packages/cli`, then `apps/desktop`. The order matters: the CLI and the desktop app use core from its built `packages/core/dist/`, not from its sources. **After changing anything in `packages/core`, rebuild core** (`npm run build -w @tidytitles/core`, or the full `npm run build`) before running or testing the CLI or the desktop app.
 
-After building with `--installer`, look in `dist/`:
+What each build produces:
 
-| Platform | Executable | Installer |
-|----------|------------|-----------|
-| Windows | `TidyTitles.exe` | `TidyTitles-x.x.x-windows-setup.exe` |
-| macOS | `TidyTitles.app` | `TidyTitles-x.x.x-macos.dmg` |
-| Linux | `TidyTitles` | `TidyTitles-x.x.x-x86_64.AppImage` |
+| Workspace | Command | Output |
+|-----------|---------|--------|
+| core | `npm run build -w @tidytitles/core` | `packages/core/dist/` (ESM and type declarations) |
+| cli | `npm run build -w @tidytitles/cli` | `packages/cli/dist/index.js` (the npm `bin`, for both `tidytitles` and `file-renamer`) and `packages/cli/dist/tidytitles.mjs` (one self-contained file with every dependency inlined; the desktop app ships it) |
+| desktop | `npm run build -w @tidytitles/desktop` | `apps/desktop/out/` (main, preload, renderer). The build fails if test-only code reaches `out/` or the renderer's Content-Security-Policy is missing (`scripts/check-build.mjs`). |
 
-## Sharing With Others
+Type-check everything:
 
-### Windows
+```bash
+npm run typecheck
+```
 
-**Option A: With Installer (Recommended)**
-1. Build with: `python build.py --installer`
-2. Share `TidyTitles-x.x.x-windows-setup.exe`
-3. Recipients: Run installer → Next → Install → Done!
-4. Includes: Start Menu shortcut, Desktop shortcut, Uninstaller
+## Run from source
 
-**Option B: Portable Executable**
-1. Share the `TidyTitles.exe` file directly
-2. Recipients: Just double-click to run!
+### Command line
 
-**No Python installation needed!**
+```bash
+npx tidytitles --help
+npx tidytitles --config-dir /tmp/tt-dev rename ~/Downloads --dry-run
+```
 
-### macOS
+`npx` runs the workspace's own copy; add `--no-install` to make sure it never downloads anything. `npx file-renamer` runs the same program under its old name.
 
-**Option A: With DMG Installer (Recommended)**
-1. Build with: `python build.py --installer`
-2. Share `TidyTitles-x.x.x-macos.dmg`
-3. Recipients: Open DMG → Drag to Applications → Eject
-4. Uninstall: Drag from Applications to Trash
+### Desktop app
 
-**Option B: App Bundle**
-1. Right-click `TidyTitles.app` → Compress
-2. Share the resulting `.zip` file
-3. Recipients: Unzip and drag to Applications folder
+```bash
+cd apps/desktop
+npm run dev
+```
 
-**Note**: First time running may show a security warning. Recipients should:
-- Right-click the app → Open (instead of double-click)
-- Click "Open" in the security dialog
+This starts Electron with hot reload for the renderer. In development builds the **View** menu also has **Reload** (Cmd/Ctrl+Shift+R) and **Toggle Developer Tools**.
 
-### Linux
+### Never use your real settings while developing
 
-**Option A: With AppImage (Recommended)**
-1. Build with: `python build.py --installer`
-2. Share `TidyTitles-x.x.x-x86_64.AppImage`
-3. Recipients:
+Tests and manual runs must not touch the real config folder (it holds your API keys and rename history). Point both front ends at a temporary folder:
+
+```bash
+export TIDYTITLES_CONFIG_DIR="$(mktemp -d)"
+npx tidytitles config show          # shows the temporary config.toml path
+(cd apps/desktop && npm run dev)    # the app uses it too
+```
+
+or pass `--config-dir <dir>` to the CLI. The automated tests already do this.
+
+## Test
+
+All tests use [vitest](https://vitest.dev/). They never touch the network (HTTP is mocked by injecting `fetch`; see `packages/core/tests/providers/mock-fetch.ts` and the fake providers in `packages/core/tests/fakes.ts`), and filesystem tests use temporary folders.
+
+```bash
+npm test                                   # unit tests in every workspace
+npm test -w @tidytitles/core               # one workspace
+
+# Inside a workspace folder:
+cd packages/core
+npx vitest run tests/parser.test.ts        # one file
+npx vitest run -t "test name"              # tests matching a name
+```
+
+### Desktop end-to-end tests
+
+```bash
+cd apps/desktop
+npm run test:e2e
+```
+
+This builds a test version of the app (`npm run build:e2e`, output in `out-e2e/`) whose main process uses fake metadata providers, then launches it with Playwright and drives the real window: security settings, adding a folder, fetching and choosing a match, canceling a fetch, renaming on disk, undo from history, editing a template in Settings, and restoring the window size. It uses a temporary config folder and media folder. `out-e2e/` is never packaged.
+
+The same command also runs a smoke test of the **packaged** app (`e2e/packaged.e2e.test.ts`) if one exists: it starts the app, checks that its window loads and that core works inside the asar (TOML parsing, templates, reading MP3 tags). It looks for `release/mac-<arch>/TidyTitles.app` (made by `npm run package` on macOS), or the executable named in `TIDYTITLES_PACKAGED_APP`, and is skipped when there is none.
+
+### Parser parity with Python guessit
+
+The filename parser (`packages/core/src/parser.ts`) is a hand-written reproduction of [guessit](https://github.com/guessit-io/guessit), which the Python app used. The parity script runs both over a corpus of filenames and reports every disagreement:
+
+```bash
+cd packages/core
+npx tsx scripts/parser-parity.ts
+npx tsx scripts/parser-parity.ts --corpus my-names.txt --fields title,year
+```
+
+It needs `python3` with guessit installed, and the Python sources in `src/` (set `TIDYTITLES_PY_SRC` to use another location). The corpus is `scripts/parser-corpus.txt`.
+
+## Package the desktop app
+
+Packaging uses [electron-builder](https://www.electron.build/) with `apps/desktop/electron-builder.yml`. Run these in `apps/desktop`, after building the CLI (the package includes `packages/cli/dist/tidytitles.mjs`):
+
+```bash
+npm run package     # an unpacked app in release/, for trying out locally
+npm run dist        # installers for the current system in release/
+```
+
+Both run the desktop build first. `npm run package` makes an unsigned app (for example `release/mac-arm64/TidyTitles.app` on an Apple silicon Mac) using the Electron already installed in `node_modules`. `npm run dist` makes the installer for the system you run it on:
+
+| Target | Built on | File in `apps/desktop/release/` |
+|--------|----------|----------------------------------|
+| macOS DMG, Apple silicon | macOS | `TidyTitles-<version>-macos-arm64.dmg` |
+| macOS DMG, Intel | macOS | `TidyTitles-<version>-macos-x64.dmg` |
+| Windows NSIS installer, x64 | Windows | `TidyTitles-<version>-windows-setup.exe` |
+| Linux AppImage, x64 | Linux | `TidyTitles-<version>-x86_64.AppImage` |
+
+To build exactly what the release workflow builds, pass the same targets (and, on macOS, both architectures):
+
+```bash
+# in apps/desktop, after npm run build at the repository root
+CSC_IDENTITY_AUTO_DISCOVERY=false npx --no-install electron-builder --mac dmg --arm64 --x64 --publish never
+CSC_IDENTITY_AUTO_DISCOVERY=false npx --no-install electron-builder --win nsis --x64 --publish never
+CSC_IDENTITY_AUTO_DISCOVERY=false npx --no-install electron-builder --linux AppImage --x64 --publish never
+```
+
+`CSC_IDENTITY_AUTO_DISCOVERY=false` stops electron-builder from signing with a certificate it finds on your machine, so local builds match the unsigned release builds.
+
+What the configuration sets:
+
+- App ID `com.filerenamer.tidytitles`, product name **TidyTitles**.
+- Only `out/` and `package.json` go into the app (as an asar archive). The main process bundles core and its dependencies, so no `node_modules` are shipped. Source maps and `out-e2e/` are left out.
+- The CLI bundle is copied to `Resources/cli/tidytitles.mjs` (`resources/cli/` on Windows and Linux). The **Install Command Line Tool…** menu item writes a launcher that runs it with the app's own executable (`ELECTRON_RUN_AS_NODE=1`).
+- macOS: DMG, hardened runtime, dark mode support, icon `build/icon.icns`.
+- Windows: an NSIS installer (not one-click) that installs for all users (`perMachine`), lets the user change the folder, creates desktop and Start menu shortcuts, and shows the license from `installer/windows/license.txt`.
+- Linux: AppImage, executable `TidyTitles`, desktop entry in the Utility and AudioVideo categories.
+- Electron is pinned to an exact version in `apps/desktop/package.json`, because electron-builder rejects a version range.
+
+App icons live in `apps/desktop/build/`. To regenerate `icon.icns` and `icon.png` from `icon.svg`:
+
+```bash
+cd apps/desktop
+npm run icons
+```
+
+## Release
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed.
+
+1. Set the new version in the `version` field of `apps/desktop/package.json`. Keep `package.json`, `packages/core/package.json`, and `packages/cli/package.json` at the same version: `tidytitles --version` reports the CLI's version, and the installer names use the desktop app's. Run `npm install` to update `package-lock.json`.
+2. Commit, then tag the commit with `v` plus the version and push the tag:
+
    ```bash
-   chmod +x TidyTitles-*.AppImage
-   ./TidyTitles-*.AppImage
-   ```
-4. Uninstall: Just delete the file
-
-**Option B: Raw Executable**
-1. Share the `TidyTitles` executable
-2. Create a tarball: `tar -czf TidyTitles.tar.gz -C dist TidyTitles`
-3. Recipients:
-   ```bash
-   chmod +x TidyTitles
-   ./TidyTitles
+   git tag v0.2.0-beta.1
+   git push origin v0.2.0-beta.1
    ```
 
-## Advanced Usage
+The workflow then:
 
-### Clean Build
+1. **Checks** that the tag equals `v` + the version in `apps/desktop/package.json`, and fails otherwise.
+2. **Creates a GitHub release** named "TidyTitles *version*" with generated release notes, unless it already exists. A tag containing a hyphen (`-beta.1`, `-rc.1`) becomes a **prerelease**.
+3. **Tests** on macOS, Windows, and Linux: `npm ci`, `npm run build`, `npm run typecheck`, `npm test` (Node 22).
+4. **Packages** on each system, unsigned, and uploads the results to the release (replacing files of the same name if the job is re-run):
+   - macOS: `TidyTitles-<version>-macos-arm64.dmg` and `TidyTitles-<version>-macos-x64.dmg`
+   - Windows: `TidyTitles-<version>-windows-setup.exe`
+   - Linux: `TidyTitles-<version>-x86_64.AppImage`
 
-Remove previous build artifacts before building:
+The packaging jobs start once the release exists; they do not wait for the test jobs, so check that the tests passed before announcing a release.
 
-```bash
-python build.py --clean
-```
+The Windows and Linux installers have so far only been built by the workflow, not tried by hand.
 
-### Build Options
+## Code signing
 
-```bash
-python build.py                    # Build executable only
-python build.py --installer        # Build executable + installer
-python build.py --installer-only   # Create installer from existing build
-python build.py --clean            # Clean previous builds first
-python build.py --clean --installer # Clean, build, and create installer
-```
+The builds are **not code signed or notarized**, on any system. People installing them see a Gatekeeper warning on macOS and a SmartScreen warning on Windows the first time, and need the steps in [Installation](wiki/Installation.md) to open the app. Signing would need an Apple Developer ID certificate (plus notarization) and a Windows code signing certificate, configured in `electron-builder.yml` and the workflow; neither is set up.
 
-The build script automatically:
-- ✅ Detects all Python dependencies from `pyproject.toml`
-- ✅ Bundles PySide6 GUI framework
-- ✅ Includes all your code from `src/file_renamer/`
-- ✅ Creates a single-file executable (Windows/Linux) or .app bundle (macOS)
-- ✅ Optimizes for size (excludes unnecessary libraries)
+## Troubleshooting builds
 
-### Installer Requirements
+### `Cannot find module '@tidytitles/core'` or the CLI or app does not see a change in core
 
-**macOS DMG:**
-- No extra tools needed (uses built-in `hdiutil`)
+Core has not been built, or was built before your change. Run `npm run build` from the repository root (or `npm run build -w @tidytitles/core`).
 
-**Windows NSIS:**
-- Install NSIS: https://nsis.sourceforge.io/
-- Or on Windows: `winget install NSIS.NSIS`
-- On macOS (for cross-compile): `brew install makensis`
-- On Linux: `sudo apt install nsis`
+### "Install Command Line Tool…" says the tool is not included
 
-**Linux AppImage:**
-- Install appimagetool: https://github.com/AppImage/AppImageKit/releases
-- Make executable: `chmod +x appimagetool-x86_64.AppImage`
-- Add to PATH: `sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool`
+`packages/cli/dist/tidytitles.mjs` did not exist when the app was packaged. Build the CLI and package again.
 
-## When You Add Features
+### npm warns about an unsupported engine, or Node reports syntax or module errors
 
-**Good news**: You rarely need to touch the build files!
+Check `node --version`; you need 22.12 or newer.
 
-### No Changes Needed:
-- ✅ Adding new Python code
-- ✅ Adding dependencies to `pyproject.toml`
-- ✅ Bug fixes
-- ✅ New CLI commands
-- ✅ Most new features
+### The tag push did not produce installers
 
-Just run `python build.py` again!
+Check the workflow run on GitHub. The most common cause is a tag that does not match `apps/desktop/package.json` (for example `v0.2.0` when the file says `0.2.0-beta.1`).
 
-### Might Need Updates:
-- ⚠️ **Adding icon files**: Edit `file-renamer.spec`, uncomment the icon lines
-- ⚠️ **Adding data files** (templates, configs): Add to `datas` list in `file-renamer.spec`
-- ⚠️ **Dynamic imports**: Add module names to `hiddenimports` in `file-renamer.spec`
+### The legacy Python app
 
-The spec file has comments showing exactly what to change.
-
-## Troubleshooting
-
-### Build fails with "PyInstaller not found"
-
-```bash
-pip install -e ".[build,gui]"
-```
-
-### Build fails with "file_renamer not found"
-
-Install the package in development mode:
-
-```bash
-pip install -e .
-```
-
-### Executable is very large (>200 MB)
-
-This is normal! The executable includes:
-- Python interpreter (~15 MB)
-- PySide6/Qt framework (~50-80 MB)
-- All dependencies
-- Your application code
-
-You can reduce size by:
-- Using UPX compression (already enabled)
-- Excluding unused Qt modules (advanced)
-
-### "Application damaged" error on macOS
-
-Your app needs to be code-signed for distribution. Options:
-1. **Simple**: Recipients right-click → Open (bypasses Gatekeeper)
-2. **Advanced**: Get Apple Developer account and sign the app
-
-### Antivirus flags the .exe (Windows)
-
-This is common with PyInstaller apps. Solutions:
-1. Add your build to antivirus exceptions
-2. Submit the .exe to Microsoft for analysis (removes false positive)
-3. Use a code signing certificate (costs money, but prevents warnings)
-
-## File Size Comparison
-
-Typical build sizes:
-- **Windows**: 60-90 MB (.exe)
-- **macOS**: 70-100 MB (.app bundle)
-- **Linux**: 60-90 MB (executable)
-
-This is normal and expected - it includes everything needed to run!
-
-## Customization
-
-### Change Application Name
-
-Edit `file-renamer.spec`:
-```python
-name='YourAppName',  # Change this line
-```
-
-### Add an Icon
-
-1. Get icon files:
-   - Windows: `.ico` file (256x256 or multi-size)
-   - macOS: `.icns` file
-   - Linux: `.png` file (used by desktop entries)
-
-2. Edit `file-renamer.spec`:
-   ```python
-   # For Windows/Linux
-   icon='path/to/icon.ico',
-
-   # For macOS app bundle
-   app = BUNDLE(
-       exe,
-       icon='path/to/icon.icns',
-       ...
-   )
-   ```
-
-3. Rebuild: `python build.py --clean`
-
-## Platform-Specific Notes
-
-### Windows
-- Single `.exe` file - easiest to distribute
-- May need to disable antivirus temporarily during build
-- First-time users may see SmartScreen warning (normal)
-
-### macOS
-- Creates `.app` bundle (folder that looks like an app)
-- Gatekeeper may block unsigned apps
-- Recipients should right-click → Open first time
-
-### Linux
-- Single executable file
-- Recipient needs to `chmod +x` first
-- May need to install system libraries (very rare with PyInstaller)
-
-## Automated Builds (Optional)
-
-You can set up GitHub Actions to automatically build for all platforms:
-
-1. Push code to GitHub
-2. GitHub Actions builds Windows, macOS, and Linux versions
-3. Download all three from the "Releases" page
-
-See `.github/workflows/build.yml` for setup (coming soon).
-
-## Questions?
-
-- **Build issues**: Check the error message and troubleshooting section above
-- **App doesn't start**: Run from terminal to see error messages
-- **Feature requests**: Open an issue on GitHub
-
-## Summary
-
-**Building**: `python build.py`
-**Sharing**: Send the file from `dist/` folder
-**Updating**: Just rebuild after making changes
-
-**That's it!** Your friends and family can now use TidyTitles without installing Python or any dependencies.
+The Python implementation in `src/file_renamer/` is the behavioral reference for the port and will be removed later. Its PyInstaller build (`build.py`, `file-renamer.spec`, and the scripts in `installer/`) is no longer used for releases. Do not change it; fix behavior in the TypeScript code. Note that `installer/windows/license.txt` is still used by the Windows installer, and `scripts/parser-parity.ts` reads the Python sources.

@@ -1,63 +1,37 @@
-# File Renamer Wiki
+# TidyTitles Documentation
 
-Welcome to the File Renamer documentation!
+TidyTitles renames movie, TV, and music files to clean, consistent names using metadata from TMDB, TVDB, and MusicBrainz. It comes as a desktop app for macOS, Windows, and Linux and as a command-line tool, `tidytitles`. Both share the same settings and rename history.
 
-File Renamer is a cross-platform media file renaming application that automatically fetches metadata from TMDB and TVDB to rename your movie and TV show files with clean, consistent naming.
+## Start here
 
-## Quick Navigation
+- [Installation](Installation.md): download the app, get past the unsigned-app warnings, install the command-line tool, or build from source
+- [Getting Started](Getting-Started.md): your first rename, in the app and on the command line, plus notes for users of the old Python version
 
-### Getting Started
-- [Installation](Installation.md) - How to install File Renamer
-- [Getting Started](Getting-Started.md) - First steps and basic usage
+## Guides
 
-### User Guides
-- [CLI Reference](CLI-Reference.md) - Complete command-line documentation
-- [GUI Guide](GUI-Guide.md) - Using the graphical interface
-- [Templates](Templates.md) - Customizing file naming patterns
-- [Configuration](Configuration.md) - Settings and options
+- [GUI Guide](GUI-Guide.md): every control, status, dialog, and shortcut in the desktop app
+- [CLI Reference](CLI-Reference.md): every command, option, exit code, and environment variable
+- [Templates](Templates.md): placeholders, formatters, folders, and how names are cleaned
+- [Configuration](Configuration.md): `config.toml`, file locations, conflict handling, associated files, cover art, history, and cache
+- [API Keys](API-Keys.md): getting and entering TMDB and TVDB keys
 
-### Help
-- [Troubleshooting](Troubleshooting.md) - Common issues and solutions
-- [API Keys](API-Keys.md) - How to obtain and configure API keys
+## Help
 
-## Features Overview
+- [Troubleshooting](Troubleshooting.md): common problems and fixes
+- [Issue tracker](https://github.com/chrisoflaherty/TidyTitles/issues)
 
-| Feature | Description |
-|---------|-------------|
-| Smart Detection | Automatically identifies movies vs TV episodes |
-| TMDB Integration | Fetches movie metadata (titles, years, etc.) |
-| TVDB Integration | Fetches TV show and episode metadata |
-| Preview Mode | See changes before applying them |
-| Custom Templates | Define your own naming patterns |
-| CLI + GUI | Command-line and graphical interfaces |
-| Cross-Platform | Works on macOS, Windows, and Linux |
-| Caching | Reduces API calls for faster operation |
+## For developers
 
-## Supported File Types
+- [BUILD.md](../BUILD.md): repository layout, building, testing, packaging, and releasing
 
-File Renamer supports common video formats:
-- `.mkv` (Matroska)
-- `.mp4` (MPEG-4)
-- `.avi` (Audio Video Interleave)
-- `.mov` (QuickTime)
-- `.m4v` (iTunes Video)
-- `.wmv` (Windows Media Video)
-- `.flv` (Flash Video)
-- `.webm` (WebM)
+## At a glance
 
-## Architecture
-
-```
-file-renamer/
-├── src/file_renamer/
-│   ├── core/           # Core logic (parsing, templates, renaming)
-│   ├── providers/      # API clients (TMDB, TVDB)
-│   ├── services/       # Business logic orchestration
-│   ├── cli/            # Command-line interface
-│   └── gui/            # Graphical interface (PySide6)
-└── tests/              # Test suite
-```
-
-## Contributing
-
-Contributions are welcome! Please see the development section in the main README for setup instructions.
+| | |
+|---|---|
+| Metadata | TMDB (movies and TV), TVDB (TV), MusicBrainz (music; no key needed) |
+| Video files | `.mkv`, `.mp4`, `.avi`, `.mov`, `.wmv`, `.flv`, `.webm`, `.m4v`, `.mpg`, `.mpeg`, `.ts`, `.m2ts` |
+| Audio files | `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav`, `.aiff`, `.wma`, `.aac`, `.ape` |
+| Associated files | Subtitles (`.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx`), `.nfo`, images (`.jpg`, `.jpeg`, `.png`, `.tbn`) |
+| Conflict handling | Skip, replace, or add a number |
+| Undo | The last 10 renames, from the app or the CLI |
+| Settings | `config.toml` in `~/Library/Application Support/file-renamer/` (macOS), `%LOCALAPPDATA%\file-renamer\file-renamer\` (Windows), `~/.config/file-renamer/` (Linux) |

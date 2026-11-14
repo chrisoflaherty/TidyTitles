@@ -1,187 +1,233 @@
 # GUI Guide
 
-TidyTitles includes a graphical user interface for users who prefer visual file management.
+This page describes every part of the TidyTitles desktop app: adding files, fetching metadata, choosing matches, reading the status of each file, renaming, undoing, and the Settings window. To install the app, see [Installation](Installation.md).
 
-## Launching the GUI
+![The TidyTitles window after fetching metadata](../docs/images/desktop-file-list.png)
 
-```bash
-file-renamer-gui
-```
+## The window
 
-If you get an error about PySide6, install it first:
+From top to bottom:
 
-```bash
-pip install PySide6
-```
+- **Toolbar.** On the left: **Add Files…**, **Add Folder…**, **Clear**. On the right: **Settings**, **Undo**, **Fetch Metadata** (which turns into **Stop** while fetching), and **Rename** (which shows the number of files ready, for example **Rename 6**). On a narrow window the left-hand buttons show only their icons.
+- **Options bar.** **Type**, **Provider**, **Include subfolders**, and **Download cover art**.
+- **File list.** One row per file, with **Type** (Video or Audio), **Original name**, **New name**, and **Status**. Associated files (subtitles, `.nfo` files, images) appear in indented rows under their video, marked "Moves with the file".
+- **Status bar.** A message about the last action on the left (or the progress of the current one, with a progress bar and a **Stop** button while fetching), and counts on the right, such as "8 files · 6 ready · 2 skipped".
 
-## Interface Overview
+The app keeps one window. Opening TidyTitles again brings the existing window to the front. The window size and position are remembered.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  TidyTitles                                                 │
-├─────────────────────────────────────────────────────────────┤
-│  [/path/to/folder                          ] [Browse...]    │
-├─────────────────────────────────────────────────────────────┤
-│  Type: [Auto-detect ▼]  ☐ Recursive  ☐ Cover Art   [Fetch] │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┬─────────────────────┬────────┐         │
-│  │ Original        │ New Name            │ Status │         │
-│  ├─────────────────┼─────────────────────┼────────┤         │
-│  │ Movie.2024.mkv  │ Movie (2024).mkv    │ Ready  │         │
-│  │ Show.S01E01.mkv │ Show - S01E01.mkv   │ Ready  │         │
-│  │ song.mp3        │ Artist/Album/01.mp3 │ Ready  │         │
-│  └─────────────────┴─────────────────────┴────────┘         │
-├─────────────────────────────────────────────────────────────┤
-│  Ready                                    [Rename Files]    │
-└─────────────────────────────────────────────────────────────┘
-```
+## 1. Add files
 
-## Step-by-Step Usage
+With an empty list, the window shows how to start:
 
-### 1. Select Files
+![The empty window with Add Files and Add Folder buttons and the three steps: add, fetch metadata, review and rename](../docs/images/desktop-empty-state.png)
 
-**Option A: Browse**
-- Click the "Browse..." button
-- Select one or more video files
-- Or select a folder to load all videos in it
-- Selected files are added to the list
+There are three ways to add files. Each one adds to the list; nothing is removed.
 
-**Option B: Drag and Drop**
-- Drag files or folders from Finder/Explorer
-- Drop them onto the application window
-- **Multiple files** - Drag and drop multiple files at once
-- **Mix sources** - Add files from different locations
-- **Accumulative** - Files are added to the existing list
-- **Auto-filter** - Only supported media files are added (videos + audio)
+- **Drag and drop** files or folders from Finder, File Explorer, or your file manager anywhere onto the window.
+- **Add Files…** (Cmd+O on macOS, Ctrl+O on Windows and Linux) opens a file picker. You can select several files. The picker offers Media Files, Video Files, Audio Files, and All Files filters.
+- **Add Folder…** (Shift+Cmd+O / Ctrl+Shift+O) opens a folder picker. You can select several folders.
 
-**Option C: Clear**
-- Click the "Clear" button to remove all files from the list
-- Start fresh with a new selection
+What gets added:
 
-### 2. Choose Media Type
+- **Folders** are scanned for media files of the selected **Type**: video files for Movies and TV Shows, audio files for Music, and both for Auto-detect. Subfolders are scanned only when **Include subfolders** is checked *at the time you add the folder*.
+- **Dropped files** are added only if their extension matches the selected Type.
+- **Files chosen in Add Files…** are always added, whatever their extension.
+- Hidden files and folders (names starting with `.`) are skipped when scanning. Extensions match regardless of case.
+- A file that is already in the list is not added twice.
 
-Use the dropdown to select:
-- **Auto-detect** - Let TidyTitles determine if files are movies, TV shows, or music
-- **Movies** - Force all files to be treated as movies
-- **TV Shows** - Force all files to be treated as TV episodes
-- **Music** - Force all files to be treated as music tracks
+Recognized extensions:
 
-### 3. Configure Options
+- Video: `.mkv`, `.mp4`, `.avi`, `.mov`, `.wmv`, `.flv`, `.webm`, `.m4v`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`
+- Audio: `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav`, `.aiff`, `.wma`, `.aac`, `.ape`
 
-**Recursive Scanning:**
-- Check **"Recursive"** to scan subdirectories when adding folders
-- Useful for large media libraries with nested folder structures
+To **remove** a file from the list, click its row and press Delete or Backspace. To empty the list, click **Clear** (Shift+Cmd+Backspace / Ctrl+Shift+Backspace). Removing files from the list never touches them on disk.
 
-**Cover Art Download:**
-- Check **"Cover Art"** to download posters and album covers
-- Movie/TV posters are saved as `poster.jpg`
-- Album art is saved as `cover.jpg`
+## 2. Choose the options
 
-### 4. Fetch Metadata
+**Type** tells TidyTitles what kind of files these are:
 
-Click **"Fetch Metadata"** to:
-- Connect to TMDB (movies), TVDB (TV shows), or MusicBrainz (music)
-- Look up each file
-- Populate the preview table with new names
+| Choice | Effect |
+|--------|--------|
+| **Auto-detect** | Decides per file from its name (movie or TV episode); audio files are music. |
+| **Movies** | Treats every video file as a movie. |
+| **TV Shows** | Treats every video file as a TV episode. |
+| **Music** | Adds only audio files. |
 
-A progress dialog will show the status.
+Audio files are always handled as music, whatever the Type.
 
-**Interactive Selection:**
+**Provider** chooses which services are used. The menu lists only the choices your API keys allow:
 
-When multiple matches are found for a file, a selection dialog appears:
+| Choice | Movies | TV | Music |
+|--------|--------|----|-------|
+| **Auto (...)**, for example "Auto (TMDB + TVDB + MusicBrainz)" | TMDB | TVDB or TMDB (see [Providers](#providers)) | MusicBrainz |
+| **TMDB (movies and TV)** | TMDB | TMDB | not looked up |
+| **TVDB (TV shows)** | not looked up | TVDB | not looked up |
+| **MusicBrainz (music)** | not looked up | not looked up | MusicBrainz |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Multiple matches found for: Movie.2024.mkv                 │
-├─────────────────────────────────────────────────────────────┤
-│  ○ The Movie Title (2024) - Movie                          │
-│  ○ Movie Title (Remake) (2024) - Movie                     │
-│  ○ Different Movie (2024) - Movie                          │
-├─────────────────────────────────────────────────────────────┤
-│                                  [Skip]  [Select]           │
-└─────────────────────────────────────────────────────────────┘
-```
+With no TMDB or TVDB key, only **MusicBrainz (music only)** is offered, and the empty window shows "No TMDB or TVDB API key is set, so only music can be looked up" with a link to Settings. "Not looked up" means movie and TV files get **No match**; music files that are not looked up are still renamed from their own tags (status **Unverified**).
 
-- Select the correct match and click **"Select"**
-- Click **"Skip"** to leave the file unchanged
+**Include subfolders** scans subfolders when you add a folder.
 
-### 5. Review Changes
+**Download cover art** downloads a poster or album cover after renaming (see [Cover art](#cover-art)). It starts checked or unchecked according to **Download cover art by default** in Settings.
 
-The preview table shows:
-- **Original** - Current filename
-- **New Name** - Proposed new filename
-- **Status** - Ready, Completed, Failed, or Skipped
+Changing Type or Provider after fetching clears the new names; fetch again to see the result.
 
-Review the proposed names before proceeding.
+## 3. Fetch metadata
 
-### 6. Rename Files
+Click **Fetch Metadata** (Cmd+R / Ctrl+R). For each file, TidyTitles reads the name (and the tags, for music), searches the right service, and works out the new name. The status bar shows progress, for example "Fetching 7 of 8: The Matrix".
 
-Click **"Rename Files"** to apply the changes.
+To stop, click **Stop** in the toolbar or the status bar, choose **Rename** → **Stop Fetching** (Cmd+. / Ctrl+.), or press Esc. Nothing is renamed by fetching, so stopping is always safe; the list goes back to "Not fetched".
 
-A confirmation dialog will appear. Click "Yes" to proceed.
+### Choosing the right match
 
-If cover art download is enabled, posters and album covers will be saved after renaming.
+When a search finds more than one result, TidyTitles asks:
 
-## Configuration
+![The Choose the Right Match dialog listing The Matrix (1999), The Matrix Revisited (2001), and The Matrix Resurrections (2021), with Cancel All, Skip This File, and Select buttons](../docs/images/desktop-choose-match.png)
 
-API keys must be configured via the CLI before using the GUI:
+Each match shows its title and year, and details such as the release date, network, or album. Then:
 
-```bash
-file-renamer config set-key tmdb YOUR_KEY
-```
+- **Select** (or Enter, or double-click a match) uses the selected match.
+- **Skip This File** (or Esc) leaves the file unchanged; it is marked **No match**.
+- **Cancel All** stops the whole fetch.
 
-The GUI will prompt you if no API keys are configured.
+## 4. Review the new names
+
+After fetching, the **New name** column shows each file's new name, relative to its current folder. A name that includes folders (from a template with `/`, such as the music default) shows those folders, for example `Queen/A Night at the Opera (1975)/11 - Bohemian Rhapsody.mp3`. **Unchanged** means the file will keep its name. Hover over a name to see the full path.
+
+Rows are tinted: green for a confident match, amber for music whose tags could not be confirmed, red for files that will not be renamed. The **Status** badge says why; hover over it for a longer explanation.
+
+**Ready to rename:**
+
+| Status | Meaning |
+|--------|---------|
+| **Auto-matched** | Movie or TV: the search found exactly one result. |
+| **Selected** | Movie or TV: you picked this match from several. |
+| **Verified** | Music: the file's tags were confirmed on MusicBrainz. |
+| **Unverified** | Music: the name comes from the file's own tags (or its filename), which MusicBrainz could not confirm or was not asked about. Check these. |
+| **From MusicBrainz** | Music: the file's tags were incomplete, so the details come from a MusicBrainz search. |
+
+**Will not be renamed:**
+
+| Status | Meaning |
+|--------|---------|
+| **No match** | Nothing was found, the file was skipped in the match dialog, or the selected provider does not cover this kind of file. |
+| **Lookup failed** | The service could not be reached or returned an error. Other files are not affected. |
+| **API key rejected** | The service refused the API key. Check it in Settings. |
+| **Rate limited** | The service is limiting requests. Try again in a minute. |
+| **Template error** | The naming template could not be applied (for example `{episode\|pad:x}`). |
+| **Duplicate name** | Another file in the list would get the same name (and the conflict setting is not **Add a number**). |
+| **Not fetched** | Fetch Metadata has not run since the file was added or the options changed. |
+
+## 5. Rename
+
+Click **Rename** (Cmd+Enter / Ctrl+Enter). A confirmation lists how many files will be renamed, how many associated files move with them, how many are skipped, and whether cover art will be downloaded. Click **Rename *N* Files** to go ahead.
+
+Renaming cannot be interrupted, and the window will not close while it runs. When it finishes, a summary appears:
+
+![The Rename Complete dialog: Renamed 6, Associated files moved 1, Skipped 2, Cover art downloaded 4](../docs/images/desktop-rename-complete.png)
+
+The list now shows the new names, with the status **Renamed**, **Failed** (with the reason), or one of these, decided at the moment of renaming:
+
+| Status | Meaning |
+|--------|---------|
+| **Already named** | The file already had its new name. |
+| **Name taken** | A file with the new name already exists, and the conflict setting is **Skip the file** (or the existing file is part of the same rename). |
+
+Folders that a template creates are made as needed. If an associated file cannot be moved, the main file still counts as renamed and the error is reported.
+
+### Cover art
+
+With **Download cover art** checked, TidyTitles saves, next to each renamed file:
+
+- a poster for movies and TV episodes (from TMDB), named `poster.jpg` by default,
+- an album cover for music (from the album's cover URL or the Cover Art Archive), named `cover.jpg` by default.
+
+An existing poster or cover is kept unless **Replace cover art that is already there** is checked in Settings. Files in the same folder share one poster or cover. The file extension follows the image type (`.jpg`, `.png`, or `.webp`). A download that fails is skipped silently.
+
+## 6. Undo
+
+**Undo** (toolbar), or **Rename** → **Undo Last Rename…** (Cmd+Option+Z on macOS, Ctrl+Alt+Z on Windows and Linux), moves the files of the most recent rename back to their original names, associated files included. The confirmation shows how many files and when they were renamed, for example "Renamed Saturday, November 14 at 9:24 AM". Hover over the Undo button to see the same date.
+
+Undo reads the rename history saved on disk, so it works after restarting the app, and it can undo a rename made with the command-line tool (or the Python version). The history keeps the last 10 renames; each Undo reverts the newest one that is left.
+
+The **Undo Complete** summary shows:
+
+- **Restored**: files moved back.
+- **Not found (moved or deleted since)**: nothing was at the renamed path any more, so nothing was moved.
+- **Failed**: the file could not be moved back, for example because its original name is now taken by another file. Undo never overwrites. Files that failed stay in the history, so you can fix the problem and click Undo again.
+
+Folders created by the rename are not removed by Undo.
+
+## Settings
+
+Click **Settings** (Cmd+, / Ctrl+,). The footer shows where the settings are saved ("Saved to …/config.toml"). The command-line tool uses the same file. Changes take effect when you click **Save**; if names were already fetched, fetch again to apply them.
+
+![The Settings window on the API Keys tab, with fields for the TMDB API key, TVDB API key, and TVDB subscriber PIN](../docs/images/desktop-settings-api-keys.png)
+
+### Templates
+
+One field each for **Movies**, **TV shows**, and **Music**. Below each field is a live **Preview** using sample metadata (The Matrix, Breaking Bad "Pilot", Pink Floyd "Comfortably Numb"). A template with an unknown placeholder or formatter, unbalanced braces, or nothing in it shows the error in red and cannot be saved. **Placeholders and formatters** expands a reference table. See [Templates](Templates.md).
+
+### API Keys
+
+**TMDB API key**, **TVDB API key**, and **TVDB subscriber PIN** (optional). Use **Show** / **Hide** to see what you typed. The **Get a TMDB API key** and **Get a TVDB API key** links open the sign-up pages. See [API Keys](API-Keys.md).
+
+### Files
+
+- **Rename associated files with the media file**, with separate checkboxes for **Subtitles** (`.srt`, `.sub`, `.ass`, `.ssa`, `.vtt`, `.idx`), **NFO files** (`.nfo`), and **Images** (`.jpg`, `.jpeg`, `.png`, `.tbn` with the video's name).
+- **When the new name is taken**:
+  - **Skip the file**: leave it with its old name (the default).
+  - **Replace the existing file**: overwrite the file that already has the new name. Another file in the same batch is never overwritten.
+  - **Add a number**: use the next free name, such as `The Matrix (1999) (1).mkv`.
+
+See [Configuration](Configuration.md#associated-files) for how associated files are matched.
+
+### Cover Art
+
+- **Download cover art by default**: the starting value of the **Download cover art** checkbox in the main window.
+- **Poster file name** (default `poster.jpg`) and **Album cover file name** (default `cover.jpg`).
+- **Poster size**: from Tiny (92 px wide) to Original size; the default is Large (500 px wide).
+- **Replace cover art that is already there**.
+
+### Providers
+
+**TV shows**: whether TVDB or TMDB is preferred when the main window's Provider is **Auto** and both keys are set. If the preferred service has no key, the other one is used. Movies always use TMDB and music always uses MusicBrainz.
+
+## Keyboard shortcuts
+
+| Action | macOS | Windows and Linux |
+|--------|-------|-------------------|
+| Add Files… | Cmd+O | Ctrl+O |
+| Add Folder… | Shift+Cmd+O | Ctrl+Shift+O |
+| Clear List | Shift+Cmd+Backspace | Ctrl+Shift+Backspace |
+| Settings… | Cmd+, | Ctrl+, |
+| Fetch Metadata | Cmd+R | Ctrl+R |
+| Stop Fetching | Cmd+. or Esc | Ctrl+. or Esc |
+| Rename Files… | Cmd+Enter | Ctrl+Enter |
+| Undo Last Rename… | Cmd+Option+Z | Ctrl+Alt+Z |
+| Quit | Cmd+Q | Ctrl+Q |
+
+In the file list: Up and Down arrows, Page Up, Page Down, Home, and End move the selection; Delete or Backspace removes the selected file from the list; Esc clears the selection. In dialogs, Enter confirms and Esc cancels (in the match dialog, Esc skips the file).
+
+View → Actual Size, Zoom In, and Zoom Out change the text size.
+
+## Menus
+
+- **TidyTitles** (macOS only): About, **Settings…**, **Install Command Line Tool…**, Hide, Quit.
+- **File**: **Add Files…**, **Add Folder…**, **Clear List**; on Windows and Linux also **Settings…**, **Install Command Line Tool…**, and **Quit**.
+- **Edit**: the usual text editing commands, for the text fields in Settings. Edit → Undo undoes typing; it does not undo renames.
+- **Rename**: **Fetch Metadata**, **Stop Fetching**, **Rename Files…**, **Undo Last Rename…**.
+- **View**: zoom and full screen.
+- **Window**: the standard window commands.
+- **Help**: **TidyTitles on GitHub**, **Template Reference**, **Report an Issue** (each opens your browser); on Windows and Linux also About.
+
+**Install Command Line Tool…** is described in [Installation](Installation.md#the-command-line-tool).
 
 ## Tips
 
-### Handling Mismatches
+- **A file matched the wrong title.** Fetch again and choose the right match when asked. If you were not asked (only one result was found), the filename probably misleads the search: rename the file by hand to something like `Title (Year).mkv` and fetch again. Setting **Type** to Movies or TV Shows also helps when Auto-detect guesses wrong.
+- **Large collections.** API responses are cached for 24 hours, so fetching the same files again is fast. MusicBrainz allows one request per second, so large music batches take a while.
+- **Trying things out safely.** Fetching never changes anything on disk. Only **Rename** does, and **Undo** reverts it.
+- **Using another settings folder** (for example to test): start the app with the `TIDYTITLES_CONFIG_DIR` environment variable set. See [Configuration](Configuration.md#using-a-different-settings-folder).
 
-If a file is matched incorrectly:
-1. Use the interactive selection dialog to pick the correct match
-2. Or, cancel and manually rename the file to include the correct title/year
-3. Re-run the fetch
-
-### Large Collections
-
-For very large collections (1000+ files):
-- Process in batches
-- The cache will speed up subsequent runs
-- Consider using the CLI with `--recursive` for bulk operations
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl + O` | Browse for folder |
-| `Cmd/Ctrl + R` | Fetch metadata |
-| `Cmd/Ctrl + Enter` | Rename files |
-| `Cmd/Ctrl + Q` | Quit |
-
-## Troubleshooting
-
-### "PySide6 not installed"
-
-```bash
-pip install PySide6
-```
-
-### "No API keys configured"
-
-Configure via CLI:
-```bash
-file-renamer config set-key tmdb YOUR_KEY
-```
-
-### GUI is unresponsive during fetch
-
-This is normal for large collections. The progress dialog shows current status. Wait for it to complete or click "Cancel".
-
-### Files not appearing
-
-Check that your files have supported extensions:
-
-**Video:** `.mkv`, `.mp4`, `.avi`, `.mov`, `.m4v`, `.webm`, `.flv`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`
-
-**Audio:** `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav`, `.aiff`, `.wma`
-
-When dragging and dropping, only media files with these extensions will be added to the list.
+For problems, see [Troubleshooting](Troubleshooting.md#desktop-app).
