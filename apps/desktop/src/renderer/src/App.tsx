@@ -176,6 +176,18 @@ export function App() {
     if (!hasFiles(event)) return;
     dispatch({ type: "dragLeave" });
   };
+  // Files opened with the app (Dock, Finder's Open With, the command line)
+  // follow the drop rules: main adds them when a drop would be accepted now
+  // and refuses them otherwise.
+  const loaded = ui.app !== null;
+  useEffect(() => {
+    if (!loaded) return;
+    const take = () => void api.takeOpenedPaths(canDrop());
+    const off = api.onPathsOpened(take);
+    take();
+    return off;
+  }, [api, loaded]);
+
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     dispatch({ type: "dragEnd" });

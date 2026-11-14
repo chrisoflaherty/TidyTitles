@@ -45,7 +45,7 @@ TidyTitles/
 │       └── tests/
 ├── apps/
 │   └── desktop/              @tidytitles/desktop: the Electron app (electron-vite, React 19)
-│       ├── src/main/             main process: controller.ts (state, workflow), updater.ts (updates), app.ts (window, menu, IPC)
+│       ├── src/main/             main process: controller.ts (state, workflow), updater.ts (updates), taskFeedback.ts (icon progress, notifications), openPaths.ts (opened files), app.ts (window, menu, IPC)
 │       ├── src/preload/          the window.tidytitles API (contextBridge)
 │       ├── src/renderer/         React UI, plain CSS
 │       ├── src/shared/ipc.ts     IPC channel names and payload types
@@ -104,6 +104,27 @@ npm run dev
 
 This starts Electron with hot reload for the renderer. In development builds the **View** menu also has **Reload** (Cmd/Ctrl+Shift+R) and **Toggle Developer Tools**.
 
+### Testing "Open With" and Dock drops (macOS)
+
+A file opened with the app arrives as an `open-file` event, which `npm run dev` and the e2e tests cannot produce. Try it with the packaged app, with a scratch profile and config:
+
+```bash
+cd apps/desktop && npm run package
+SCRATCH=$(mktemp -d)
+launchctl setenv TIDYTITLES_CONFIG_DIR $SCRATCH/config
+launchctl setenv TIDYTITLES_DISABLE_UPDATES 1
+open -n -a release/mac-arm64/TidyTitles.app ~/Movies/Some.Movie.2001.mkv --args --user-data-dir=$SCRATCH/user-data
+open -a release/mac-arm64/TidyTitles.app ~/Movies/Some\ Folder          # to the running app (open-file)
+open -n -a release/mac-arm64/TidyTitles.app ~/Movies/Other.mkv --args --user-data-dir=$SCRATCH/user-data   # a second instance hands it over
+# afterward: quit the app, then
+launchctl unsetenv TIDYTITLES_CONFIG_DIR; launchctl unsetenv TIDYTITLES_DISABLE_UPDATES
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u release/mac-arm64/TidyTitles.app
+```
+
+Unregister the copy afterward, or it stays in Launch Services. Copies in a temporary folder are left out of Finder's **Open With** menu, so check that menu with the copy in `release/`.
+
+Verified this way on an Apple silicon Mac (macOS 27): a file opened when the app was not running, a file and a folder sent to the running app, four items at once, and a second instance started with `open -n`; Launch Services listed TidyTitles under Open With for folders only and kept it the default for no supported extension. Not verified: Windows (command line, drops on the shortcut, notifications, taskbar progress and flash) and Linux.
+
 ### Never use your real settings while developing
 
 Tests and manual runs must not touch the real config folder (it holds your API keys and rename history). Point both front ends at a temporary folder:
@@ -137,7 +158,7 @@ cd apps/desktop
 npm run test:e2e
 ```
 
-This builds a test version of the app (`npm run build:e2e`, output in `out-e2e/`) whose main process uses fake metadata providers, then launches it with Playwright and drives the real window: security settings, adding a folder, fetching and choosing a match, canceling a fetch, renaming on disk, undo from history, editing a template in Settings, and restoring the window size. `e2e/updates.e2e.test.ts` drives the update UI (Check for Updates…, download progress, Restart to Update, the Download fallback, up to date, a failed check) with a scripted update engine in place of electron-updater, and saves light and dark screenshots. It uses a temporary config folder and media folder. `out-e2e/` is never packaged.
+This builds a test version of the app (`npm run build:e2e`, output in `out-e2e/`) whose main process uses fake metadata providers, then launches it with Playwright and drives the real window: security settings, adding a folder, fetching and choosing a match, canceling a fetch, renaming on disk, undo from history, editing a template in Settings, and restoring the window size. `e2e/openWith.e2e.test.ts` starts the app with files and a folder on its command line, starts a second instance with more, checks that opened files are refused while a dialog is open, and checks the icon progress, the attention request, and the finish notification (the e2e build records notifications and Dock bounces instead of showing them). `e2e/updates.e2e.test.ts` drives the update UI (Check for Updates…, download progress, Restart to Update, the Download fallback, up to date, a failed check) with a scripted update engine in place of electron-updater, and saves light and dark screenshots. It uses a temporary config folder and media folder. `out-e2e/` is never packaged.
 
 The same command also runs a smoke test of the **packaged** app (`e2e/packaged.e2e.test.ts`) if one exists: it starts the app, checks that its window loads and that core works inside the asar (TOML parsing, templates, reading MP3 tags), and that the bundled updater is wired up (it runs with `TIDYTITLES_DISABLE_UPDATES=1`, so it never checks). It looks for `release/mac-<arch>/TidyTitles.app` (made by `npm run package` on macOS), or the executable named in `TIDYTITLES_PACKAGED_APP`, and is skipped when there is none.
 
@@ -201,6 +222,7 @@ What the configuration sets:
 - macOS: DMG plus a zip (the updater installs from the zip), hardened runtime with electron-builder's default entitlements (`allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation`), dark mode support, icon `build/icon.icns`. Without a signing identity, `scripts/after-pack.cjs` gives the app an ad-hoc signature (no hardened runtime).
 - Windows: an NSIS installer (not one-click) that installs for the current user by default (`perMachine: false`, so installs and updates need no administrator prompt) and still offers "Anyone who uses this computer", lets the user change the folder, creates desktop and Start menu shortcuts, and shows the license from `installer/windows/license.txt`.
 - Linux: AppImage, executable `TidyTitles`, desktop entry in the Utility and AudioVideo categories.
+- Opening files with the app (macOS): `mac.extendInfo` declares three document types in `Info.plist`, so files and folders can be dropped on the Dock icon and folders get **Open With** → **TidyTitles**. Folders have rank `Alternate`; video and audio files rank `None` (they accept drops but are never opened by a double-click and are not listed under Open With). `Alternate` is not safe for files: when no other installed app claims a type, Launch Services makes the `Alternate` app its default (checked on macOS 27: with `Alternate`, `.mkv` and `.ape` defaulted to TidyTitles). There is deliberately no `fileAssociations`: electron-builder's NSIS installer writes each listed extension's default (`HKCU\Software\Classes\.<ext>`, the `APP_ASSOCIATE` macro in `templates/nsis/include/FileAssociation.nsh`). Windows and Linux receive opened files on the command line, which needs no registration.
 - Electron is pinned to an exact version in `apps/desktop/package.json`, because electron-builder rejects a version range.
 
 App icons live in `apps/desktop/build/`. To regenerate `icon.icns` and `icon.png` from `icon.svg`:

@@ -227,6 +227,27 @@ describe("App", () => {
     expect(api.addPaths).toHaveBeenCalledWith(["/dropped/Inception.2010.mkv"]);
   });
 
+  it("takes files opened with the app once loaded, and again when more arrive", async () => {
+    const { api, emit } = createFakeApi(appState());
+    render(<App />);
+    await screen.findByTestId("empty-state");
+    await waitFor(() => expect(api.takeOpenedPaths).toHaveBeenCalledWith(true));
+    api.takeOpenedPaths.mockClear();
+    act(() => emit(EVENTS.pathsOpened, null));
+    expect(api.takeOpenedPaths).toHaveBeenCalledWith(true);
+  });
+
+  it("refuses files opened with the app when a drop would be refused", async () => {
+    const { api, emit } = createFakeApi(appState({ files, busy: "renaming" }));
+    render(<App />);
+    await waitFor(() => expect(api.takeOpenedPaths).toHaveBeenCalledWith(false));
+    act(() => emit(EVENTS.state, appState({ files })));
+    await userEvent.click(await screen.findByTestId("settings"));
+    api.takeOpenedPaths.mockClear();
+    act(() => emit(EVENTS.pathsOpened, null));
+    expect(api.takeOpenedPaths).toHaveBeenCalledWith(false);
+  });
+
   it("sends option changes to main", async () => {
     const { api } = createFakeApi(appState({ files }));
     render(<App />);

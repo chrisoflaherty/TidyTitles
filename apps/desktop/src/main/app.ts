@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import {
   BrowserWindow,
   Menu,
+  Notification,
   app,
   clipboard,
   dialog,
@@ -47,6 +48,14 @@ import {
   windowsCommand,
 } from "./cliInstall";
 import { createConfigService } from "./configDir";
+import {
+  OpenedPathsQueue,
+  existingPaths,
+  openedPathsFromData,
+  pathsFromArgv,
+  type SecondInstanceData,
+} from "./openPaths";
+import { TaskFeedback, electronProgressArgs, type FeedbackNotification, type FeedbackSink } from "./taskFeedback";
 import { AppController, type SessionOverrides } from "./controller";
 import { REPO_URL, applyMenuState, buildMenuTemplate } from "./menu";
 import { PREFERENCES_FILE, loadPreferences, savePreferences } from "./preferences";
@@ -62,6 +71,7 @@ import {
 } from "./updaterEngine";
 import {
   isSafeExternalUrl,
+  parseAccept,
   parseDialogKind,
   parseEditableSettings,
   parseEnabled,
@@ -81,6 +91,11 @@ export interface StartOptions {
    * a scripted engine in place of electron-updater.
    */
   updates?: "off" | { engine: UpdateEngine; capability: UpdateCapability; currentVersion: string };
+  /**
+   * Test builds only: replace the system notification, the Dock bounce or
+   * taskbar flash, and the focus check (the e2e build records them instead).
+   */
+  feedback?: Partial<Pick<FeedbackSink, "notify" | "requestAttention" | "isFocused">>;
 }
 
 /**
@@ -93,9 +108,14 @@ declare const __TIDYTITLES_UPDATE_TEST_FEED__: string | null;
 declare const __TIDYTITLES_UPDATE_TEST_DIR__: string | null;
 
 const APP_NAME = "TidyTitles";
+/** electron-builder's `appId`; the Windows installer gives its shortcuts this AppUserModelID. */
+const APP_ID = "com.filerenamer.tidytitles";
 
 export function startApp(options: StartOptions = {}): void {
   app.setName(APP_NAME);
+  // Windows attributes notifications to the shortcut with the same
+  // AppUserModelID. A development Electron has no such shortcut.
+  if (process.platform === "win32") app.setAppUserModelId(app.isPackaged ? APP_ID : process.execPath);
 
   if (__TIDYTITLES_UPDATE_TEST_DIR__) {
     // Local update test: stay out of the real config and userData, also after
@@ -104,11 +124,50 @@ export function startApp(options: StartOptions = {}): void {
     app.setPath("userData", path.join(__TIDYTITLES_UPDATE_TEST_DIR__, "user-data"));
   }
 
-  if (!app.requestSingleInstanceLock()) {
-    app.quit();
-    return;
+  // macOS sends files dropped on the Dock icon or opened with Finder's "Open
+  // With" as `open-file` events, the first ones before the app is ready.
+  // They wait here until the main part below takes over.
+  const earlyOpened: string[] = [];
+  let receiveOpened = (candidates: readonly unknown[]) => {
+    for (const c of candidates) if (typeof c === "string") earlyOpened.push(c);
+  };
+  app.on("open-file", (event, file) => {
+    event.preventDefault();
+    receiveOpened([file]);
+  });
+
+  if (process.platform === "darwin") {
+    // A second instance (`open -n`) receives its files through `open-file`,
+    // not its command line, and before it is ready. Ask for the lock only
+    // then, so the files can be handed to the running instance.
+    void app.whenReady().then(() => {
+      const data: SecondInstanceData = { openedPaths: earlyOpened };
+      if (!app.requestSingleInstanceLock(data)) {
+        app.quit();
+        return;
+      }
+      runApp();
+    });
+  } else {
+    if (!app.requestSingleInstanceLock()) {
+      app.quit();
+      return;
+    }
+    runApp();
   }
 
+  function runApp(): void {
+    startMain(options, earlyOpened, (receive) => {
+      receiveOpened = receive;
+    });
+  }
+}
+
+function startMain(
+  options: StartOptions,
+  earlyOpened: readonly string[],
+  setReceiver: (receive: (candidates: readonly unknown[]) => void) => void,
+): void {
   const isDev = !app.isPackaged && Boolean(process.env.ELECTRON_RENDERER_URL);
   const mac = process.platform === "darwin";
   const rendererIndex = path.join(import.meta.dirname, "../renderer/index.html");
@@ -124,12 +183,83 @@ export function startApp(options: StartOptions = {}): void {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
 
+  // -------------------------------------------------------------------------
+  // Feedback outside the window: icon progress, notifications, attention
+  // -------------------------------------------------------------------------
+
+  const liveWindow = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+
+  /** Show, restore, and focus the window (creating it if it was closed). */
+  const bringForward = () => {
+    const win = liveWindow();
+    if (!win) {
+      void ensureWindow();
+      return;
+    }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  };
+
+  // Notifications are kept referenced so their click handlers survive garbage collection.
+  const liveNotifications: Notification[] = [];
+  const showNotification = ({ title, body }: FeedbackNotification) => {
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({ title, body });
+    const forget = () => {
+      const i = liveNotifications.indexOf(notification);
+      if (i >= 0) liveNotifications.splice(i, 1);
+    };
+    notification.on("click", () => {
+      forget();
+      if (mac) app.focus({ steal: true });
+      bringForward();
+    });
+    notification.on("close", forget);
+    liveNotifications.push(notification);
+    if (liveNotifications.length > 5) liveNotifications.shift();
+    notification.show();
+  };
+
+  const requestAttention = () => {
+    if (mac) {
+      // One bounce, not a bounce until the app is activated.
+      app.dock?.bounce("informational");
+      return;
+    }
+    const win = liveWindow();
+    if (!win) return;
+    win.flashFrame(true);
+    win.once("focus", () => {
+      if (!win.isDestroyed()) win.flashFrame(false);
+    });
+  };
+
+  const feedback = new TaskFeedback({
+    setProgress: (progress) => {
+      const win = liveWindow();
+      if (!win) return;
+      const { value, mode } = electronProgressArgs(progress, process.platform);
+      win.setProgressBar(value, mode ? { mode } : undefined);
+    },
+    isFocused: options.feedback?.isFocused ?? (() => liveWindow()?.isFocused() ?? false),
+    notify: options.feedback?.notify ?? showNotification,
+    requestAttention: options.feedback?.requestAttention ?? requestAttention,
+  });
+
   const controller = new AppController({
     config: createConfigService(),
     emit: (channel, payload) => {
       if (channel === EVENTS.state) {
         lastState = payload as AppState;
         applyMenuState(Menu.getApplicationMenu(), lastState);
+        feedback.onState(lastState);
+        // Items that arrived while other items were being added.
+        if (lastState.busy === null && opened.size > 0) announceOpened();
+      } else if (channel === EVENTS.progress) {
+        feedback.onProgress(payload as EventPayloads[typeof EVENTS.progress]);
+      } else if (channel === EVENTS.selectionRequest) {
+        feedback.onSelectionRequest((payload as EventPayloads[typeof EVENTS.selectionRequest]).id);
       }
       send(channel, payload);
     },
@@ -208,6 +338,7 @@ export function startApp(options: StartOptions = {}): void {
   handle(IPC.getState, () => controller.getState());
   handle(IPC.addFilesDialog, (kind) => showAddDialog(parseDialogKind(kind)));
   handle(IPC.addPaths, (paths) => controller.addPaths(parsePaths(paths), { filterExplicitFiles: true }));
+  handle(IPC.takeOpenedPaths, (accept) => takeOpenedPaths(parseAccept(accept)));
   handle(IPC.removeFiles, (ids) => controller.removeFiles(parseFileIds(ids)));
   handle(IPC.clearFiles, () => controller.clearFiles());
   handle(IPC.setOptions, (opts) => controller.setOptions(parseRunOptions(opts)));
@@ -217,8 +348,16 @@ export function startApp(options: StartOptions = {}): void {
     const answer = parseSelectionAnswer(id, index);
     controller.answerSelection(answer.id, answer.index);
   });
-  handle(IPC.rename, () => controller.rename());
-  handle(IPC.undo, () => controller.undo());
+  handle(IPC.rename, async () => {
+    const outcome = await controller.rename();
+    feedback.renameFinished(outcome);
+    return outcome;
+  });
+  handle(IPC.undo, async () => {
+    const outcome = await controller.undo();
+    feedback.undoFinished(outcome);
+    return outcome;
+  });
   handle(IPC.getSettings, () => controller.getSettingsPayload());
   handle(IPC.previewTemplates, (templates) => controller.previewTemplates(parseTemplates(templates)));
   handle(IPC.saveSettings, (settings) => controller.saveSettings(parseEditableSettings(settings)));
@@ -247,6 +386,65 @@ export function startApp(options: StartOptions = {}): void {
     if (url && isSafeExternalUrl(url)) await shell.openExternal(url);
   });
   handle(IPC.setAutoCheckForUpdates, (enabled) => updates?.setAutoCheck(parseEnabled(enabled)));
+
+  // -------------------------------------------------------------------------
+  // Files opened with the app (Dock, Finder's Open With, the command line)
+  // -------------------------------------------------------------------------
+
+  const opened = new OpenedPathsQueue();
+  /** Set once the startup window has been created; before that it takes the queue itself. */
+  let started = false;
+
+  /**
+   * Untrusted paths from `open-file`, a command line, or a second instance:
+   * only existing absolute paths are queued. The renderer then takes them
+   * (`takeOpenedPaths`) if it would accept a drop.
+   */
+  const receive = async (candidates: readonly unknown[]) => {
+    const paths = await existingPaths(candidates);
+    if (paths.length === 0) return;
+    opened.add(paths);
+    if (!started) return;
+    bringForward();
+    announceOpened();
+  };
+
+  // macOS sends one `open-file` per item when several are opened at once:
+  // let a burst collect before the renderer takes it.
+  let announceTimer: NodeJS.Timeout | null = null;
+  const announceOpened = () => {
+    if (announceTimer) clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => {
+      announceTimer = null;
+      send(EVENTS.pathsOpened, null);
+    }, 150);
+  };
+
+  /**
+   * The same rules as a drop: refused, with a message, while a task runs or
+   * a dialog is open. Only adding other items makes them wait instead.
+   */
+  const takeOpenedPaths = async (accept: boolean) => {
+    if (opened.size === 0) return null;
+    // Adding takes a moment; the items wait for it rather than being refused
+    // (they are announced again when it finishes).
+    if (controller.getState().busy === "adding") return null;
+    const paths = opened.take();
+    if (!accept || controller.isBusy) {
+      await messageBox({
+        type: "info",
+        message: paths.length === 1 ? "The item wasn’t added" : "The items weren’t added",
+        detail: "Wait for the current task to finish, then open them again.",
+      });
+      return null;
+    }
+    return controller.addPaths(paths, { filterExplicitFiles: true });
+  };
+
+  const argvContext = (cwd: string) => ({ defaultApp: Boolean(process.defaultApp), appPath: app.getAppPath(), cwd });
+
+  setReceiver((candidates) => void receive(candidates));
+  void receive([...earlyOpened, ...pathsFromArgv(process.argv, argvContext(process.cwd()))]);
 
   // -------------------------------------------------------------------------
   // Command-line tool
@@ -347,6 +545,7 @@ export function startApp(options: StartOptions = {}): void {
       },
     });
     mainWindow = win;
+    feedback.reapply();
 
     win.once("ready-to-show", () => {
       if (bounds.maximized) win.maximize();
@@ -365,6 +564,8 @@ export function startApp(options: StartOptions = {}): void {
         return;
       }
       if (busy === "fetching") controller.cancelFetch();
+      // The Dock's progress belongs to the app, not the window: clear it now.
+      win.setProgressBar(-1);
       const normal = win.getNormalBounds();
       try {
         saveWindowState(windowStateFile(), { ...normal, maximized: win.isMaximized() });
@@ -384,9 +585,19 @@ export function startApp(options: StartOptions = {}): void {
     }
   };
 
+  /** Create the window unless it exists or is being created. */
+  let creatingWindow: Promise<void> | null = null;
+  const ensureWindow = (): Promise<void> => {
+    if (liveWindow()) return Promise.resolve();
+    creatingWindow ??= createWindow().finally(() => {
+      creatingWindow = null;
+    });
+    return creatingWindow;
+  };
+
   const sendMenuCommand = (command: MenuCommand) => {
     if (!mainWindow) {
-      void createWindow().then(() => send(EVENTS.menuCommand, command));
+      void ensureWindow().then(() => send(EVENTS.menuCommand, command));
       return;
     }
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -415,8 +626,13 @@ export function startApp(options: StartOptions = {}): void {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  app.on("second-instance", () => {
-    if (!mainWindow) return void createWindow();
+  // A second launch: Windows and Linux pass its files on its command line,
+  // macOS (`open -n`) in `additionalData` (see startApp).
+  app.on("second-instance", (_event, argv, workingDirectory, additionalData) => {
+    const cwd = typeof workingDirectory === "string" && path.isAbsolute(workingDirectory) ? workingDirectory : os.homedir();
+    const fromArgv = Array.isArray(argv) ? pathsFromArgv(argv.filter((a): a is string => typeof a === "string"), argvContext(cwd)) : [];
+    void receive([...fromArgv, ...openedPathsFromData(additionalData)]);
+    if (!mainWindow) return void ensureWindow();
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
@@ -426,7 +642,7 @@ export function startApp(options: StartOptions = {}): void {
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) void ensureWindow();
   });
 
   void app.whenReady().then(async () => {
@@ -442,7 +658,10 @@ export function startApp(options: StartOptions = {}): void {
     installMenu();
     await controller.init();
     updates = await createUpdates();
-    await createWindow();
+    await ensureWindow();
+    started = true;
+    // Anything that arrived while the window was loading.
+    if (opened.size > 0) announceOpened();
     updates.start();
   });
 

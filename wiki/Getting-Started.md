@@ -19,7 +19,7 @@ One TMDB key covers both movies and TV. [API Keys](API-Keys.md) explains how to 
 ## Step 3: Rename in the desktop app
 
 1. **Open TidyTitles** and click **Settings** (or press Cmd+, on macOS, Ctrl+, on Windows and Linux). On the **API Keys** tab, paste your key into **TMDB API key** and click **Save**.
-2. **Add files.** Drag files or whole folders into the window, or click **Add Files…** or **Add Folder…**. Check **Include subfolders** first if your folder has subfolders.
+2. **Add files.** Drag files or whole folders into the window (or onto TidyTitles in the Dock or on the Windows shortcut), or click **Add Files…** or **Add Folder…**. Check **Include subfolders** first if your folder has subfolders.
 
    ![The empty TidyTitles window, with Add Files and Add Folder buttons and three numbered steps](../docs/images/desktop-empty-state.png)
 

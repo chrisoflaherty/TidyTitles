@@ -10,6 +10,7 @@ const forbidden = [
   "createFakeSessionOverrides",
   "ScriptedUpdateEngine",
   "__tidytitlesFakeUpdates",
+  "__tidytitlesE2eFeedback",
 ];
 const problems = [];
 

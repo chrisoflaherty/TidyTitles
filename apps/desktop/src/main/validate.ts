@@ -98,6 +98,11 @@ export function parseEnabled(value: unknown): boolean {
   return bool(value, "enabled");
 }
 
+/** Whether the renderer would accept a drop now (`takeOpenedPaths`). */
+export function parseAccept(value: unknown): boolean {
+  return bool(value, "accept");
+}
+
 export function parseSelectionAnswer(id: unknown, index: unknown): { id: string; index: number | null } {
   const parsedId = str(id, "id", 64);
   if (index === null) return { id: parsedId, index: null };

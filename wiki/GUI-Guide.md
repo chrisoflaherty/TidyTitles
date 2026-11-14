@@ -21,16 +21,22 @@ With an empty list, the window shows how to start:
 
 ![The empty window with Add Files and Add Folder buttons and the three steps: add, fetch metadata, review and rename](../docs/images/desktop-empty-state.png)
 
-There are three ways to add files. Each one adds to the list; nothing is removed.
+There are several ways to add files. Each one adds to the list; nothing is removed.
 
 - **Drag and drop** files or folders from Finder, File Explorer, or your file manager anywhere onto the window.
+- **Open them with TidyTitles from outside the window**, even when it is not running yet:
+  - macOS: drop files or folders on TidyTitles in the Dock (or on its icon in Applications). For a folder you can also Control-click it in Finder and choose **Open With** → **TidyTitles**. Video and audio files don't list TidyTitles under **Open With**, so drop them on the icon instead.
+  - Windows: drop files or folders on the TidyTitles shortcut on the desktop (or on `TidyTitles.exe`).
+  - Windows and Linux: name them on the command line, for example `TidyTitles "D:\Downloads\The.Matrix.1999.mkv"`.
+
+  If TidyTitles is already running, they go to the open window. They are added the same way as a drop (below), and are refused, with a message, while a task is running or a dialog is open.
 - **Add Files…** (Cmd+O on macOS, Ctrl+O on Windows and Linux) opens a file picker. You can select several files. The picker offers Media Files, Video Files, Audio Files, and All Files filters.
 - **Add Folder…** (Shift+Cmd+O / Ctrl+Shift+O) opens a folder picker. You can select several folders.
 
 What gets added:
 
 - **Folders** are scanned for media files of the selected **Type**: video files for Movies and TV Shows, audio files for Music, and both for Auto-detect. Subfolders are scanned only when **Include subfolders** is checked *at the time you add the folder*.
-- **Dropped files** are added only if their extension matches the selected Type.
+- **Dropped files**, and files opened with TidyTitles from outside the window, are added only if their extension matches the selected Type.
 - **Files chosen in Add Files…** are always added, whatever their extension.
 - Hidden files and folders (names starting with `.`) are skipped when scanning. Extensions match regardless of case.
 - A file that is already in the list is not added twice.
@@ -124,7 +130,7 @@ Rows are tinted: green for a confident match, amber for music whose tags could n
 
 Click **Rename** (Cmd+Enter / Ctrl+Enter). A confirmation lists how many files will be renamed, how many associated files move with them, how many are skipped, and whether cover art will be downloaded. Click **Rename *N* Files** to go ahead.
 
-Renaming cannot be interrupted, and the window will not close while it runs. When it finishes, a summary appears:
+Renaming cannot be interrupted, and the window will not close while it runs. While it runs, and while metadata is fetched, the TidyTitles icon in the Dock or taskbar shows a progress bar, so you can follow it from another app. If you switched to another app, TidyTitles also bounces its Dock icon once (macOS) or flashes its taskbar button (Windows) when it needs you to choose a match, and posts a notification when the rename (or an undo) finishes, for example "Renamed 6 files; 2 skipped". Click the notification to bring the window back. When it finishes, a summary appears:
 
 ![The Rename Complete dialog: Renamed 6, Associated files moved 1, Skipped 2, Cover art downloaded 4](../docs/images/desktop-rename-complete.png)
 

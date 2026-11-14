@@ -112,6 +112,7 @@ export function createFakeApi(state: AppState = appState(), updates: UpdateState
     getState: vi.fn<TidyTitlesApi["getState"]>(async () => state),
     addFilesDialog: vi.fn<TidyTitlesApi["addFilesDialog"]>(async () => null),
     addPaths: vi.fn<TidyTitlesApi["addPaths"]>(async () => ({ added: 0, total: 0 })),
+    takeOpenedPaths: vi.fn<TidyTitlesApi["takeOpenedPaths"]>(async () => null),
     pathForFile: vi.fn<TidyTitlesApi["pathForFile"]>((f: File) => `/dropped/${f.name}`),
     removeFiles: vi.fn<TidyTitlesApi["removeFiles"]>(async () => undefined),
     clearFiles: vi.fn<TidyTitlesApi["clearFiles"]>(async () => undefined),
@@ -136,6 +137,7 @@ export function createFakeApi(state: AppState = appState(), updates: UpdateState
     onSelectionRequest: on(EVENTS.selectionRequest),
     onSelectionClosed: on(EVENTS.selectionClosed),
     onMenuCommand: on(EVENTS.menuCommand),
+    onPathsOpened: on(EVENTS.pathsOpened),
   } satisfies TidyTitlesApi;
 
   const emit = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => {

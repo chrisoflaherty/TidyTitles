@@ -12,6 +12,19 @@ import type { UpdateCapability } from "../shared/ipc";
 import { CONFIG_DIR_ENV } from "../main/configDir";
 import { ScriptedUpdateEngine } from "./fakeUpdates";
 import { createFakeSessionOverrides, fakeFetch } from "./fakes";
+import type { FeedbackNotification } from "../main/taskFeedback";
+
+/** What the e2e build records instead of notifying (read by the tests through `electronApp.evaluate`). */
+export interface TidyTitlesE2eFeedback {
+  notifications: FeedbackNotification[];
+  attention: number;
+  /** What the app sees as window focus. */
+  focused: boolean;
+}
+
+declare global {
+  var __tidytitlesE2eFeedback: TidyTitlesE2eFeedback | undefined;
+}
 
 const configDir = process.env[CONFIG_DIR_ENV];
 if (process.env.TIDYTITLES_E2E !== "1" || !configDir) {
@@ -40,4 +53,19 @@ if (fakeUpdates === "1" || fakeUpdates === "unsigned") {
   };
 }
 
-startApp({ sessionOverrides: createFakeSessionOverrides(), updates });
+// Never a real notification, Dock bounce, or taskbar flash: record them for
+// the tests. The window counts as focused unless a test says otherwise.
+const feedback: TidyTitlesE2eFeedback = { notifications: [], attention: 0, focused: true };
+globalThis.__tidytitlesE2eFeedback = feedback;
+
+startApp({
+  sessionOverrides: createFakeSessionOverrides(),
+  updates,
+  feedback: {
+    notify: (notification) => void feedback.notifications.push(notification),
+    requestAttention: () => {
+      feedback.attention += 1;
+    },
+    isFocused: () => feedback.focused,
+  },
+});
