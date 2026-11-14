@@ -54,7 +54,7 @@ describe("window state", () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "tt-window-"));
     try {
       const file = path.join(dir, "nested", "window-state.json");
-      await saveWindowState(file, { x: 5, y: 6, width: 800, height: 500, maximized: false });
+      saveWindowState(file, { x: 5, y: 6, width: 800, height: 500, maximized: false });
       expect(await loadWindowState(file)).toEqual({ x: 5, y: 6, width: 800, height: 500, maximized: false });
       await writeFile(file, "{not json");
       expect(await loadWindowState(file)).toBeUndefined();

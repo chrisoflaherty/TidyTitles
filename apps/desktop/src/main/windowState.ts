@@ -4,7 +4,8 @@
  * TidyTitles config directory, which the CLI shares).
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface Rect {
@@ -104,7 +105,14 @@ export async function loadWindowState(file: string): Promise<WindowState | undef
   }
 }
 
-export async function saveWindowState(file: string, state: WindowState): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify(state, null, 2) + "\n", "utf8");
+/**
+ * Save the window state. Synchronous and atomic (write a temp file, then
+ * rename) because it runs while the window is closing: an async write could
+ * be cut short when the app quits, leaving an empty or truncated file.
+ */
+export function saveWindowState(file: string, state: WindowState): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  const temp = `${file}.tmp`;
+  writeFileSync(temp, JSON.stringify(state, null, 2) + "\n", "utf8");
+  renameSync(temp, file);
 }

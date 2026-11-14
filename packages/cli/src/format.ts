@@ -165,6 +165,20 @@ export function base(p: string): string {
   return path.basename(p);
 }
 
+/**
+ * How to show a rename destination: the path relative to the folder the file
+ * is renamed into (`baseDir`: the output directory, or the source's own
+ * folder). That is the bare name when the file stays put, and includes any
+ * folders the template creates, e.g. "Artist/Album (2001)/01 - Song.mp3".
+ */
+export function destinationLabel(destination: string, baseDir: string): string {
+  const relative = path.relative(baseDir, destination);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return path.basename(destination);
+  }
+  return relative;
+}
+
 /** "Subtitle" from "subtitle" (Python `str.capitalize`). */
 export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();

@@ -13,7 +13,7 @@ import {
 } from "@tidytitles/core";
 import type { CommandContext, GlobalOptions } from "../context";
 import { CancelledError, EXIT_ERROR, EXIT_OK, raceAbort } from "../errors";
-import { base, capitalize, describeOption, describeSkip, formatCount, operationToJson } from "../format";
+import { base, capitalize, destinationLabel, describeOption, describeSkip, formatCount, operationToJson } from "../format";
 import type { Ui } from "../ui";
 import { makeTable } from "../ui";
 import { requireExistingPath } from "./shared";
@@ -78,21 +78,22 @@ function createSelection(
   return { callback, skippedNonInteractive };
 }
 
-function showPreview(ui: Ui, operations: PlannedOperation[]): void {
+function showPreview(ui: Ui, operations: PlannedOperation[], outputDir?: string): void {
   const c = ui.c;
   const table = makeTable(["Type", "Original", "New Name"], c);
   for (const op of operations) {
     const label = op.mediaFile.parsedInfo.mediaType === "music" ? "Music" : "Video";
+    const baseDir = outputDir ?? path.dirname(op.source);
     const newName =
       op.status === "skipped"
         ? c.yellow(`(skipped: ${describeSkip(op)})`)
-        : c.green(base(op.destination));
+        : c.green(destinationLabel(op.destination, baseDir));
     table.push([c.cyan(label), c.red(base(op.source)), newName]);
     for (const assoc of op.associatedFiles) {
       table.push([
         c.cyan(`  └─ ${capitalize(assoc.fileType)}`),
         c.red(base(assoc.source)),
-        c.green(base(assoc.destination)),
+        c.green(destinationLabel(assoc.destination, baseDir)),
       ]);
     }
   }
@@ -212,7 +213,7 @@ export async function renameCommand(
   );
   progress.clear();
 
-  if (!json) showPreview(ui, operations);
+  if (!json) showPreview(ui, operations, options.output ? path.resolve(options.output) : undefined);
   if (selection.skippedNonInteractive.length > 0) {
     ui.note(
       ui.ec.yellow(

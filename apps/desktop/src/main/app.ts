@@ -302,7 +302,11 @@ export function startApp(options: StartOptions = {}): void {
       }
       if (busy === "fetching") controller.cancelFetch();
       const normal = win.getNormalBounds();
-      void saveWindowState(windowStateFile(), { ...normal, maximized: win.isMaximized() }).catch(() => undefined);
+      try {
+        saveWindowState(windowStateFile(), { ...normal, maximized: win.isMaximized() });
+      } catch {
+        // Losing the saved window position is harmless; never block closing on it.
+      }
     });
     win.on("closed", () => {
       if (mainWindow === win) mainWindow = null;
