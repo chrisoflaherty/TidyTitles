@@ -1,7 +1,7 @@
 # electron-builder configuration for TidyTitles.
 # Identifiers and names follow the PyInstaller/NSIS/DMG/AppImage setup
 # (file-renamer.spec, installer/): bundle id com.filerenamer.tidytitles,
-# product name TidyTitles, artifacts TidyTitles-<version>-macos.dmg,
+# product name TidyTitles, artifacts TidyTitles-<version>-macos-<arch>.dmg,
 # TidyTitles-<version>-windows-setup.exe, TidyTitles-<version>-<arch>.AppImage.
 
 appId: com.filerenamer.tidytitles
@@ -34,11 +34,11 @@ mac:
   icon: build/icon.icns
   darkModeSupport: true
   hardenedRuntime: true
-  artifactName: ${productName}-${version}-macos.${ext}
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
 
 dmg:
   title: ${productName} ${version}
-  artifactName: ${productName}-${version}-macos.${ext}
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
 
 win:
   target: nsis
