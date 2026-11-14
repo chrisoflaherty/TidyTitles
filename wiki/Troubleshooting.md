@@ -304,7 +304,15 @@ It will not close while files are being renamed or restored. Wait for that to fi
 
 ### Dropped files were not added
 
-A drop adds only files whose extension matches the selected **Type** (folders are scanned the same way). Nothing can be dropped while a task is running.
+A drop adds only files whose extension matches the selected **Type** (folders are scanned the same way). Nothing can be dropped while a task is running. The same goes for files dropped on the Dock icon or the Windows shortcut, opened with **Open With**, or named on the command line: while a task is running or a dialog is open, TidyTitles says "The item wasn’t added"; open them again when it is done.
+
+### TidyTitles is not listed under "Open With" for a video or song
+
+That is on purpose. macOS makes an app listed under **Open With** the default for any file type no other installed app opens (on a new Mac, `.mkv` files), so double-clicking such a movie would open TidyTitles instead of your player. TidyTitles is listed under **Open With** only for folders (Finder stays their default). To add files, drop them on TidyTitles in the Dock or on its icon in Applications. TidyTitles never makes itself the default app for any file type, on any system.
+
+### No notification appears when a rename finishes
+
+Notifications appear only when TidyTitles is not the active app. Otherwise the summary in the window says the same. If you switched away and still saw none, check that notifications are allowed for TidyTitles: macOS **System Settings** → **Notifications** → **TidyTitles**; Windows **Settings** → **System** → **Notifications**.
 
 ### The CLI renamed files but the app's Undo offers something else
 

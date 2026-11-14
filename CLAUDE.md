@@ -66,11 +66,11 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 **`packages/cli` (`@tidytitles/cli`)**: commander-based CLI. `src/program.ts` builds the program with injectable dependencies; `src/commands/` holds `rename`, `preview`, `undo`, `config`. Builds two outputs: `dist/index.js` (npm bin) and `dist/tidytitles.mjs` (self-contained bundle shipped inside the desktop app).
 
 **`apps/desktop` (`@tidytitles/desktop`)**: Electron app built with electron-vite.
-- `src/main/` - `controller.ts` owns the session, planned operations, and cancellation (no Electron imports, unit-testable); `updater.ts` is the update state machine (no Electron imports; tested with a fake engine) and `updaterEngine.ts` wraps electron-updater; `preferences.ts` stores desktop-only settings (auto-update toggle) in `userData`; `app.ts` owns the window, menu, IPC, and security setup
+- `src/main/` - `controller.ts` owns the session, planned operations, and cancellation (no Electron imports, unit-testable); `updater.ts` is the update state machine (no Electron imports; tested with a fake engine) and `updaterEngine.ts` wraps electron-updater; `preferences.ts` stores desktop-only settings (auto-update toggle) in `userData`; `taskFeedback.ts` decides the Dock/taskbar progress, the finish notification, and the attention request (no Electron imports); `openPaths.ts` parses and validates paths opened from the Dock, Finder, the command line, or a second instance; `app.ts` owns the window, menu, IPC, and security setup
 - `src/preload/` - Typed API exposed as `window.tidytitles` through `contextBridge`
 - `src/renderer/` - React 19 with a single reducer and plain CSS (`styles.css`)
 - `src/shared/ipc.ts` - IPC channel names and payload types
-- `src/e2e/` - Test-only main entry with fake providers and a scripted update engine (`TIDYTITLES_E2E_FAKE_UPDATES`); never part of the shipped build
+- `src/e2e/` - Test-only main entry with fake providers, a scripted update engine (`TIDYTITLES_E2E_FAKE_UPDATES`), and recorders in place of notifications, Dock bounce, and focus (`globalThis.__tidytitlesE2eFeedback`); never part of the shipped build
 
 ### Conventions
 
@@ -103,6 +103,13 @@ TV: `{title}`, `{season2}`, `{episode2}`, `{episode_title}`
 Music: `{artist}`, `{album}`, `{track2}`, `{disc2}`, `{title}`, `{year}`
 
 Formatters: `{field|lower}`, `{field|upper}`, `{field|title}`, `{field|pad:3}`
+
+## Opening Files and Notifications (desktop)
+
+- Paths from macOS `open-file` (Dock drops, Finder's Open With), the command line (Windows/Linux, files dropped on the shortcut or exe), and a second instance go through `openPaths.ts` (switches ignored, only existing absolute paths kept), wait in an `OpenedPathsQueue`, and are taken by the renderer with `takeOpenedPaths(canDrop())`: the same rules and code path as a drop. Refused with a message while a task runs or a dialog is open; they only wait while other items are being added.
+- On macOS the single-instance lock is requested at `ready`, so a second instance (`open -n`) can pass its `open-file` paths in `additionalData`.
+- Document types are declared in `mac.extendInfo` (never `fileAssociations`: the NSIS installer would make every listed extension default to TidyTitles). Folders are rank `Alternate`; video and audio files rank `None`, because Launch Services makes an `Alternate` app the default for a type nobody else claims (`.mkv` on a stock Mac). `tests/main/documentTypes.test.ts` keeps the extensions equal to core's.
+- Icon progress follows `AppState.busy` (fetching, renaming, undoing), so it clears however a task ends. Notifications only when the window is not focused. Windows sets the AppUserModelID to the app id.
 
 ## Automatic Updates (desktop)
 
