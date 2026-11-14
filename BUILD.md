@@ -255,7 +255,7 @@ The desktop app updates itself with [electron-updater](https://www.electron.buil
 
 | System | Installs updates itself when | Otherwise |
 |--------|------------------------------|-----------|
-| macOS | the app is signed with a Developer ID (`codesign` shows a TeamIdentifier) and its folder is writable and not translocated | it checks and offers **Download** (the release page) |
+| macOS | the app is signed with a Developer ID (`codesign` shows a TeamIdentifier) and the folder that contains it is writable and it is not translocated | it checks and offers **Download** (the release page) |
 | Windows | it was installed by the NSIS installer (`resources/app-update.yml` exists) | it checks and offers **Download** |
 | Linux | it runs from the AppImage (`APPIMAGE` is set) | it checks and offers **Download** |
 

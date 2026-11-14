@@ -1,9 +1,15 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadPreferences, parsePreferences, savePreferences } from "../../src/main/preferences";
-import { classifyUpdaterError, hasUpdateConfig, macBundlePath, testFeedFromBuild } from "../../src/main/updaterEngine";
+import {
+  classifyUpdaterError,
+  hasUpdateConfig,
+  macBundlePath,
+  readMacLocation,
+  testFeedFromBuild,
+} from "../../src/main/updaterEngine";
 import { IpcValidationError, parseEnabled } from "../../src/main/validate";
 
 function updaterError(message: string, code?: string) {
@@ -78,5 +84,43 @@ describe("IPC validation", () => {
     expect(parseEnabled(false)).toBe(false);
     expect(() => parseEnabled("true")).toThrow(IpcValidationError);
     expect(() => parseEnabled(undefined)).toThrow(IpcValidationError);
+  });
+});
+
+describe("readMacLocation", () => {
+  // File modes are not enforced on Windows, or for root.
+  const modesEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
+
+  it("reports a translocated app", async () => {
+    expect(await readMacLocation("/private/var/folders/x/AppTranslocation/ABC/d/TidyTitles.app")).toBe("translocated");
+  });
+
+  it.skipIf(!modesEnforced)(
+    "is ok when the folder is writable even though the bundle itself is not (as macOS reports for a notarized app)",
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), "tidytitles-location-"));
+      const bundle = path.join(dir, "TidyTitles.app");
+      await mkdir(bundle);
+      await chmod(bundle, 0o555);
+      try {
+        expect(await readMacLocation(bundle)).toBe("ok");
+      } finally {
+        await chmod(bundle, 0o755);
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!modesEnforced)("is readOnly when the folder that contains the app cannot be written", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "tidytitles-location-"));
+    const bundle = path.join(dir, "TidyTitles.app");
+    await mkdir(bundle);
+    await chmod(dir, 0o555);
+    try {
+      expect(await readMacLocation(bundle)).toBe("readOnly");
+    } finally {
+      await chmod(dir, 0o755);
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

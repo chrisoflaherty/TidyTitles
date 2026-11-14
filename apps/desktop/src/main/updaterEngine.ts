@@ -185,12 +185,20 @@ export function readMacSignature(bundle: string, timeoutMs = 10_000): Promise<Ma
   });
 }
 
-/** Squirrel.Mac replaces the bundle in place, so its folder must be writable and not translocated. */
+/**
+ * Squirrel.Mac installs an update by swapping the whole bundle within its
+ * folder, so that folder must be writable and the app must not be
+ * translocated.
+ *
+ * Only the folder is checked, never the bundle itself: macOS refuses a
+ * notarized app write access to its own bundle (EPERM, even for the owner),
+ * yet still lets the bundle be replaced. Checking the bundle would report
+ * every properly installed copy as unable to update.
+ */
 export async function readMacLocation(bundle: string): Promise<"ok" | "translocated" | "readOnly"> {
   if (bundle.includes("/AppTranslocation/")) return "translocated";
   try {
     await access(path.dirname(bundle), constants.W_OK);
-    await access(bundle, constants.W_OK);
     return "ok";
   } catch {
     return "readOnly";
