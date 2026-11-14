@@ -326,7 +326,7 @@ export function SettingsDialog({ onClose, onSaved }: { onClose: () => void; onSa
 
             {tab === "templates" && (
               <>
-                <Section title="Naming templates" description="How renamed files are named. A “/” in the music template creates folders.">
+                <Section title="Naming templates" description="How renamed files are named. A “/” in a template creates folders; a “/” in a title or artist name is removed.">
                   {(["movie", "tv", "music"] as const).map((kind) => (
                     <TemplateField
                       key={kind}

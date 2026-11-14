@@ -194,8 +194,8 @@ describe("path and extension handling matches Python", () => {
   const show = createTVShow({ id: 1, title: "Show: Name?", originalTitle: "Orig", year: 2008 });
   const episode = createEpisode({ show, season: 1, episode: 2, title: 'What/Is "This"?' });
 
-  it("cleans invalid characters; a slash in a value becomes a directory split", () => {
-    expect(new TemplateEngine().renderEpisode(episode, ".mkv")).toBe("Show Name - S01E02 - What/Is This.mkv");
+  it("cleans invalid characters; a slash in a value is removed, not a directory split", () => {
+    expect(new TemplateEngine().renderEpisode(episode, ".mkv")).toBe("Show Name - S01E02 - WhatIs This.mkv");
   });
 
   it("supports directory templates and extensions without a dot", () => {
@@ -239,7 +239,7 @@ describe("path and extension handling matches Python", () => {
   });
 });
 
-describe("renderTrack matches Python", () => {
+describe("renderTrack", () => {
   const acdc = createArtist({ id: "x", name: "AC/DC" });
   const album = createAlbum({ id: "y", title: "Back in Black", artist: acdc, year: 1980 });
   const track = createTrack({
@@ -251,15 +251,15 @@ describe("renderTrack matches Python", () => {
     genres: ["Rock"],
   });
 
-  it("uses the default music template (artist names with slashes split directories)", () => {
-    expect(new TemplateEngine().renderTrack(track, ".flac")).toBe("AC/DC/Back in Black (1980)/01 - Hells Bells.flac");
+  it("uses the default music template (a slash in an artist name does not create a folder)", () => {
+    expect(new TemplateEngine().renderTrack(track, ".flac")).toBe("ACDC/Back in Black (1980)/01 - Hells Bells.flac");
   });
 
   it("fills every music field", () => {
     const engine = new TemplateEngine({
       musicTemplate: "{album_artist} - {track} - {disc} - {disc2} - {genre} - {year} - {ext}",
     });
-    expect(engine.renderTrack(track, "flac")).toBe("AC/DC - 1 -  - 01 - Rock - 1980 - flac.flac");
+    expect(engine.renderTrack(track, "flac")).toBe("ACDC - 1 -  - 01 - Rock - 1980 - flac.flac");
   });
 
   it("handles a track with no album, number, or genre", () => {
@@ -276,7 +276,7 @@ describe("renderTrack matches Python", () => {
     const comp = createAlbum({ id: "c", title: "Hits", artist: various, year: 2001 });
     const t = createTrack({ id: "t", title: "Song", artist: acdc, album: comp, trackNumber: 12, discNumber: 2 });
     const engine = new TemplateEngine({ musicTemplate: "{album_artist}/{album}/{disc2}-{track2} {artist} - {title}" });
-    expect(engine.renderTrack(t, ".mp3")).toBe("Various Artists/Hits/02-12 AC/DC - Song.mp3");
+    expect(engine.renderTrack(t, ".mp3")).toBe("Various Artists/Hits/02-12 ACDC - Song.mp3");
   });
 });
 
@@ -303,5 +303,24 @@ describe("helpers and documentation", () => {
     expect(zfill("12345", 3)).toBe("12345");
     expect(pyTitle("o'neil mcdonald-smith")).toBe("O'Neil Mcdonald-Smith");
     expect(pyTitle("")).toBe("");
+  });
+});
+
+describe("slashes in metadata values", () => {
+  it("keeps a movie with a slash in its title in one file, not a folder", () => {
+    const movie = createMovie({ id: 1, title: "Face/Off", originalTitle: "Face/Off", year: 1997 });
+    expect(new TemplateEngine().renderMovie(movie, ".mkv")).toBe("FaceOff (1997).mkv");
+  });
+
+  it("still creates folders from slashes written in the template", () => {
+    const movie = createMovie({ id: 1, title: "Face/Off", originalTitle: "Face/Off", year: 1997 });
+    const engine = new TemplateEngine({ movieTemplate: "{title} ({year})/{title}" });
+    expect(engine.renderMovie(movie, ".mkv")).toBe("FaceOff (1997)/FaceOff.mkv");
+  });
+
+  it("removes slashes in render() values too", () => {
+    expect(new TemplateEngine().render("{artist}/{title}", { artist: "AC/DC", title: "T.N.T." })).toBe(
+      "ACDC/T.N.T.",
+    );
   });
 });

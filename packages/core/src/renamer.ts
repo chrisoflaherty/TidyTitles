@@ -226,7 +226,7 @@ export class FileRenamer {
 
   /**
    * True when overwriting is on and `destination` is a different file that
-   * this batch moves (still at its old name, or already at its new one).
+   * in this batch (still at its old name, or already at its new one).
    * Overwriting it would destroy a file the user is renaming, not one they
    * agreed to replace. (With overwrite off, `rename` refuses any existing
    * destination anyway.)
@@ -265,11 +265,13 @@ export class FileRenamer {
   ): Promise<RenameOperation[]> {
     const total = operations.length;
 
-    // Every file this batch is going to move, so no operation overwrites
-    // another one's source (a swap or chain of names) or result.
+    // Every file in this batch, so no operation overwrites another one's
+    // source (a swap or chain of names) or result. That includes files whose
+    // own operation is already skipped (for example a correctly named file
+    // that another file in the batch also maps onto): the user listed them,
+    // so "overwrite" must not destroy them.
     const batchFiles = new Set<string>();
     for (const op of operations) {
-      if (op.status !== "pending") continue;
       for (const p of [op.source, ...op.associatedFiles.map((a) => a.source)]) {
         const id = fileIdentity(p);
         if (id !== undefined) batchFiles.add(id);

@@ -72,19 +72,66 @@ describe("overwrite strategy within a batch", () => {
   });
 });
 
-describe("templates and metadata cannot leave the chosen folder", () => {
-  it("drops '..' path components that come from tags", async () => {
-    const library = path.join(dir, "library", "inbox");
-    const song = await touch(library, "song.mp3");
-    const service = new RenameService({
-      musicParser: new FakeMusicParser({ "song.mp3": { ...completeTags, artist: "../../../escaped" } }),
-    });
-    const ops = await service.processFiles([song]);
-    expect(ops[0]!.status).toBe("pending");
-    const relative = path.relative(library, ops[0]!.destination);
-    expect(relative.startsWith("..")).toBe(false);
-    expect(path.isAbsolute(relative)).toBe(false);
+describe("overwrite strategy and skipped batch files", () => {
+  it("never overwrites a batch file whose own operation is skipped", async () => {
+    // "Song.mp3" is already correctly named (its operation is skipped), and
+    // another file in the batch maps onto the same name.
+    const keep = await touch(dir, "Song.mp3", "KEEP");
+    const other = await touch(dir, "song-copy.mp3", "OTHER");
+    const info = (name: string) => ({ title: "Song", mediaType: "music" as const, rawFilename: name });
+    const ops = [
+      createRenameOperation({
+        source: keep,
+        destination: keep,
+        status: "skipped",
+        mediaFile: { path: keep, parsedInfo: info("Song.mp3") },
+      }),
+      createRenameOperation({
+        source: other,
+        destination: keep,
+        mediaFile: { path: other, parsedInfo: info("song-copy.mp3") },
+      }),
+    ];
+    await new FileRenamer({ overwrite: true }).execute(ops);
+    expect(await readFile(keep, "utf8")).toBe("KEEP");
+    expect(await readFile(other, "utf8")).toBe("OTHER");
+    expect(ops[1]!.status).toBe("skipped");
   });
+
+  it("still overwrites an existing file that is not part of the batch", async () => {
+    const existing = await touch(dir, "Movie.mkv", "OLD");
+    const incoming = await touch(dir, "movie.2020.mkv", "NEW");
+    const ops = [
+      createRenameOperation({
+        source: incoming,
+        destination: existing,
+        mediaFile: { path: incoming, parsedInfo: { title: "Movie", mediaType: "movie", rawFilename: "movie.2020.mkv" } },
+      }),
+    ];
+    await new FileRenamer({ overwrite: true }).execute(ops);
+    expect(ops[0]!.status).toBe("completed");
+    expect(await readFile(existing, "utf8")).toBe("NEW");
+    expect(existsSync(incoming)).toBe(false);
+  });
+});
+
+describe("templates and metadata cannot leave the chosen folder", () => {
+  it.each(["../../../escaped", "..", "../.."])(
+    "keeps a file inside its folder when a tag is %j",
+    async (artist) => {
+      const library = path.join(dir, "library", "inbox");
+      const song = await touch(library, "song.mp3");
+      const service = new RenameService({
+        musicParser: new FakeMusicParser({ "song.mp3": { ...completeTags, artist } }),
+      });
+      const ops = await service.processFiles([song]);
+      expect(ops[0]!.status).toBe("pending");
+      const relative = path.relative(library, ops[0]!.destination);
+      // No ".." component (a name that merely begins with dots is fine).
+      expect(relative.split(path.sep)).not.toContain("..");
+      expect(path.isAbsolute(relative)).toBe(false);
+    },
+  );
 
   it("drops '.' and '..' components from a template", () => {
     const engine = new TemplateEngine({ movieTemplate: "../../{title}/./{title} ({year})" });

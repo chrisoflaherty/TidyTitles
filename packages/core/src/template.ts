@@ -205,6 +205,10 @@ export class TemplateEngine {
    * Missing (`undefined`/`null`) fields render as "". Unknown formatters
    * leave the value unchanged. A malformed `pad` or `replace` formatter
    * throws TemplateError.
+   *
+   * A "/" inside a value is removed ("AC/DC" renders as "ACDC", "Face/Off"
+   * as "FaceOff"), so only the slashes written in the template itself
+   * create folders.
    */
   render(template: string, context: TemplateContext): string {
     return template.replace(TemplateEngine.PLACEHOLDER_PATTERN, (...args: unknown[]) => {
@@ -214,7 +218,7 @@ export class TemplateEngine {
       const raw = Object.hasOwn(context, field) ? context[field] : undefined;
       if (raw === undefined || raw === null) return "";
 
-      let value = pyStr(raw);
+      let value = pyStr(raw).replaceAll("/", "");
       const formatters = TemplateEngine.FORMATTERS;
 
       if (formatter) {
