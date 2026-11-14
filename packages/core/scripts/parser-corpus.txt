@@ -1,0 +1,462 @@
+# Parser parity corpus: one filename per line. Lines starting with # are comments.
+# --- Movies: dots, release tags ---
+The.Matrix.1999.1080p.BluRay.x264-SPARKS.mkv
+Inception.2010.720p.WEB-DL.mp4
+Inception.2010.1080p.BluRay.x264.DTS-FGT.mkv
+The.Dark.Knight.2008.2160p.UHD.BluRay.x265.HDR-TERMINAL.mkv
+Interstellar.2014.IMAX.1080p.BluRay.x264-SPARKS.mkv
+Parasite.2019.KOREAN.1080p.BluRay.x264.DTS-HDMA.5.1-FGT.mkv
+Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv
+Oppenheimer.2023.1080p.WEBRip.x264.AAC5.1-YTS.MX.mp4
+Pulp.Fiction.1994.REMASTERED.1080p.BluRay.x264-AMIABLE.mkv
+Fight.Club.1999.10th.Anniversary.Edition.1080p.BluRay.x264-CiNEFiLE.mkv
+Gladiator.2000.EXTENDED.REMASTERED.720p.BluRay.x264-SADPANDA.mkv
+The.Shawshank.Redemption.1994.720p.BRRip.x264-YIFY.mp4
+Forrest.Gump.1994.DVDRip.XviD-DoNE.avi
+Titanic.1997.1080p.BluRay.x264-HDMaNiAcS.mkv
+Avatar.2009.EXTENDED.1080p.BluRay.x264-BestHD.mkv
+Jurassic.Park.1993.1080p.BluRay.H264.AAC-RARBG.mp4
+The.Godfather.1972.1080p.BluRay.x264-CiNEFiLE.mkv
+Goodfellas.1990.720p.HDTV.x264-CtrlHD.mkv
+Alien.1979.Directors.Cut.1080p.BluRay.x264-CHD.mkv
+Mad.Max.Fury.Road.2015.1080p.BluRay.x264-SPARKS.mkv
+Arrival.2016.1080p.WEB-DL.H264.AC3-EVO.mkv
+Whiplash.2014.720p.BluRay.x264-ROVERS.mkv
+Get.Out.2017.HDRip.XviD.AC3-EVO.avi
+La.La.Land.2016.DVDScr.XVID.AC3.HQ.Hive-CM8.avi
+Joker.2019.HDCAM.x264-TOMMY.mkv
+Spider-Man.No.Way.Home.2021.1080p.WEBRip.x265-RARBG.mp4
+Spider-Man.Into.the.Spider-Verse.2018.1080p.BluRay.x264-SPARKS.mkv
+Avengers.Endgame.2019.2160p.BluRay.REMUX.HEVC.DTS-HD.MA.TrueHD.7.1.Atmos-FGT.mkv
+Black.Panther.2018.1080p.BluRay.x264-Replica.mkv
+The.Lord.of.the.Rings.The.Fellowship.of.the.Ring.2001.EXTENDED.1080p.BluRay.x264-FSiHD.mkv
+Harry.Potter.and.the.Sorcerers.Stone.2001.720p.BluRay.x264-CtrlHD.mkv
+Star.Wars.Episode.IV.A.New.Hope.1977.1080p.BluRay.x264-SPARKS.mkv
+The.Social.Network.2010.1080p.BluRay.DTS.x264-CtrlHD.mkv
+No.Country.for.Old.Men.2007.720p.BluRay.x264-SiNNERS.mkv
+There.Will.Be.Blood.2007.1080p.BluRay.x264-HiDt.mkv
+Amelie.2001.FRENCH.720p.BluRay.x264-NoTV.mkv
+Pans.Labyrinth.2006.SPANISH.1080p.BluRay.x264-HDMaNiAcS.mkv
+Crouching.Tiger.Hidden.Dragon.2000.CHINESE.1080p.BluRay.x264.mkv
+Everything.Everywhere.All.at.Once.2022.1080p.WEB-DL.DDP5.1.H.264-EVO.mkv
+Top.Gun.Maverick.2022.1080p.AMZN.WEB-DL.DDP5.1.H.264-CMRG.mkv
+Glass.Onion.A.Knives.Out.Mystery.2022.1080p.NF.WEB-DL.DDP5.1.Atmos.x264-CMRG.mkv
+The.Batman.2022.1080p.HMAX.WEB-DL.DD5.1.x264-NOGRP.mkv
+Barbie.2023.720p.WEBRip.x264-GalaxyRG.mkv
+Wonka.2023.1080p.WEB.H264-PECULATE.mkv
+Poor.Things.2023.2160p.WEB.H265-SuccessfulCrab.mkv
+Past.Lives.2023.1080p.WEB.h264-ETHEL.mkv
+# --- Movies: spaces, parens, brackets, underscores ---
+The Matrix (1999).mkv
+The Matrix (1999) 1080p.mkv
+Inception (2010) [1080p].mp4
+Inception (2010) [1080p] [BluRay] [YTS.MX].mp4
+The Departed (2006) [720p] [BluRay] [YTS.AM].mp4
+Heat (1995) 1080p BluRay x264.mkv
+Heat [1995].mkv
+Heat.[1995].1080p.mkv
+Casablanca (1942).avi
+Citizen Kane (1941) BluRay 1080p.mkv
+The_Big_Lebowski_1998_1080p_BluRay.mkv
+Back_to_the_Future_(1985).mkv
+Reservoir_Dogs_1992_DVDRip.avi
+the.big.lebowski.1998.720p.bluray.x264.mkv
+Moonlight 2016 1080p WEB-DL.mkv
+Amadeus (1984) Director's Cut.mkv
+Up (2009).mkv
+Her (2013) 1080p.mkv
+It (2017).mkv
+Us.2019.1080p.BluRay.x264-SPARKS.mkv
+Nope 2022 1080p.mkv
+Tenet.2020.mkv
+Coco.mkv
+The Godfather.mkv
+Some Random Home Video.mp4
+Rocky.Balboa.2006.mkv
+Ocean's Eleven (2001).mkv
+Ocean's.Eleven.2001.720p.BluRay.x264-SiNNERS.mkv
+Schindler's.List.1993.1080p.BluRay.x264-AMIABLE.mkv
+Monsters, Inc. (2001).mkv
+Mission- Impossible (1996).mkv
+Mission.Impossible.Dead.Reckoning.Part.One.2023.1080p.WEB-DL.mkv
+Dr. Strangelove (1964).mkv
+WALL-E (2008).mkv
+WALL-E.2008.1080p.BluRay.x264-HD1080.mkv
+# --- Movies: years and numbers in titles ---
+2001.A.Space.Odyssey.1968.1080p.BluRay.x264-AMIABLE.mkv
+2001 A Space Odyssey (1968).mkv
+Blade.Runner.2049.2017.1080p.BluRay.x264-SPARKS.mkv
+Blade Runner 2049 (2017).mkv
+Blade.Runner.1982.Final.Cut.1080p.BluRay.x264-SPARKS.mkv
+1917.2019.1080p.BluRay.x264-SPARKS.mkv
+1917 (2019).mkv
+2012.2009.720p.BluRay.x264-SiNNERS.mkv
+1984.1984.DVDRip.XviD.avi
+Nineteen.Eighty-Four.1984.1080p.BluRay.mkv
+300.2006.1080p.BluRay.x264-HDMI.mkv
+300 (2006).mkv
+21.Jump.Street.2012.720p.BluRay.x264-SPARKS.mkv
+22.Jump.Street.2014.1080p.BluRay.x264-SPARKS.mkv
+10.Things.I.Hate.About.You.1999.720p.BluRay.x264.mkv
+12.Angry.Men.1957.1080p.BluRay.x264-CiNEFiLE.mkv
+12 Years a Slave (2013).mkv
+50.First.Dates.2004.720p.BluRay.x264.mkv
+Apollo.13.1995.1080p.BluRay.x264-SiNNERS.mkv
+Ocean's.Twelve.2004.720p.BluRay.x264.mkv
+Toy.Story.2.1999.1080p.BluRay.x264-SPARKS.mkv
+Toy Story 3 (2010).mkv
+Toy.Story.4.2019.2160p.UHD.BluRay.x265-TERMINAL.mkv
+Rocky.II.1979.1080p.BluRay.x264.mkv
+Rocky III (1982).mkv
+Terminator.2.Judgment.Day.1991.1080p.BluRay.x264-SPARKS.mkv
+The.Godfather.Part.II.1974.1080p.BluRay.x264-CiNEFiLE.mkv
+The Godfather Part III (1990).mkv
+Die.Hard.2.1990.720p.BluRay.x264.mkv
+Shrek.2.2004.1080p.BluRay.x264.mkv
+Iron.Man.3.2013.1080p.BluRay.x264-SPARKS.mkv
+Fast.and.Furious.6.2013.720p.BluRay.x264.mkv
+Fast.X.2023.1080p.WEB-DL.mkv
+John.Wick.Chapter.4.2023.1080p.WEB-DL.DDP5.1.H.264-NOGRP.mkv
+Ocean's 8 (2018).mkv
+Se7en.1995.1080p.BluRay.x264.mkv
+9.2009.720p.BluRay.x264.mkv
+Super.8.2011.1080p.BluRay.x264.mkv
+District.9.2009.1080p.BluRay.x264.mkv
+Apollo 13 (1995) 1080p.mkv
+2046.2004.CHINESE.1080p.BluRay.x264.mkv
+Hotel.Transylvania.3.2018.mkv
+Back.to.the.Future.Part.II.1989.1080p.BluRay.x264.mkv
+# --- Movies: multi-part / CD ---
+Avatar.2009.CD1.avi
+Avatar.2009.CD2.avi
+The.Lord.of.the.Rings.2001.Part1.avi
+Kill.Bill.Vol.1.2003.1080p.BluRay.x264.mkv
+Kill Bill Vol. 2 (2004).mkv
+Harry.Potter.and.the.Deathly.Hallows.Part.1.2010.1080p.BluRay.x264.mkv
+Harry Potter and the Deathly Hallows Part 2 (2011).mkv
+Dune.2021.Part.1.mkv
+# --- TV: SxxExx ---
+Breaking.Bad.S01E01.720p.HDTV.mkv
+Breaking.Bad.S01E02.720p.HDTV.mkv
+Breaking.Bad.S05E16.Felina.1080p.WEB-DL.DD5.1.H.264-BS.mkv
+breaking.bad.s01e02.720p.hdtv.x264-ctu.mkv
+Game.of.Thrones.S08E03.The.Long.Night.1080p.AMZN.WEB-DL.DDP5.1.H.264-GoT.mkv
+Game of Thrones S01E01 Winter Is Coming.mkv
+Game of Thrones - S01E01 - Winter Is Coming.mkv
+Game of Thrones - 1x01 - Winter Is Coming.mkv
+The.Office.US.S02E01.The.Dundies.720p.WEB-DL.mkv
+The Office (US) - S02E01 - The Dundies.mkv
+The.Wire.S01E01.720p.BluRay.x264-SiNNERS.mkv
+Stranger.Things.S04E09.Chapter.Nine.The.Piggyback.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv
+The.Mandalorian.S03E08.1080p.WEB.H264-GLHF.mkv
+Succession.S04E10.With.Open.Eyes.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv
+The.Last.of.Us.S01E03.Long.Long.Time.2160p.HMAX.WEB-DL.x265.10bit.HDR.DDP5.1-SMURF.mkv
+House.of.the.Dragon.S02E01.1080p.WEB.h264-ETHEL.mkv
+The.Bear.S02E06.Fishes.720p.HULU.WEB-DL.DDP5.1.H.264-NTb.mkv
+Severance.S01E01.Good.News.About.Hell.1080p.ATVP.WEB-DL.DDP5.1.H.264-CasStudio.mkv
+Ted.Lasso.S03E12.1080p.WEB.H264-CAKES.mkv
+Better.Call.Saul.S06E13.Saul.Gone.1080p.AMC.WEB-DL.DDP5.1.H.264-NTb.mkv
+Friends.S10E17.The.Last.One.720p.BluRay.x264-PSYCHD.mkv
+Seinfeld.S04E11.The.Contest.DVDRip.XviD-SAiNTS.avi
+The.Simpsons.S35E01.720p.WEB.x265-MiNX.mkv
+Futurama.S01E01.Space.Pilot.3000.DVDRip.XviD.avi
+South.Park.S26E01.1080p.WEB.H264-NHTFS.mkv
+Lost.S01E01.Pilot.Part.1.720p.BluRay.x264.mkv
+The.X-Files.S01E01.Pilot.720p.BluRay.x264.mkv
+Mr.Robot.S01E01.eps1.0_hellofriend.mov.720p.WEB-DL.mkv
+Sherlock.S02E01.A.Scandal.in.Belgravia.1080p.BluRay.x264.mkv
+Fargo.S01E01.720p.HDTV.x264-KILLERS.mkv
+Westworld.S01E01.The.Original.1080p.BluRay.x264.mkv
+True.Detective.S01E01.The.Long.Bright.Dark.720p.HDTV.x264.mkv
+Black.Mirror.S03E04.San.Junipero.1080p.NF.WEBRip.DD5.1.x264-SKGTV.mkv
+Arrested.Development.S01E01.DVDRip.XviD.avi
+Mad.Men.S01E01.Smoke.Gets.in.Your.Eyes.720p.BluRay.mkv
+The.Sopranos.S01E01.The.Sopranos.1080p.BluRay.x265.mkv
+Twin.Peaks.S03E08.720p.WEB-DL.mkv
+Dark.S01E01.Secrets.1080p.NF.WEB-DL.mkv
+Money.Heist.S01E01.SPANISH.1080p.NF.WEB-DL.mkv
+Breaking Bad S01E01.mkv
+breaking bad s01e01.mkv
+Breaking_Bad_S01E01_Pilot.mkv
+The Expanse S06E06 Babylon's Ashes 1080p.mkv
+Loki S01E01 Glorious Purpose (1080p).mkv
+S.W.A.T.S05E01.720p.HDTV.x264-SYNCOPY.mkv
+Marvels.Agents.of.S.H.I.E.L.D.S01E01.720p.HDTV.x264.mkv
+Grey's.Anatomy.S20E01.720p.HDTV.x264-SYNCOPY.mkv
+Its.Always.Sunny.in.Philadelphia.S16E01.1080p.WEB.H264.mkv
+Law.and.Order.SVU.S25E01.720p.HDTV.x264.mkv
+Law & Order - Special Victims Unit - S25E01.mkv
+Star.Trek.The.Next.Generation.S03E15.Yesterdays.Enterprise.1080p.BluRay.x264.mkv
+Star Trek - Deep Space Nine - S07E25.mkv
+The.Walking.Dead.S11E24.Rest.in.Peace.1080p.AMZN.WEB-DL.mkv
+Show.Name.S2023E05.720p.WEB.mkv
+Show.Name.S01E100.720p.HDTV.mkv
+One.Piece.S01E1071.1080p.WEB.mkv
+# --- TV: multi-episode ---
+Breaking.Bad.S01E01E02.720p.HDTV.mkv
+Breaking.Bad.S01E01-E02.720p.HDTV.mkv
+Breaking.Bad.S01E01-02.720p.HDTV.mkv
+Friends.S01E16E17.DVDRip.XviD.avi
+The.Office.US.S05E14-E15.Stress.Relief.720p.WEB-DL.mkv
+Lost.S01E01-E02.Pilot.720p.BluRay.mkv
+Doctor Who - S04E12-E13 - The Stolen Earth.mkv
+Show.S01E01.S01E02.720p.mkv
+# --- TV: 1x02 ---
+Breaking Bad 1x01.mkv
+Breaking.Bad.1x01.Pilot.mkv
+Friends.10x17.The.Last.One.avi
+Seinfeld - 4x11 - The Contest.avi
+the.simpsons.3x05.mkv
+Lost.1x01.HDTV.XviD.avi
+House 1x01 Pilot.avi
+Firefly.1x01-02.Serenity.avi
+# --- TV: words ---
+Breaking Bad Season 1 Episode 2.mkv
+Breaking.Bad.Season.1.Episode.2.mkv
+Breaking Bad - Season 01 Episode 02 - Cats in the Bag.mkv
+The Wire Season 2 Episode 5 Undertow.avi
+Planet Earth Episode 3.mkv
+# --- TV: daily / dated ---
+The.Daily.Show.2023.05.12.720p.WEB.h264.mkv
+The.Tonight.Show.Starring.Jimmy.Fallon.2024.01.15.Emma.Stone.720p.HDTV.x264-SORNY.mkv
+Late.Night.with.Seth.Meyers.2023.11.02.1080p.WEB.h264-EDITH.mkv
+Jeopardy.2024.03.08.720p.HDTV.x264.mkv
+The.Late.Show.with.Stephen.Colbert.2022-10-05.720p.WEB.mkv
+Conan.2019.06.20.Will.Ferrell.720p.mkv
+WWE.Monday.Night.Raw.2024.02.05.720p.HDTV.x264.mkv
+Last.Week.Tonight.with.John.Oliver.S11E05.720p.WEB.h264.mkv
+# --- TV: anime ---
+[SubsPlease] Jujutsu Kaisen - 05 [1080p].mkv
+[SubsPlease] Frieren - 12 (1080p) [A1B2C3D4].mkv
+[Erai-raws] Spy x Family - 07 [720p].mkv
+[HorribleSubs] One Punch Man - 01 [1080p].mkv
+[HorribleSubs] Attack on Titan - 25 [720p].mkv
+[Judas] Demon Slayer - S03E05 [1080p][HEVC x265 10bit].mkv
+[Commie] Steins Gate - 01 [BD 720p AAC] [5E2D8F9A].mkv
+[Coalgirls] Clannad After Story - 01 (1920x1080 Blu-ray FLAC) [ABCD1234].mkv
+[SubsPlease] One Piece - 1071 (1080p) [ABCDEF12].mkv
+[Anime Time] Naruto Shippuden - 500 [1080p].mkv
+Cowboy Bebop - 01 - Asteroid Blues.mkv
+Neon Genesis Evangelion - 26.mkv
+[EMBER] Chainsaw Man S01E03 [1080p] [HEVC WEBRip].mkv
+[SubsPlease] Bocchi the Rock! - 01 (1080p) [ABCD1234].mkv
+[Golumpa] Fullmetal Alchemist Brotherhood - 64 [FuniDub 1080p x264 AAC] [ABCD1234].mkv
+Mob Psycho 100 - 01 [1080p].mkv
+[SubsPlease] Mob Psycho 100 III - 01 (1080p) [ABCD1234].mkv
+# --- TV: shows with years ---
+Doctor.Who.2005.S01E01.Rose.720p.BluRay.x264.mkv
+Doctor Who (2005) - S01E01 - Rose.mkv
+Doctor Who (2005) S13E01.mkv
+Battlestar.Galactica.2003.S01E01.720p.BluRay.x264.mkv
+House.of.Cards.2013.S01E01.720p.WEBRip.x264.mkv
+Shameless.US.S11E12.720p.WEB.mkv
+The.Twilight.Zone.2019.S01E01.1080p.WEB.mkv
+Hawaii.Five-0.2010.S01E01.720p.HDTV.mkv
+Doctor.Who.S01E01.mkv
+Shogun.2024.S01E01.1080p.WEB.H264-SuccessfulCrab.mkv
+Fargo (2014) - S01E01 - The Crocodile's Dilemma.mkv
+# --- TV: numbers in titles ---
+24.S01E01.720p.BluRay.x264.mkv
+24 - S01E01 - 12-00 AM - 1-00 AM.mkv
+9-1-1.S07E01.720p.HDTV.x264.mkv
+911.S07E01.720p.HDTV.x264.mkv
+30.Rock.S01E01.Pilot.720p.WEB-DL.mkv
+30 Rock - S01E01 - Pilot.mkv
+The.100.S01E01.720p.HDTV.x264.mkv
+13.Reasons.Why.S01E01.720p.NF.WEBRip.mkv
+3rd.Rock.from.the.Sun.S01E01.DVDRip.avi
+Babylon.5.S01E01.Midnight.on.the.Firing.Line.DVDRip.avi
+Stargate.SG-1.S01E01.Children.of.the.Gods.720p.BluRay.mkv
+The.4400.S01E01.720p.mkv
+Room.104.S01E01.720p.HDTV.mkv
+1883.S01E01.1883.1080p.WEB.mkv
+1923.S01E01.720p.WEB.mkv
+Brooklyn.Nine-Nine.S08E10.720p.WEB.mkv
+Catch-22.S01E01.720p.HULU.WEB.mkv
+Station.19.S07E01.720p.HDTV.mkv
+# --- TV: folder-free odd forms ---
+Breaking.Bad.S01.E01.720p.mkv
+Breaking.Bad.S01.720p.BluRay.mkv
+Breaking.Bad.Complete.Series.720p.mkv
+Breaking Bad - 101 - Pilot.mkv
+Friends.E05.mkv
+Show.Name.Ep05.mkv
+Show Name - Episode 5.mkv
+# --- Music-like ---
+01 - Title.mp3
+01 - Comfortably Numb.mp3
+06 - Pink Floyd - Comfortably Numb.flac
+06. Comfortably Numb.mp3
+06 Comfortably Numb.mp3
+Pink Floyd - Comfortably Numb.flac
+Pink Floyd - The Wall - 06 - Comfortably Numb.mp3
+Artist - Title.flac
+Radiohead - Paranoid Android.mp3
+The Beatles - Hey Jude.m4a
+Queen - Bohemian Rhapsody (Remastered 2011).flac
+Daft Punk - Get Lucky (feat. Pharrell Williams).mp3
+Track 01.mp3
+track01.wav
+1-01 Speak to Me.m4a
+02 Breathe (In the Air).flac
+Miles Davis - Kind of Blue - 01 - So What.flac
+random_track.mp3
+Beethoven - Symphony No. 9 in D minor, Op. 125.flac
+AC-DC - Back in Black.mp3
+# --- Holdout batch: added after the rules were written ---
+The.Princess.Bride.1987.1080p.BluRay.x264-AMIABLE.mkv
+Raiders.of.the.Lost.Ark.1981.REMASTERED.1080p.BluRay.x264-SPARKS.mkv
+Indiana Jones and the Last Crusade (1989) [1080p].mkv
+Eternal.Sunshine.of.the.Spotless.Mind.2004.720p.BluRay.x264-SiNNERS.mkv
+Children.of.Men.2006.1080p.BluRay.x264-CiNEFiLE.mkv
+The.Prestige.2006.1080p.BluRay.x264.DTS-WiKi.mkv
+Memento.2000.REMASTERED.1080p.BluRay.x264-PSYCHD.mkv
+Zodiac.2007.Directors.Cut.720p.BluRay.x264-HDEX.mkv
+The.Grand.Budapest.Hotel.2014.1080p.BluRay.x264-SPARKS.mkv
+Moonrise.Kingdom.2012.720p.BluRay.x264-SPARKS.mkv
+The Truman Show (1998) 1080p BrRip x264 - YIFY.mp4
+Good.Will.Hunting.1997.720p.BrRip.x264-YIFY.mp4
+Saving Private Ryan (1998) [BluRay] [1080p] [YTS.AM].mp4
+Jaws.1975.1080p.BluRay.x264-AMIABLE.mkv
+Rear.Window.1954.1080p.BluRay.x264-CiNEFiLE.mkv
+Vertigo.1958.720p.BluRay.x264.mkv
+Psycho.1960.1080p.BluRay.x264.mkv
+Lawrence.of.Arabia.1962.Restored.1080p.BluRay.x264.mkv
+Seven.Samurai.1954.JAPANESE.1080p.BluRay.x264-CiNEFiLE.mkv
+Spirited.Away.2001.JAPANESE.1080p.BluRay.x264-WiKi.mkv
+Princess.Mononoke.1997.1080p.BluRay.x264.mkv
+Your.Name.2016.1080p.BluRay.x264.mkv
+The.Incredibles.2004.1080p.BluRay.x264-SPARKS.mkv
+Incredibles.2.2018.1080p.BluRay.x264-SPARKS.mkv
+Finding.Nemo.2003.1080p.BluRay.x264.mkv
+Inside.Out.2.2024.1080p.WEB-DL.DDP5.1.H.264-FLUX.mkv
+Deadpool.and.Wolverine.2024.1080p.WEB.H264-ETHEL.mkv
+Furiosa.A.Mad.Max.Saga.2024.2160p.WEB-DL.DDP5.1.DV.HDR.H.265-FLUX.mkv
+Civil.War.2024.1080p.AMZN.WEB-DL.DDP5.1.H.264-FLUX.mkv
+Godzilla.Minus.One.2023.JAPANESE.1080p.BluRay.x264.mkv
+Killers.of.the.Flower.Moon.2023.1080p.ATVP.WEB-DL.mkv
+The.Holdovers.2023.1080p.WEBRip.x264.mkv
+Anatomy.of.a.Fall.2023.FRENCH.1080p.WEB.mkv
+Alien.Romulus.2024.1080p.WEB.mkv
+Twisters (2024).mkv
+Gravity (2013) 3D HSBS 1080p.mkv
+Avatar.The.Way.of.Water.2022.1080p.WEB-DL.mkv
+The Hunger Games - Mockingjay Part 1 (2014).mkv
+The.Hunger.Games.Mockingjay.Part.2.2015.1080p.BluRay.x264.mkv
+Pirates.of.the.Caribbean.Dead.Mans.Chest.2006.720p.BluRay.x264.mkv
+X-Men.Days.of.Future.Past.2014.1080p.BluRay.x264.mkv
+X2.2003.1080p.BluRay.x264.mkv
+Alien3.1992.1080p.BluRay.x264.mkv
+Rocky.IV.1985.1080p.BluRay.x264.mkv
+Star.Trek.II.The.Wrath.of.Khan.1982.1080p.BluRay.x264.mkv
+Ghostbusters.II.1989.1080p.BluRay.x264.mkv
+The.Matrix.Reloaded.2003.1080p.BluRay.x264.mkv
+Kingsman.The.Secret.Service.2014.1080p.BluRay.x264.mkv
+Sicario.Day.of.the.Soldado.2018.1080p.WEB-DL.mkv
+Top Gun (1986).mkv
+Top.Gun.1986.1080p.BluRay.x264.mkv
+Edge.of.Tomorrow.2014.1080p.BluRay.x264.mkv
+Ex.Machina.2014.1080p.BluRay.x264.mkv
+It.Chapter.Two.2019.1080p.WEB-DL.mkv
+The.Thing.1982.1080p.BluRay.x264.mkv
+The.Fly.1986.720p.BluRay.x264.mkv
+Being.John.Malkovich.1999.1080p.BluRay.x264.mkv
+Lost.in.Translation.2003.1080p.BluRay.x264.mkv
+Pulp Fiction 1994 1080p BluRay x264 DTS-HDC.mkv
+taxi.driver.1976.1080p.bluray.x264-psychd.mkv
+amelie_2001_720p.mkv
+movie_title_2015_1080p_web-dl.mkv
+Midsommar.2019.DIRECTORS.CUT.1080p.WEB-DL.mkv
+Oldboy.2003.KOREAN.REMASTERED.1080p.BluRay.x264.mkv
+The.Departed.2006.1080p.BluRay.x264.DTS-ES.6.1-FGT.mkv
+Prisoners.2013.1080p.BluRay.x264-SPARKS.mkv
+The.Social.Dilemma.2020.1080p.NF.WEB-DL.mkv
+Free.Solo.2018.1080p.BluRay.x264.mkv
+Planet.Earth.II.S01E01.Islands.2160p.UHD.BluRay.x265-TERMINAL.mkv
+Chernobyl.S01E01.1.23.45.720p.HDTV.x264-AVS.mkv
+Band.of.Brothers.S01E01.Currahee.1080p.BluRay.x264.mkv
+The.Crown.S06E10.Sleep.Dearie.Sleep.1080p.NF.WEB-DL.mkv
+Peaky.Blinders.S06E06.1080p.WEB.H264.mkv
+Ozark.S04E14.A.Hard.Way.to.Go.1080p.NF.WEB-DL.mkv
+Yellowstone.2018.S05E08.1080p.WEB.h264-ETHEL.mkv
+The.Boys.S04E08.1080p.AMZN.WEB-DL.mkv
+Andor.S01E12.Rix.Road.1080p.DSNP.WEB-DL.mkv
+Silo.S02E01.1080p.ATVP.WEB-DL.mkv
+Fallout.S01E01.The.End.1080p.AMZN.WEB-DL.mkv
+Slow.Horses.S04E06.1080p.WEB.mkv
+Reacher.S02E08.1080p.WEB.mkv
+The.White.Lotus.S02E07.Arrivederci.1080p.WEB.mkv
+Arcane.S02E09.1080p.NF.WEB-DL.mkv
+Squid.Game.S02E01.KOREAN.1080p.NF.WEB-DL.mkv
+The.Penguin.S01E08.1080p.WEB.mkv
+Only.Murders.in.the.Building.S04E10.1080p.WEB.mkv
+What.We.Do.in.the.Shadows.S06E11.1080p.WEB.mkv
+Abbott.Elementary.S04E01.720p.HDTV.x264.mkv
+Bluey.S03E01.1080p.WEB.mkv
+Parks.and.Recreation.S07E12.One.Last.Ride.720p.WEB-DL.mkv
+How.I.Met.Your.Mother.S09E24.Last.Forever.720p.HDTV.mkv
+The.Big.Bang.Theory.S12E24.720p.HDTV.x264.mkv
+Two and a Half Men - S12E16 - Of Course He's Dead.mkv
+Modern Family - 11x18 - Finale.mkv
+Curb Your Enthusiasm S12E10.mkv
+the.office.us.s09e23.finale.720p.web-dl.mkv
+Dexter.New.Blood.S01E10.1080p.WEB.mkv
+Doctor.Who.2023.S01E01.1080p.WEB.mkv
+Castlevania.Nocturne.S02E01.1080p.NF.WEB-DL.mkv
+Star.Wars.The.Clone.Wars.S07E12.1080p.WEB.mkv
+Stranger Things - 4x09 - Chapter Nine.mkv
+The Simpsons - S01E01 - Simpsons Roasting on an Open Fire.avi
+Seinfeld S09E23-E24 The Finale.mkv
+Frasier.S11E23E24.Goodnight.Seattle.mkv
+House.MD.S08E22.Everybody.Dies.720p.mkv
+Sherlock.Holmes.2009.1080p.BluRay.x264.mkv
+Sherlock.S04E03.The.Final.Problem.1080p.mkv
+[SubsPlease] Dandadan - 12 (1080p) [8F2A1B3C].mkv
+[Erai-raws] Kimetsu no Yaiba - 01 [1080p][Multiple Subtitle].mkv
+[HorribleSubs] Boku no Hero Academia - 88 [1080p].mkv
+[SubsPlease] Sousou no Frieren - 28 (720p) [DEADBEEF].mkv
+[ASW] Solo Leveling - 12 [1080p HEVC][1A2B3C4D].mkv
+[Judas] Vinland Saga S02E24 [1080p][HEVC x265 10bit][Multi-Subs].mkv
+Death Note - 37 - New World.mkv
+Monogatari - 01.mkv
+Jeopardy.2024.11.14.720p.HDTV.x264.mkv
+The.View.2024.10.03.720p.WEB.h264.mkv
+Real.Time.with.Bill.Maher.2024.11.08.1080p.WEB.h264.mkv
+NFL.2024.11.10.Bears.vs.Patriots.720p.mkv
+Saturday.Night.Live.S50E05.Bill.Burr.720p.WEB.h264.mkv
+Ken Burns The Civil War - Episode 3.mkv
+Cosmos.A.Spacetime.Odyssey.S01E01.1080p.BluRay.mkv
+Planet Earth (2006) - S01E01 - From Pole to Pole.mkv
+Lost (2004) - 1x01 - Pilot.mkv
+Twin Peaks (1990) S01E01.mkv
+Westworld (2016) - S01E01 - The Original.mkv
+Avatar The Last Airbender (2005) - S01E01 - The Boy in the Iceberg.mkv
+Avatar.The.Last.Airbender.2024.S01E01.1080p.NF.WEB-DL.mkv
+The.Witcher.S03E01.1080p.NF.WEB-DL.mkv
+Halo.S02E01.1080p.WEB.mkv
+Monk.S08E16.Mr.Monk.and.the.End.Part.2.720p.mkv
+Taskmaster.S17E01.720p.HDTV.mkv
+QI.S21E01.720p.HDTV.mkv
+# --- Holdout batch 2: Plex / Sonarr / Radarr naming ---
+The Matrix (1999) [Bluray-1080p].mkv
+The Matrix (1999) {imdb-tt0133093} [Bluray-1080p].mkv
+The Matrix (1999) - 1080p.mkv
+Inception (2010) [WEBDL-1080p][EAC3 5.1][h264]-FLUX.mkv
+Dune Part Two (2024) [Bluray-2160p][DV HDR10][TrueHD Atmos 7.1][x265]-FraMeSToR.mkv
+Breaking Bad (2008) - S01E01 - Pilot [Bluray-1080p].mkv
+Breaking Bad - S01E01 - Pilot [HDTV-720p].mkv
+The Office (US) (2005) - S02E01 - The Dundies [WEBDL-1080p][AAC 2.0][x264]-NTb.mkv
+Doctor Who (2005) - S01E01 - Rose [Bluray-720p].mkv
+Show Name - s01e01 - Episode Title.mkv
+Show Name - 2024-05-12 - Episode Title.mkv
+Severance (2022) - S02E10 - Cold Harbor [ATVP WEBDL-2160p][DV HDR10][EAC3 Atmos 5.1][h265]-FLUX.mkv
+Frieren - Beyond Journey's End (2023) - S01E01 - The Journey's End [WEBDL-1080p].mkv
+Spirited Away (2001) {tmdb-129}.mkv
+Toy Story 4 (2019) [Bluray-1080p].mkv
+Blade Runner 2049 (2017) {imdb-tt1856101} [Remux-2160p].mkv
+2001 A Space Odyssey (1968) [Bluray-1080p].mkv
+Movie Title (2020) - Extended Edition.mkv
+Movie Title (2020) [Directors Cut].mkv
+Show.Name.S01E01.1080p.WEB.h264-GROUP[TGx].mkv
+Show Name S01E01 1080p WEB H264-GROUP.mkv
+Movie.Title.2021.1080p.WEB-DL.x264.AAC-[YTS.MX].mp4
