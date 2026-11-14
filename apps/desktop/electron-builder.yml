@@ -3,6 +3,11 @@
 # (file-renamer.spec, installer/): bundle id com.filerenamer.tidytitles,
 # product name TidyTitles, artifacts TidyTitles-<version>-macos-<arch>.dmg,
 # TidyTitles-<version>-windows-setup.exe, TidyTitles-<version>-<arch>.AppImage.
+#
+# Automatic updates (electron-updater, see src/main/updaterEngine.ts) read
+# the update-info files written next to the installers. The release workflow
+# builds with --publish never and uploads everything with `gh release upload`;
+# scripts/check-update-feed.mjs checks the output first.
 
 appId: com.filerenamer.tidytitles
 productName: TidyTitles
@@ -14,8 +19,9 @@ directories:
   buildResources: build
 
 # Only the production build. out-e2e/ (the test build with fake providers)
-# is never packaged. Main bundles @tidytitles/core and its dependencies, so
-# no node_modules are needed.
+# is never packaged. Main bundles @tidytitles/core, electron-updater, and
+# their dependencies, so no node_modules are needed (electron-updater is a
+# devDependency for that reason).
 files:
   - out/**/*
   - "!out/**/*.map"
@@ -28,11 +34,32 @@ extraResources:
   - from: ../../packages/cli/dist/tidytitles.mjs
     to: cli/tidytitles.mjs
 
+# The update feed. `${channel}` is the prerelease part of the version
+# ("beta" for 0.2.0-beta.3) or "latest" for a stable version, so a beta build
+# writes beta-mac.yml / beta.yml / beta-linux.yml and a stable build
+# latest-mac.yml / latest.yml / latest-linux.yml: exactly the files
+# electron-updater's GitHub provider asks for in that release. The same
+# settings go into resources/app-update.yml.
+publish:
+  provider: github
+  owner: chrisoflaherty
+  repo: TidyTitles
+  channel: ${channel}
+
 mac:
-  target: dmg
+  # The zip is what the updater downloads (Squirrel.Mac installs from a
+  # zip); the DMG is for people installing by hand.
+  target:
+    - dmg
+    - zip
   category: public.app-category.utilities
   icon: build/icon.icns
   darkModeSupport: true
+  # Hardened runtime with electron-builder's default entitlements
+  # (allow-jit, allow-unsigned-executable-memory, disable-library-validation),
+  # which Electron needs, also in ELECTRON_RUN_AS_NODE mode (the CLI). Applies
+  # only when a real identity signs; the ad-hoc signature in after-pack.cjs
+  # has no hardened runtime.
   hardenedRuntime: true
   artifactName: ${productName}-${version}-macos-${arch}.${ext}
 
@@ -45,9 +72,14 @@ win:
   icon: build/icon.png
   artifactName: ${productName}-${version}-windows-setup.${ext}
 
+# Per-user by default, so installing and updating need no administrator
+# prompt (the installer runs with RequestExecutionLevel user). The installer
+# still offers "Anyone who uses this computer". An existing per-machine
+# install is detected (HKLM InstallLocation) and stays per-machine; updating
+# it shows one UAC prompt per update. See wiki/Installation.md.
 nsis:
   oneClick: false
-  perMachine: true
+  perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true

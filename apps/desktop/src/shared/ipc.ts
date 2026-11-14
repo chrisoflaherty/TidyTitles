@@ -37,6 +37,11 @@ export const IPC = {
   previewTemplates: "settings:preview-templates",
   saveSettings: "settings:save",
   openExternal: "shell:open-external",
+  getUpdateState: "updates:get",
+  checkForUpdates: "updates:check",
+  restartToUpdate: "updates:restart",
+  openReleasePage: "updates:open-release-page",
+  setAutoCheckForUpdates: "updates:set-auto-check",
 } as const;
 
 /** Event channels (main -> renderer, `webContents.send`). */
@@ -46,6 +51,7 @@ export const EVENTS = {
   selectionRequest: "event:selection-request",
   selectionClosed: "event:selection-closed",
   menuCommand: "event:menu-command",
+  updateState: "event:update-state",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -157,7 +163,8 @@ export type MenuCommand =
   | "cancelFetch"
   | "rename"
   | "undo"
-  | "settings";
+  | "settings"
+  | "checkForUpdates";
 
 export interface EventPayloads {
   [EVENTS.state]: AppState;
@@ -166,7 +173,65 @@ export interface EventPayloads {
   /** The request was withdrawn (the fetch ended or was canceled). */
   [EVENTS.selectionClosed]: { id: string };
   [EVENTS.menuCommand]: MenuCommand;
+  [EVENTS.updateState]: UpdateState;
 }
+
+// ---------------------------------------------------------------------------
+// Updates
+// ---------------------------------------------------------------------------
+
+/** Why this copy cannot install updates itself (it offers a download link instead). */
+export type ManualUpdateReason =
+  /** macOS: not signed with a Developer ID (ad-hoc), so the system updater rejects it. */
+  | "unsigned"
+  /** macOS: running from the disk image, a translocated copy, or a read-only folder. */
+  | "location"
+  /** Linux: not running from the AppImage. */
+  | "notAppImage"
+  /** No update configuration in the package (not installed by the installer). */
+  | "noUpdateConfig"
+  /** The update was downloaded but could not be installed. */
+  | "installFailed"
+  /** The update could not be downloaded. */
+  | "downloadFailed";
+
+/** Why updates are turned off entirely. */
+export type UpdatesOffReason = "development" | "test" | "disabled";
+
+/** How this copy of the app gets new versions. */
+export type UpdateCapability =
+  | { kind: "self" }
+  | { kind: "manual"; reason: ManualUpdateReason }
+  | { kind: "off"; reason: UpdatesOffReason };
+
+export type UpdateErrorKind = "offline" | "timeout" | "notFound" | "unknown";
+
+/** The updater state machine. */
+export type UpdateStatus =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  /** `percent` is null until the first progress report. */
+  | { kind: "downloading"; version: string; percent: number | null }
+  /** Downloaded; installs on restart or quit. */
+  | { kind: "ready"; version: string }
+  | { kind: "upToDate" }
+  | { kind: "error"; error: UpdateErrorKind }
+  /** A newer version exists but this copy cannot install it (see `capability`). */
+  | { kind: "unsupported"; version: string; reason: ManualUpdateReason };
+
+export interface UpdateState {
+  status: UpdateStatus;
+  capability: UpdateCapability;
+  currentVersion: string;
+  /** "Check for updates automatically" (stored in userData, not config.toml). */
+  autoCheck: boolean;
+  /** Whether the user asked for the current or most recent check. */
+  manual: boolean;
+  /** Increases with every check, so the renderer can tell one result from the next. */
+  checkId: number;
+}
+
+export type RestartToUpdateResult = "restarting" | "busy" | "notReady";
 
 // ---------------------------------------------------------------------------
 // Results
@@ -299,6 +364,15 @@ export interface TidyTitlesApi {
   saveSettings(settings: EditableSettings): Promise<SaveSettingsResult>;
   /** Open an https URL in the default browser. */
   openExternal(url: string): Promise<void>;
+  getUpdateState(): Promise<UpdateState>;
+  /** A check the user asked for: its outcome is reported, whatever it is. */
+  checkForUpdates(): Promise<void>;
+  /** Restart into the downloaded version. Refused while a task is running. */
+  restartToUpdate(): Promise<RestartToUpdateResult>;
+  /** Open the release page of the newest known version in the browser. */
+  openReleasePage(): Promise<void>;
+  setAutoCheckForUpdates(enabled: boolean): Promise<void>;
+  onUpdateState(listener: (state: UpdateState) => void): Unsubscribe;
   onState(listener: (state: AppState) => void): Unsubscribe;
   onProgress(listener: (progress: ProgressEvent | null) => void): Unsubscribe;
   onSelectionRequest(listener: (request: SelectionRequest) => void): Unsubscribe;

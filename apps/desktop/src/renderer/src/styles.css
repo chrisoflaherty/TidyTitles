@@ -1150,3 +1150,141 @@ input[aria-invalid="true"] {
     flex-wrap: wrap;
   }
 }
+
+/* --------------------------------------------------------------- updates -- */
+
+/* The status-bar control: quiet text with one small action. */
+.update-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-width: 0;
+  height: 22px;
+  padding: 0 0 0 12px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+button.update-indicator {
+  padding-right: 4px;
+  border-radius: 0;
+}
+
+button.update-indicator:hover {
+  color: var(--text);
+}
+
+.update-indicator.is-ready {
+  color: var(--text);
+}
+
+.update-indicator .btn-small {
+  height: 22px;
+}
+
+.update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .update-dot {
+    background: var(--focus);
+  }
+}
+
+progress.update-mini-progress {
+  width: 64px;
+  height: 4px;
+}
+
+.update-percent {
+  min-width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.update-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-faint);
+}
+
+.update-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* The update dialog. */
+.update-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 72px;
+}
+
+.update-lead {
+  font-weight: 600;
+}
+
+.update-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+progress.update-progress {
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+/* Indeterminate: a short bar sliding across the track. */
+.update-indeterminate {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--neutral-bg);
+}
+
+.update-indeterminate > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  border-radius: 3px;
+  background: var(--accent);
+  animation: update-indeterminate 1.3s ease-in-out infinite;
+}
+
+@keyframes update-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-indeterminate > span {
+    animation: none;
+    left: 35%;
+  }
+}

@@ -68,7 +68,8 @@ describe.skipIf(!existsSync(EXECUTABLE))("packaged app", () => {
       executablePath: EXECUTABLE,
       args: [],
       colorScheme: null,
-      env: { ...process.env, TIDYTITLES_CONFIG_DIR: configDir, ELECTRON_RUN_AS_NODE: "" },
+      // No update checks: a test never contacts the network.
+      env: { ...process.env, TIDYTITLES_CONFIG_DIR: configDir, TIDYTITLES_DISABLE_UPDATES: "1", ELECTRON_RUN_AS_NODE: "" },
     });
     const page = await app.firstWindow();
     await page.waitForSelector(".app:not(.app-loading)");
@@ -98,5 +99,10 @@ describe.skipIf(!existsSync(EXECUTABLE))("packaged app", () => {
     // The CLI bundle is packaged, so the menu item is enabled.
     const cliEnabled = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("installCli")?.enabled);
     expect(cliEnabled).toBe(true);
+    // The bundled updater is wired up, and off because of TIDYTITLES_DISABLE_UPDATES.
+    const updates = await page.evaluate(() => window.tidytitles.getUpdateState());
+    expect(updates.capability).toEqual({ kind: "off", reason: "disabled" });
+    const updatesItem = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("checkForUpdates")?.label);
+    expect(updatesItem).toBe("Check for Updates…");
   }, 60_000);
 });

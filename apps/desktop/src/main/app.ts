@@ -26,7 +26,15 @@ import {
   type OpenDialogOptions,
 } from "electron";
 import { MUSIC_EXTENSIONS, VIDEO_EXTENSIONS } from "@tidytitles/core";
-import { EVENTS, IPC, type AppState, type EventPayloads, type MenuCommand } from "../shared/ipc";
+import {
+  EVENTS,
+  IPC,
+  type AppState,
+  type EventPayloads,
+  type MenuCommand,
+  type UpdateCapability,
+  type UpdateState,
+} from "../shared/ipc";
 import {
   LAUNCHER_NAME,
   chooseBinDir,
@@ -41,10 +49,22 @@ import {
 import { createConfigService } from "./configDir";
 import { AppController, type SessionOverrides } from "./controller";
 import { REPO_URL, applyMenuState, buildMenuTemplate } from "./menu";
+import { PREFERENCES_FILE, loadPreferences, savePreferences } from "./preferences";
+import { UpdateController, resolveUpdateCapability, type UpdateEngine } from "./updater";
+import {
+  GITHUB_FEED,
+  createElectronUpdateEngine,
+  hasUpdateConfig,
+  macBundlePath,
+  readMacLocation,
+  readMacSignature,
+  testFeedFromBuild,
+} from "./updaterEngine";
 import {
   isSafeExternalUrl,
   parseDialogKind,
   parseEditableSettings,
+  parseEnabled,
   parseFileIds,
   parsePaths,
   parseRunOptions,
@@ -56,12 +76,33 @@ import { MIN_SIZE, fitToDisplays, loadWindowState, saveWindowState } from "./win
 export interface StartOptions {
   /** Test builds only: replace providers / HTTP for every session. */
   sessionOverrides?: SessionOverrides;
+  /**
+   * Test builds only. "off": no updater (the e2e build's default). An object:
+   * a scripted engine in place of electron-updater.
+   */
+  updates?: "off" | { engine: UpdateEngine; capability: UpdateCapability; currentVersion: string };
 }
+
+/**
+ * Feed URL of the local end-to-end update test, set at build time only by
+ * `electron-vite build --mode update-test`. Null in every other build, so a
+ * shipped app cannot be pointed at another feed.
+ */
+declare const __TIDYTITLES_UPDATE_TEST_FEED__: string | null;
+/** update-test builds only: scratch folder for config and userData (null otherwise). */
+declare const __TIDYTITLES_UPDATE_TEST_DIR__: string | null;
 
 const APP_NAME = "TidyTitles";
 
 export function startApp(options: StartOptions = {}): void {
   app.setName(APP_NAME);
+
+  if (__TIDYTITLES_UPDATE_TEST_DIR__) {
+    // Local update test: stay out of the real config and userData, also after
+    // the system updater relaunches the app without the test's environment.
+    process.env.TIDYTITLES_CONFIG_DIR ||= path.join(__TIDYTITLES_UPDATE_TEST_DIR__, "config");
+    app.setPath("userData", path.join(__TIDYTITLES_UPDATE_TEST_DIR__, "user-data"));
+  }
 
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -73,9 +114,11 @@ export function startApp(options: StartOptions = {}): void {
   const rendererIndex = path.join(import.meta.dirname, "../renderer/index.html");
   const preloadPath = path.join(import.meta.dirname, "../preload/index.cjs");
   const windowStateFile = () => path.join(app.getPath("userData"), "window-state.json");
+  const preferencesFile = () => path.join(app.getPath("userData"), PREFERENCES_FILE);
 
   let mainWindow: BrowserWindow | null = null;
   let lastState: AppState | null = null;
+  let updates: UpdateController | null = null;
 
   const send = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
@@ -183,6 +226,27 @@ export function startApp(options: StartOptions = {}): void {
     if (!isSafeExternalUrl(url)) throw new Error("Only https links can be opened");
     await shell.openExternal(url);
   });
+
+  // Updates. The renderer only asks; main decides (idle rule, no downgrade).
+  const offUpdateState = (): UpdateState => ({
+    status: { kind: "idle" },
+    capability: { kind: "off", reason: "development" },
+    currentVersion: app.getVersion(),
+    autoCheck: false,
+    manual: false,
+    checkId: 0,
+  });
+  handle(IPC.getUpdateState, () => updates?.getState() ?? offUpdateState());
+  // Returns at once; the outcome arrives as update-state events (a download can take minutes).
+  handle(IPC.checkForUpdates, () => {
+    void updates?.check({ manual: true });
+  });
+  handle(IPC.restartToUpdate, () => updates?.restartToUpdate() ?? "notReady");
+  handle(IPC.openReleasePage, async () => {
+    const url = updates?.releasePageUrl();
+    if (url && isSafeExternalUrl(url)) await shell.openExternal(url);
+  });
+  handle(IPC.setAutoCheckForUpdates, (enabled) => updates?.setAutoCheck(parseEnabled(enabled)));
 
   // -------------------------------------------------------------------------
   // Command-line tool
@@ -377,6 +441,60 @@ export function startApp(options: StartOptions = {}): void {
     });
     installMenu();
     await controller.init();
+    updates = await createUpdates();
     await createWindow();
+    updates.start();
   });
+
+  app.on("will-quit", () => updates?.dispose());
+
+  // -------------------------------------------------------------------------
+  // Updates
+  // -------------------------------------------------------------------------
+
+  async function createUpdates(): Promise<UpdateController> {
+    const preferences = await loadPreferences(preferencesFile());
+    let capability: UpdateCapability;
+    let engine: UpdateEngine | null = null;
+    let currentVersion = app.getVersion();
+
+    if (options.updates === "off") {
+      capability = { kind: "off", reason: "test" };
+    } else if (options.updates) {
+      ({ engine, capability, currentVersion } = options.updates);
+    } else {
+      const bundle = mac ? macBundlePath(process.execPath) : "";
+      capability = resolveUpdateCapability({
+        platform: process.platform,
+        isPackaged: app.isPackaged,
+        env: process.env,
+        hasUpdateConfig: hasUpdateConfig(process.resourcesPath),
+        ...(mac && app.isPackaged
+          ? { macSignature: await readMacSignature(bundle), macLocation: await readMacLocation(bundle) }
+          : {}),
+      });
+      if (capability.kind !== "off") {
+        try {
+          engine = createElectronUpdateEngine({
+            mode: capability.kind === "self" ? "self" : "check",
+            feed: testFeedFromBuild(__TIDYTITLES_UPDATE_TEST_FEED__) ?? GITHUB_FEED,
+          });
+        } catch (error) {
+          console.error("[updater] could not start:", error);
+          capability = { kind: "off", reason: "disabled" };
+        }
+      }
+    }
+    console.log(`[updater] ${capability.kind}${"reason" in capability ? ` (${capability.reason})` : ""}, version ${currentVersion}`);
+
+    return new UpdateController({
+      engine,
+      capability,
+      currentVersion,
+      autoCheck: preferences.autoCheckForUpdates,
+      saveAutoCheck: (enabled) => savePreferences(preferencesFile(), { ...preferences, autoCheckForUpdates: enabled }),
+      isIdle: () => controller.getState().busy === null,
+      emit: (state) => send(EVENTS.updateState, state),
+    });
+  }
 }

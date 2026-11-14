@@ -66,11 +66,11 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 **`packages/cli` (`@tidytitles/cli`)**: commander-based CLI. `src/program.ts` builds the program with injectable dependencies; `src/commands/` holds `rename`, `preview`, `undo`, `config`. Builds two outputs: `dist/index.js` (npm bin) and `dist/tidytitles.mjs` (self-contained bundle shipped inside the desktop app).
 
 **`apps/desktop` (`@tidytitles/desktop`)**: Electron app built with electron-vite.
-- `src/main/` - `controller.ts` owns the session, planned operations, and cancellation (no Electron imports, unit-testable); `app.ts` owns the window, menu, IPC, and security setup
+- `src/main/` - `controller.ts` owns the session, planned operations, and cancellation (no Electron imports, unit-testable); `updater.ts` is the update state machine (no Electron imports; tested with a fake engine) and `updaterEngine.ts` wraps electron-updater; `preferences.ts` stores desktop-only settings (auto-update toggle) in `userData`; `app.ts` owns the window, menu, IPC, and security setup
 - `src/preload/` - Typed API exposed as `window.tidytitles` through `contextBridge`
 - `src/renderer/` - React 19 with a single reducer and plain CSS (`styles.css`)
 - `src/shared/ipc.ts` - IPC channel names and payload types
-- `src/e2e/` - Test-only main entry with fake providers; never part of the shipped build
+- `src/e2e/` - Test-only main entry with fake providers and a scripted update engine (`TIDYTITLES_E2E_FAKE_UPDATES`); never part of the shipped build
 
 ### Conventions
 
@@ -104,11 +104,21 @@ Music: `{artist}`, `{album}`, `{track2}`, `{disc2}`, `{title}`, `{year}`
 
 Formatters: `{field|lower}`, `{field|upper}`, `{field|title}`, `{field|pad:3}`
 
+## Automatic Updates (desktop)
+
+- electron-updater with the GitHub provider, bundled into the main bundle (it is a devDependency; the package ships no `node_modules`).
+- `electron-builder.yml` publishes with `channel: ${channel}`: a beta build writes `beta-mac.yml` / `beta.yml` / `beta-linux.yml`, a stable build `latest*.yml`. Beta apps are offered betas and stable releases; stable apps only stable. No downgrades.
+- macOS needs the `zip` target (Squirrel.Mac installs from it). Only a Developer ID signed app installs updates itself; ad-hoc builds, non-AppImage Linux runs, and copies without `resources/app-update.yml` only check and offer the release page.
+- Updates are off in development, in the e2e build, and with `TIDYTITLES_DISABLE_UPDATES=1`. Tests never contact the network.
+- `--mode update-test` builds a local-feed test app (see BUILD.md "Testing updates locally"); `scripts/check-build.mjs` rejects such an `out/`. Run `npm run build` afterward.
+- `scripts/check-update-feed.mjs --platform mac|win|linux` checks packaging output (the release workflow runs it and uploads exactly the files it lists).
+
 ## Build System
 
 - `electron-builder` config in `apps/desktop/electron-builder.yml`; app icon sources in `apps/desktop/build/` (`npm run icons` regenerates them from `icon.svg`).
 - The desktop package bundles the CLI at `Resources/cli/tidytitles.mjs`; the "Install Command Line Tool…" menu item writes a launcher for it.
 - Electron is pinned to an exact version because electron-builder rejects a range.
+- The release workflow creates a draft release, uploads each platform's checked feed, and publishes after all package and test jobs pass. macOS is signed and notarized when the `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` secrets exist, otherwise ad-hoc signed. Windows (NSIS, per-user by default) and Linux are unsigned.
 
 ## Python Reference App
 

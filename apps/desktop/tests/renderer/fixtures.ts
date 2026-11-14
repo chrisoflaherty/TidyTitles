@@ -14,6 +14,7 @@ import type {
   FileEntry,
   SettingsPayload,
   TidyTitlesApi,
+  UpdateState,
 } from "../../src/shared/ipc";
 import { EVENTS } from "../../src/shared/ipc";
 
@@ -84,10 +85,22 @@ export function settingsPayload(): SettingsPayload {
   };
 }
 
+export function updateState(over: Partial<UpdateState> = {}): UpdateState {
+  return {
+    status: { kind: "idle" },
+    capability: { kind: "self" },
+    currentVersion: "0.2.0-beta.2",
+    autoCheck: true,
+    manual: false,
+    checkId: 0,
+    ...over,
+  };
+}
+
 type Listener = (payload: never) => void;
 
 /** A fake preload API with an event emitter for main-process events. */
-export function createFakeApi(state: AppState = appState()) {
+export function createFakeApi(state: AppState = appState(), updates: UpdateState = updateState()) {
   const listeners = new Map<string, Set<Listener>>();
   const on = (channel: string) => (listener: Listener) => {
     if (!listeners.has(channel)) listeners.set(channel, new Set());
@@ -112,6 +125,12 @@ export function createFakeApi(state: AppState = appState()) {
     previewTemplates: vi.fn<TidyTitlesApi["previewTemplates"]>(async () => settingsPayload().preview),
     saveSettings: vi.fn<TidyTitlesApi["saveSettings"]>(async () => ({ ok: true })),
     openExternal: vi.fn<TidyTitlesApi["openExternal"]>(async () => undefined),
+    getUpdateState: vi.fn<TidyTitlesApi["getUpdateState"]>(async () => updates),
+    checkForUpdates: vi.fn<TidyTitlesApi["checkForUpdates"]>(async () => undefined),
+    restartToUpdate: vi.fn<TidyTitlesApi["restartToUpdate"]>(async () => "restarting"),
+    openReleasePage: vi.fn<TidyTitlesApi["openReleasePage"]>(async () => undefined),
+    setAutoCheckForUpdates: vi.fn<TidyTitlesApi["setAutoCheckForUpdates"]>(async () => undefined),
+    onUpdateState: on(EVENTS.updateState),
     onState: on(EVENTS.state),
     onProgress: on(EVENTS.progress),
     onSelectionRequest: on(EVENTS.selectionRequest),

@@ -53,6 +53,9 @@ export function buildMenuTemplate(ctx: MenuContext): MenuItemConstructorOptions[
     click: () => ctx.installCli(),
   };
 
+  // Opens the update dialog in the window, which starts the check.
+  const updatesItem = cmd("checkForUpdates", "Check for Updates…");
+
   const template: MenuItemConstructorOptions[] = [];
 
   if (mac) {
@@ -60,6 +63,7 @@ export function buildMenuTemplate(ctx: MenuContext): MenuItemConstructorOptions[
       label: ctx.appName,
       submenu: [
         { role: "about" },
+        updatesItem,
         { type: "separator" },
         settingsItem,
         cliItem,
@@ -148,7 +152,7 @@ export function buildMenuTemplate(ctx: MenuContext): MenuItemConstructorOptions[
       { label: `${ctx.appName} on GitHub`, click: () => ctx.openExternal(REPO_URL) },
       { label: "Template Reference", click: () => ctx.openExternal(`${REPO_URL}/blob/main/wiki/Templates.md`) },
       { label: "Report an Issue", click: () => ctx.openExternal(`${REPO_URL}/issues`) },
-      ...(mac ? [] : ([{ type: "separator" }, { role: "about" }] as MenuItemConstructorOptions[])),
+      ...(mac ? [] : ([{ type: "separator" }, updatesItem, { role: "about" }] as MenuItemConstructorOptions[])),
     ],
   });
 

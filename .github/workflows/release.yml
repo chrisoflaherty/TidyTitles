@@ -1,11 +1,20 @@
-# Builds the desktop installers and attaches them to a GitHub release.
+# Builds the desktop installers and the automatic-update feed, and attaches
+# them to a GitHub release.
 #
 # Runs when a version tag is pushed (for example v0.2.0-beta.1). The tag
 # must match the version in apps/desktop/package.json. Tags containing a
-# hyphen (-beta.1, -rc.1) are published as prereleases.
+# hyphen (-beta.1) are published as prereleases; use -beta.N (or -alpha.N)
+# for prereleases, because the updater offers beta testers no other names.
 #
-# The builds are not code signed. See BUILD.md for what that means for
-# people installing them.
+# The release is created as a draft and published only after every platform
+# has uploaded a checked update feed and the tests have passed, so the app's
+# updater never sees a half-uploaded release.
+#
+# Signing: the macOS build is signed with a Developer ID certificate and
+# notarized when these repository secrets are set: CSC_LINK, CSC_KEY_PASSWORD,
+# APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID (see BUILD.md).
+# Without them it gets an ad-hoc signature, as before. Windows and Linux
+# builds are not signed.
 
 name: Release
 
@@ -23,7 +32,7 @@ concurrency:
 
 jobs:
   release:
-    name: Create release
+    name: Create draft release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +44,7 @@ jobs:
             echo "Tag ${GITHUB_REF_NAME} does not match app version ${version}" >&2
             exit 1
           fi
-      - name: Create the release if it does not exist
+      - name: Create the draft release if it does not exist
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -44,7 +53,7 @@ jobs:
             echo "Release ${GITHUB_REF_NAME} already exists"
             exit 0
           fi
-          flags=()
+          flags=(--draft)
           case "${GITHUB_REF_NAME}" in
             *-*) flags+=(--prerelease) ;;
           esac
@@ -82,15 +91,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Each job writes differently named files (…-macos-<arch>.*,
+          # …-windows-setup.exe*, …AppImage, and <channel>-mac.yml,
+          # <channel>.yml, <channel>-linux.yml), so the uploads never collide.
           - name: macOS
             os: macos-latest
-            args: --mac dmg --arm64 --x64
+            args: --mac dmg zip --arm64 --x64
+            feed: mac
+            arch: arm64,x64
           - name: Windows
             os: windows-latest
             args: --win nsis --x64
+            feed: win
+            arch: x64
           - name: Linux
             os: ubuntu-latest
             args: --linux AppImage --x64
+            feed: linux
+            arch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -103,20 +121,86 @@ jobs:
         run: npm run build
       - name: Build installers
         working-directory: apps/desktop
+        shell: bash
         env:
-          # Unsigned builds: do not look for signing certificates.
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx --no-install electron-builder ${{ matrix.args }} --publish never
-      - name: Upload installers to the release
+          BUILD_ARGS: ${{ matrix.args }}
+          # The signing secrets reach only the macOS job, and under other
+          # names: electron-builder would also use CSC_LINK to sign Windows
+          # builds. A secret that is not set is an empty string.
+          MAC_CSC_LINK: ${{ matrix.name == 'macOS' && secrets.CSC_LINK || '' }}
+          MAC_CSC_KEY_PASSWORD: ${{ matrix.name == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
+          MAC_APPLE_ID: ${{ matrix.name == 'macOS' && secrets.APPLE_ID || '' }}
+          MAC_APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.name == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          MAC_APPLE_TEAM_ID: ${{ matrix.name == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "macOS" ] && [ -n "${MAC_CSC_LINK}" ]; then
+            if [ -z "${MAC_APPLE_ID}" ] || [ -z "${MAC_APPLE_APP_SPECIFIC_PASSWORD}" ] || [ -z "${MAC_APPLE_TEAM_ID}" ]; then
+              echo "::error::CSC_LINK is set, so notarization needs APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID too."
+              exit 1
+            fi
+            echo "Signing with the Developer ID certificate, hardened runtime, and notarizing."
+            # electron-builder imports the base64 .p12 into a temporary keychain,
+            # signs, and notarizes with notarytool when all three APPLE_* are set
+            # (app-builder-lib MacTargetHelper.getNotarizeOptions).
+            export CSC_LINK="${MAC_CSC_LINK}"
+            export CSC_KEY_PASSWORD="${MAC_CSC_KEY_PASSWORD}"
+            export APPLE_ID="${MAC_APPLE_ID}"
+            export APPLE_APP_SPECIFIC_PASSWORD="${MAC_APPLE_APP_SPECIFIC_PASSWORD}"
+            export APPLE_TEAM_ID="${MAC_APPLE_TEAM_ID}"
+          else
+            if [ "${RUNNER_OS}" = "macOS" ]; then
+              if [ -n "${MAC_APPLE_ID}${MAC_APPLE_APP_SPECIFIC_PASSWORD}${MAC_APPLE_TEAM_ID}" ]; then
+                echo "::warning::Notarization secrets are set but CSC_LINK is not; building with an ad-hoc signature."
+              fi
+              echo "No signing certificate: ad-hoc signature (scripts/after-pack.cjs), no notarization."
+            fi
+            # Do not look for signing certificates.
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          # shellcheck disable=SC2086 # BUILD_ARGS is a list of arguments
+          npx --no-install electron-builder ${BUILD_ARGS} --publish never
+      - name: Check the update feed
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          node scripts/check-update-feed.mjs --platform "${{ matrix.feed }}" --arch "${{ matrix.arch }}" --dir release
+          node scripts/check-update-feed.mjs --platform "${{ matrix.feed }}" --arch "${{ matrix.arch }}" --dir release --list \
+            > "${RUNNER_TEMP}/upload-files.txt"
+      - name: Check the macOS signature
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop/release
+        shell: bash
+        run: |
+          for app in mac*/TidyTitles.app; do
+            codesign --verify --deep --strict "$app"
+            codesign --display --verbose=2 "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|Signature|flags)=' || true
+          done
+      - name: Upload installers and the update feed to the release
         shell: bash
         working-directory: apps/desktop/release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          shopt -s nullglob
-          files=(*.dmg *.exe *.AppImage)
+          set -euo pipefail
+          files=()
+          while IFS= read -r name; do
+            [ -n "$name" ] && files+=("$name")
+          done < "${RUNNER_TEMP}/upload-files.txt"
           if [ ${#files[@]} -eq 0 ]; then
             echo "No installers were produced" >&2
             exit 1
           fi
+          printf 'Uploading %s\n' "${files[@]}"
           gh release upload "${GITHUB_REF_NAME}" "${files[@]}" --clobber
+
+  publish:
+    name: Publish release
+    needs: [package, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false

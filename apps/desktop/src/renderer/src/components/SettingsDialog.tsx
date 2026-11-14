@@ -6,19 +6,22 @@ import {
   type SettingsPayload,
   type TemplatePreview,
   type TemplateSet,
+  type UpdateState,
 } from "../../../shared/ipc";
 import { getApi } from "../api";
+import { updateSummary } from "../updates";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 
-type TabId = "templates" | "api" | "files" | "coverArt" | "providers";
+type TabId = "templates" | "api" | "files" | "coverArt" | "providers" | "updates";
 const TABS: { id: TabId; label: string }[] = [
   { id: "templates", label: "Templates" },
   { id: "api", label: "API Keys" },
   { id: "files", label: "Files" },
   { id: "coverArt", label: "Cover Art" },
   { id: "providers", label: "Providers" },
+  { id: "updates", label: "Updates" },
 ];
 
 const TEMPLATE_LABELS: Record<keyof TemplateSet, { label: string; sample: string }> = {
@@ -180,8 +183,19 @@ function TemplateField({
   );
 }
 
-export function SettingsDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+export function SettingsDialog({
+  onClose,
+  onSaved,
+  updates = null,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+  /** Update state; the "Check for updates automatically" setting is saved with the rest. */
+  updates?: UpdateState | null;
+}) {
   const api = getApi();
+  // Stored in userData by main, not in config.toml.
+  const [autoCheck, setAutoCheck] = useState<boolean>(updates?.autoCheck ?? true);
   const [payload, setPayload] = useState<SettingsPayload | null>(null);
   const [draft, setDraft] = useState<EditableSettings | null>(null);
   const [preview, setPreview] = useState<TemplatePreview | null>(null);
@@ -228,6 +242,9 @@ export function SettingsDialog({ onClose, onSaved }: { onClose: () => void; onSa
     try {
       const result = await api.saveSettings(draft);
       if (result.ok) {
+        if (updates && updates.capability.kind !== "off" && autoCheck !== updates.autoCheck) {
+          await api.setAutoCheckForUpdates(autoCheck);
+        }
         onSaved();
         return;
       }
@@ -496,6 +513,36 @@ export function SettingsDialog({ onClose, onSaved }: { onClose: () => void; onSa
                   checked={draft.coverArt.overwrite}
                   onChange={(v) => update((d) => ({ ...d, coverArt: { ...d.coverArt, overwrite: v } }))}
                 />
+              </Section>
+            )}
+
+            {tab === "updates" && (
+              <Section
+                title="Updates"
+                description="TidyTitles looks for a new version shortly after it starts and every few hours while it runs. It never restarts on its own."
+              >
+                <Check
+                  label="Check for updates automatically"
+                  hint="A new version downloads in the background. Restart when it’s ready, or it installs the next time you quit."
+                  checked={updates?.capability.kind === "off" ? false : autoCheck}
+                  disabled={!updates || updates.capability.kind === "off"}
+                  onChange={setAutoCheck}
+                  testId="auto-update"
+                />
+                {updates && (
+                  <div className="form-grid">
+                    <span className="form-label">Version</span>
+                    <span className="selectable" data-testid="current-version">
+                      {updates.currentVersion}
+                    </span>
+                    <span className="form-label">Status</span>
+                    <span data-testid="update-summary">{updateSummary(updates)}</span>
+                  </div>
+                )}
+                <p className="form-hint">
+                  To check now, choose Check for Updates in the {api.platform === "darwin" ? "TidyTitles" : "Help"} menu.
+                  This setting is stored on this computer only; the command-line tool doesn’t use it.
+                </p>
               </Section>
             )}
 

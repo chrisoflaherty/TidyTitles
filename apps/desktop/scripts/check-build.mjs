@@ -4,7 +4,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..", "out");
-const forbidden = ["TIDYTITLES_E2E_FAKE_PROVIDERS", "FakeMovieProvider", "createFakeSessionOverrides"];
+const forbidden = [
+  "TIDYTITLES_E2E_FAKE_PROVIDERS",
+  "FakeMovieProvider",
+  "createFakeSessionOverrides",
+  "ScriptedUpdateEngine",
+  "__tidytitlesFakeUpdates",
+];
 const problems = [];
 
 function walk(dir) {
@@ -27,6 +33,12 @@ if (!html.includes("Content-Security-Policy") || html.includes("%CONTENT_SECURIT
   problems.push("renderer/index.html does not carry the strict Content-Security-Policy");
 }
 
+// The update feed is fixed at build time; only `--mode update-test` sets a local one.
+const mainBundle = readFileSync(path.join(root, "main", "index.js"), "utf8");
+if (/http:\/\/(127\.0\.0\.1|localhost):\d+/.test(mainBundle) || mainBundle.includes("Local update test: stay out")) {
+  problems.push("main/index.js contains the local update test feed or folder (built with --mode update-test?)");
+}
+
 // The renderer must not bundle core or Node built-ins (core runs in main only).
 for (const name of readdirSync(path.join(root, "renderer", "assets"))) {
   if (!name.endsWith(".js")) continue;
@@ -38,4 +50,4 @@ if (problems.length > 0) {
   console.error(problems.join("\n"));
   process.exit(1);
 }
-console.log("check-build: out/ has no test-only code and a strict CSP");
+console.log("check-build: out/ has no test-only code, no test update feed, and a strict CSP");

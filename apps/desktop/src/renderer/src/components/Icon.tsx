@@ -24,7 +24,9 @@ export type IconName =
   | "eye"
   | "eye-off"
   | "drop"
-  | "external";
+  | "external"
+  | "download"
+  | "restart";
 
 const PATHS: Record<IconName, string> = {
   "file-plus": "M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5L9 1.5ZM9 1.5v4h4M8 7.5v5M5.5 10h5",
@@ -51,6 +53,8 @@ const PATHS: Record<IconName, string> = {
   "eye-off": "M2 2l12 12M6.6 3.2A6.6 6.6 0 0 1 8 3c4.5 0 7 5 7 5a12 12 0 0 1-1.9 2.5M4.2 4.3C2.2 5.6 1 8 1 8s2.5 5 7 5a6.8 6.8 0 0 0 3-.7M6.6 6.6a2 2 0 0 0 2.8 2.8",
   drop: "M8 2v8M4.5 6.5 8 10l3.5-3.5M2 11v2.5h12V11",
   external: "M9.5 2.5h4v4M13.5 2.5 7 9M12 9.5V13a.5.5 0 0 1-.5.5h-8A.5.5 0 0 1 3 13V5a.5.5 0 0 1 .5-.5H7",
+  download: "M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11",
+  restart: "M13.5 8A5.5 5.5 0 1 1 11.9 4.1M13.5 2v3h-3",
 };
 
 export function Icon({ name, size = 16, className }: { name: IconName; size?: number; className?: string }) {

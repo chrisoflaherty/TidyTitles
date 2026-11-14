@@ -44,11 +44,39 @@ function cspPlugin(): Plugin {
   };
 }
 
+/**
+ * The update feed. Null in every build except `--mode update-test`, which
+ * builds the two versions of the local end-to-end update test
+ * ("Testing updates locally" in BUILD.md) and points them at a server on
+ * this machine.
+ */
+function updateTestFeed(mode: string): string {
+  if (mode !== "update-test") return "null";
+  const url = process.env.TIDYTITLES_UPDATE_TEST_FEED ?? "http://127.0.0.1:8765/";
+  return JSON.stringify(url);
+}
+
+/**
+ * update-test builds only: a scratch folder for config and userData, used
+ * even when the app is relaunched by the system updater without the test's
+ * environment, so a test build never touches the real config.
+ */
+function updateTestDir(mode: string): string {
+  if (mode !== "update-test") return "null";
+  const dir = process.env.TIDYTITLES_UPDATE_TEST_DIR;
+  if (!dir) throw new Error("--mode update-test needs TIDYTITLES_UPDATE_TEST_DIR (a scratch folder)");
+  return JSON.stringify(resolve(dir));
+}
+
 export default defineConfig(({ mode }) => {
   const e2e = mode === "e2e";
   const outRoot = e2e ? "out-e2e" : "out";
   return {
     main: {
+      define: {
+        __TIDYTITLES_UPDATE_TEST_FEED__: updateTestFeed(mode),
+        __TIDYTITLES_UPDATE_TEST_DIR__: updateTestDir(mode),
+      },
       build: {
         outDir: `${outRoot}/main`,
         // Bundle @tidytitles/core and its dependencies (music-metadata,

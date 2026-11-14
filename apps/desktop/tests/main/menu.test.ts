@@ -48,6 +48,25 @@ describe("application menu", () => {
     expect(flatten(template).some((i) => i.role === "about")).toBe(true);
   });
 
+  it("puts Check for Updates under About on macOS and in Help elsewhere", () => {
+    const c = ctx("darwin");
+    const mac = buildMenuTemplate(c);
+    const appMenu = mac[0]!.submenu as MenuItemConstructorOptions[];
+    expect(appMenu[0]!.role).toBe("about");
+    expect(appMenu[1]!.id).toBe("checkForUpdates");
+    expect(appMenu[1]!.label).toBe("Check for Updates…");
+    (appMenu[1]!.click as () => void)();
+    expect(c.send).toHaveBeenCalledWith("checkForUpdates");
+    expect(flatten(mac).filter((i) => i.id === "checkForUpdates")).toHaveLength(1);
+
+    for (const platform of ["win32", "linux"] as const) {
+      const template = buildMenuTemplate(ctx(platform));
+      const help = template.find((m) => m.role === "help")!.submenu as MenuItemConstructorOptions[];
+      expect(help.slice(-2).map((i) => i.id ?? i.role)).toEqual(["checkForUpdates", "about"]);
+      expect(flatten(template).filter((i) => i.id === "checkForUpdates")).toHaveLength(1);
+    }
+  });
+
   it("disables Install Command Line Tool with an explanation when the CLI is not bundled", () => {
     const items = flatten(buildMenuTemplate(ctx("darwin", "not bundled")));
     const cli = items.find((i) => i.id === "installCli")!;

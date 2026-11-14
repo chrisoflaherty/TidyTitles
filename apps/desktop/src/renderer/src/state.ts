@@ -9,6 +9,7 @@ import type {
   RenameOutcome,
   SelectionRequest,
   UndoOutcome,
+  UpdateState,
 } from "../../shared/ipc";
 
 export type Modal =
@@ -17,7 +18,10 @@ export type Modal =
   | { kind: "confirmUndo" }
   | { kind: "renameResult"; outcome: Extract<RenameOutcome, { kind: "done" }> }
   | { kind: "undoResult"; outcome: Extract<UndoOutcome, { kind: "done" }> }
-  | { kind: "error"; title: string; message: string };
+  | { kind: "error"; title: string; message: string }
+  /** The update dialog, opened by "Check for Updates…"; `sinceCheckId` is the check count when it opened. */
+  | { kind: "updates"; sinceCheckId: number }
+  | { kind: "confirmRestart" };
 
 export interface UiState {
   app: AppState | null;
@@ -28,6 +32,9 @@ export interface UiState {
   selectedFileId: number | null;
   /** Nesting depth of dragenter/dragleave over the window. */
   dragDepth: number;
+  updates: UpdateState | null;
+  /** The status-bar note of this manual check was dismissed. */
+  dismissedCheckId: number;
 }
 
 export type Action =
@@ -40,7 +47,9 @@ export type Action =
   | { type: "selectFile"; id: number | null }
   | { type: "dragEnter" }
   | { type: "dragLeave" }
-  | { type: "dragEnd" };
+  | { type: "dragEnd" }
+  | { type: "updateState"; state: UpdateState }
+  | { type: "dismissUpdateNote" };
 
 export const initialUiState: UiState = {
   app: null,
@@ -49,6 +58,8 @@ export const initialUiState: UiState = {
   modal: null,
   selectedFileId: null,
   dragDepth: 0,
+  updates: null,
+  dismissedCheckId: 0,
 };
 
 export function reducer(state: UiState, action: Action): UiState {
@@ -80,6 +91,10 @@ export function reducer(state: UiState, action: Action): UiState {
       return { ...state, dragDepth: Math.max(0, state.dragDepth - 1) };
     case "dragEnd":
       return { ...state, dragDepth: 0 };
+    case "updateState":
+      return { ...state, updates: action.state };
+    case "dismissUpdateNote":
+      return { ...state, dismissedCheckId: state.updates?.checkId ?? state.dismissedCheckId };
   }
 }
 

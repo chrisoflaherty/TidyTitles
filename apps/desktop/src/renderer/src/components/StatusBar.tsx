@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { AppState, ProgressEvent, ProgressPhase } from "../../../shared/ipc";
 import { formatCount, plural } from "../format";
 import { listCounts } from "../state";
@@ -22,10 +23,13 @@ export function StatusBar({
   app,
   progress,
   onCancelFetch,
+  updates,
 }: {
   app: AppState;
   progress: ProgressEvent | null;
   onCancelFetch: () => void;
+  /** The update control (see UpdateIndicator). */
+  updates?: ReactNode;
 }) {
   const counts = listCounts(app);
   const parts = [plural(counts.files, "file")];
@@ -60,6 +64,7 @@ export function StatusBar({
           )}
         </div>
       )}
+      {updates}
       <div className="status-counts">{parts.join(" · ")}</div>
     </footer>
   );

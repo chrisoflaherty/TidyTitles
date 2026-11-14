@@ -3,6 +3,7 @@
 Common problems and how to solve them, grouped by where they show up.
 
 - [Installing and opening the app](#installing-and-opening-the-app)
+- [Updates](#updates)
 - [The command-line tool](#the-command-line-tool)
 - [Metadata lookups](#metadata-lookups)
 - [Files and renaming](#files-and-renaming)
@@ -39,7 +40,7 @@ Microsoft Defender SmartScreen warns about installers without a code signature. 
 
 ### Windows: the installer asks for administrator permission
 
-The installer installs TidyTitles for all users (under Program Files by default), which requires administrator rights. Click **Yes** in the User Account Control prompt. If you do not have administrator rights on the computer, ask the person who manages it.
+You chose **Anyone who uses this computer**, or an earlier version (0.2.0-beta.2 or before) is installed for all users, and the installer keeps that installation where it is. Installing for all users needs administrator rights, for every update too. To install without prompts, uninstall TidyTitles from **Settings** → **Apps**, then run the installer again and choose **Only for me**. Your settings and history are kept. See [Installation](Installation.md#windows).
 
 ### Windows: antivirus flags or removes the installer
 
@@ -58,6 +59,37 @@ chmod +x TidyTitles-*-x86_64.AppImage
 AppImages need FUSE 2. Install it with your package manager (Ubuntu 22.04 and later: `sudo apt install libfuse2`).
 
 The Windows and Linux builds have not yet been tried by hand. If you hit a problem not listed here, please [report it](#getting-help).
+
+## Updates
+
+### macOS: the app says a new version is available but offers only "Download"
+
+This copy is not signed with an Apple Developer ID, so macOS does not let it replace itself (the system updater checks the new version's signature against the running app's). Click **Download**, get the `.dmg` from the release page, and install it over the old copy (drag it into Applications and replace). The current release builds are all in this state until the project's macOS builds are signed.
+
+The same happens when TidyTitles runs from the disk image or from a folder it cannot change: move it to **Applications** and start it from there.
+
+### "The update couldn't be downloaded" or "couldn't be installed automatically"
+
+The app downloaded or tried to install the update and something failed. It does not retry by itself during this session; click **Download** and install the new version by hand, or restart TidyTitles to let it try again later.
+
+### "Couldn't check for updates"
+
+- **Couldn't reach GitHub**: you are offline, or a firewall or proxy blocks `github.com`. Try again when you are online.
+- **No update information was found**: a release is being published right now, or the releases page cannot be read. Try again later, or use **Open Releases Page**.
+
+Automatic checks never show these messages; only **Check for Updates…** does.
+
+### Linux: updates never install
+
+They install only when TidyTitles runs from its AppImage file (the file is replaced by the new version, so it must be writable). Run the AppImage directly, not an extracted copy.
+
+### Windows: every update asks for administrator permission
+
+TidyTitles is installed for all users. See [the installer asks for administrator permission](#windows-the-installer-asks-for-administrator-permission).
+
+### I don't want automatic updates
+
+Turn off **Check for updates automatically** in **Settings** → **Updates**. You can still use **Check for Updates…**. Administrators and scripts can turn updates off completely by starting the app with the environment variable `TIDYTITLES_DISABLE_UPDATES=1`.
 
 ## The command-line tool
 

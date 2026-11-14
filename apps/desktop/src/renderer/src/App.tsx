@@ -9,6 +9,8 @@ import { SelectionDialog } from "./components/SelectionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { StatusBar } from "./components/StatusBar";
 import { OptionsBar, Toolbar } from "./components/Toolbar";
+import { UpdateDialog } from "./components/UpdateDialog";
+import { UpdateIndicator } from "./components/UpdateIndicator";
 import { formatTimestamp, plural } from "./format";
 import { availability, initialUiState, reducer } from "./state";
 
@@ -29,8 +31,10 @@ export function App() {
       api.onProgress((progress) => dispatch({ type: "progress", progress })),
       api.onSelectionRequest((request) => dispatch({ type: "selectionRequest", request })),
       api.onSelectionClosed(({ id }) => dispatch({ type: "selectionDone", id })),
+      api.onUpdateState((state) => dispatch({ type: "updateState", state })),
     ];
     void api.getState().then((state) => dispatch({ type: "state", state }));
+    void api.getUpdateState().then((state) => dispatch({ type: "updateState", state }));
     return () => offs.forEach((off) => off());
   }, [api]);
 
@@ -74,6 +78,38 @@ export function App() {
   }, []);
   const setOptions = useCallback((options: Partial<RunOptions>) => void api.setOptions(options), [api]);
 
+  // --- updates --------------------------------------------------------------
+
+  /** "Check for Updates…": the dialog shows the outcome; behind another dialog, the status bar does. */
+  const checkForUpdates = useCallback(() => {
+    const { modal, selection, updates } = uiRef.current;
+    if (!modal && !selection) {
+      dispatch({ type: "openModal", modal: { kind: "updates", sinceCheckId: updates?.checkId ?? 0 } });
+    }
+    void api.checkForUpdates();
+  }, [api]);
+  const showUpdateDetails = useCallback(() => {
+    const { modal, selection, updates } = uiRef.current;
+    if (modal || selection) return;
+    dispatch({ type: "openModal", modal: { kind: "updates", sinceCheckId: (updates?.checkId ?? 1) - 1 } });
+  }, []);
+  const closeUpdates = useCallback(() => {
+    dispatch({ type: "closeModal" });
+    dispatch({ type: "dismissUpdateNote" });
+  }, []);
+  const doRestart = useCallback(async () => {
+    dispatch({ type: "closeModal" });
+    await api.restartToUpdate();
+  }, [api]);
+  /** Restart only when idle; confirm first when the list would be cleared. */
+  const askRestart = useCallback(() => {
+    const { app: current, selection } = uiRef.current;
+    if (!current || current.busy !== null || selection) return;
+    if (current.files.length > 0) dispatch({ type: "openModal", modal: { kind: "confirmRestart" } });
+    else void doRestart();
+  }, [doRestart]);
+  const openReleasePage = useCallback(() => void api.openReleasePage(), [api]);
+
   const doRename = async () => {
     dispatch({ type: "closeModal" });
     const outcome = await api.rename();
@@ -100,14 +136,15 @@ export function App() {
       rename: askRename,
       undo: askUndo,
       settings: openSettings,
+      checkForUpdates,
     };
     return api.onMenuCommand((command) => {
       const { modal, selection } = uiRef.current;
-      // A dialog is in front: only "stop fetching" still applies.
-      if ((modal || selection) && command !== "cancelFetch") return;
+      // A dialog is in front: only "stop fetching" and "check for updates" still apply.
+      if ((modal || selection) && command !== "cancelFetch" && command !== "checkForUpdates") return;
       run[command]();
     });
-  }, [api, addFiles, addFolder, clear, fetchMetadata, cancelFetch, askRename, askUndo, openSettings]);
+  }, [api, addFiles, addFolder, clear, fetchMetadata, cancelFetch, askRename, askUndo, openSettings, checkForUpdates]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -207,7 +244,23 @@ export function App() {
         )}
       </main>
 
-      <StatusBar app={app} progress={ui.progress} onCancelFetch={cancelFetch} />
+      <StatusBar
+        app={app}
+        progress={ui.progress}
+        onCancelFetch={cancelFetch}
+        updates={
+          <UpdateIndicator
+            state={ui.updates}
+            busy={app.busy !== null}
+            dialogOpen={ui.modal?.kind === "updates"}
+            dismissedCheckId={ui.dismissedCheckId}
+            onRestart={askRestart}
+            onOpenReleasePage={openReleasePage}
+            onShowDetails={showUpdateDetails}
+            onDismiss={() => dispatch({ type: "dismissUpdateNote" })}
+          />
+        }
+      />
 
       {ui.selection && (
         <SelectionDialog
@@ -231,7 +284,42 @@ export function App() {
       )}
 
       {ui.modal?.kind === "settings" && (
-        <SettingsDialog onClose={() => dispatch({ type: "closeModal" })} onSaved={() => dispatch({ type: "closeModal" })} />
+        <SettingsDialog
+          updates={ui.updates}
+          onClose={() => dispatch({ type: "closeModal" })}
+          onSaved={() => dispatch({ type: "closeModal" })}
+        />
+      )}
+      {ui.modal?.kind === "updates" && ui.updates && (
+        <UpdateDialog
+          state={ui.updates}
+          sinceCheckId={ui.modal.sinceCheckId}
+          busy={app.busy !== null}
+          onClose={closeUpdates}
+          onRestart={askRestart}
+          onOpenReleasePage={openReleasePage}
+          onCheckAgain={() => {
+            dispatch({ type: "openModal", modal: { kind: "updates", sinceCheckId: ui.updates?.checkId ?? 0 } });
+            void api.checkForUpdates();
+          }}
+        />
+      )}
+      {ui.modal?.kind === "confirmRestart" && ui.updates?.status.kind === "ready" && (
+        <ConfirmDialog
+          title="Restart to Update?"
+          confirmLabel="Restart to Update"
+          onConfirm={() => void doRestart()}
+          onCancel={() => dispatch({ type: "closeModal" })}
+          testId="confirm-restart"
+        >
+          <p>
+            TidyTitles will quit, install version {ui.updates.status.version}, and open again. The file list will be
+            cleared.
+          </p>
+          {ready.length > 0 && app.plan === "planned" && (
+            <p className="muted">The new names you fetched haven’t been applied yet. Rename the files first to keep them.</p>
+          )}
+        </ConfirmDialog>
       )}
       {ui.modal?.kind === "confirmRename" && (
         <ConfirmDialog

@@ -11,7 +11,7 @@ From top to bottom:
 - **Toolbar.** On the left: **Add Files…**, **Add Folder…**, **Clear**. On the right: **Settings**, **Undo**, **Fetch Metadata** (which turns into **Stop** while fetching), and **Rename** (which shows the number of files ready, for example **Rename 6**). On a narrow window the left-hand buttons show only their icons.
 - **Options bar.** **Type**, **Provider**, **Include subfolders**, and **Download cover art**.
 - **File list.** One row per file, with **Type** (Video or Audio), **Original name**, **New name**, and **Status**. Associated files (subtitles, `.nfo` files, images) appear in indented rows under their video, marked "Moves with the file".
-- **Status bar.** A message about the last action on the left (or the progress of the current one, with a progress bar and a **Stop** button while fetching), and counts on the right, such as "8 files · 6 ready · 2 skipped".
+- **Status bar.** A message about the last action on the left (or the progress of the current one, with a progress bar and a **Stop** button while fetching), and counts on the right, such as "8 files · 6 ready · 2 skipped". When there is news about an update, it appears just before the counts (see [Updates](#updates)).
 
 The app keeps one window. Opening TidyTitles again brings the existing window to the front. The window size and position are remembered.
 
@@ -195,6 +195,32 @@ See [Configuration](Configuration.md#associated-files) for how associated files 
 
 **TV shows**: whether TVDB or TMDB is preferred when the main window's Provider is **Auto** and both keys are set. If the preferred service has no key, the other one is used. Movies always use TMDB and music always uses MusicBrainz.
 
+### Updates
+
+- **Check for updates automatically** (on by default): look for a new version shortly after starting and every few hours, and download it in the background. This setting is saved on this computer only, with the window position, not in `config.toml`; the command-line tool does not use it.
+- The installed **Version** and the current update **Status**.
+
+## Updates
+
+TidyTitles checks for a new version about 15 seconds after it starts and then every 4 hours (unless you turned that off in Settings). Downloads happen in the background and never interrupt your work. The status bar shows what is going on, right before the file counts:
+
+- **Downloading update** with a small progress bar and the percentage. Click it for details.
+- **Update ready** with a **Restart to Update** button. TidyTitles quits, installs the new version, and opens again; your window size and position are kept. If files are in the list, it asks first, because the list is cleared. While files are being fetched, renamed, or restored, the button is grayed out until the task finishes. If you never click it, the update installs when you quit TidyTitles.
+- **TidyTitles *version* is available** with a **Download** button, when this copy cannot install updates itself (for example an unsigned Mac build) or when installing failed. **Download** opens the release page in your browser.
+
+![The Software Update dialog saying that TidyTitles 0.2.0-beta.3 is ready to install, with Later and Restart to Update buttons](../docs/images/desktop-update-ready.png)
+
+**Check for Updates…** (in the **TidyTitles** menu on macOS, the **Help** menu on Windows and Linux) opens the **Software Update** dialog, which follows the check from start to end:
+
+- **Checking for updates…**, with **Cancel** to close the dialog (the check finishes in the background).
+- **TidyTitles is up to date**, with the version you have.
+- **Downloading TidyTitles *version*…** with progress; **Hide** keeps it going in the background.
+- **TidyTitles *version* is ready to install**, with **Later** and **Restart to Update**.
+- **TidyTitles *version* is available**, with the reason this copy cannot install it and **Download**.
+- **Couldn't check for updates**, with the reason in plain words (no internet connection, the server took too long, no update information), **Try Again**, and **Open Releases Page**.
+
+If another dialog is open when you choose **Check for Updates…**, the result appears in the status bar instead (dismiss it with ×). Checks that run on their own never show an error; they try again later. What each system supports is described in [Installation](Installation.md#updates).
+
 ## Keyboard shortcuts
 
 | Action | macOS | Windows and Linux |
@@ -215,13 +241,13 @@ View → Actual Size, Zoom In, and Zoom Out change the text size.
 
 ## Menus
 
-- **TidyTitles** (macOS only): About, **Settings…**, **Install Command Line Tool…**, Hide, Quit.
+- **TidyTitles** (macOS only): About, **Check for Updates…**, **Settings…**, **Install Command Line Tool…**, Hide, Quit.
 - **File**: **Add Files…**, **Add Folder…**, **Clear List**; on Windows and Linux also **Settings…**, **Install Command Line Tool…**, and **Quit**.
 - **Edit**: the usual text editing commands, for the text fields in Settings. Edit → Undo undoes typing; it does not undo renames.
 - **Rename**: **Fetch Metadata**, **Stop Fetching**, **Rename Files…**, **Undo Last Rename…**.
 - **View**: zoom and full screen.
 - **Window**: the standard window commands.
-- **Help**: **TidyTitles on GitHub**, **Template Reference**, **Report an Issue** (each opens your browser); on Windows and Linux also About.
+- **Help**: **TidyTitles on GitHub**, **Template Reference**, **Report an Issue** (each opens your browser); on Windows and Linux also **Check for Updates…** and About.
 
 **Install Command Line Tool…** is described in [Installation](Installation.md#the-command-line-tool).
 

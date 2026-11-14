@@ -93,6 +93,11 @@ export function parseRunOptions(value: unknown): Partial<RunOptions> {
   return out;
 }
 
+/** The "Check for updates automatically" toggle. */
+export function parseEnabled(value: unknown): boolean {
+  return bool(value, "enabled");
+}
+
 export function parseSelectionAnswer(id: unknown, index: unknown): { id: string; index: number | null } {
   const parsedId = str(id, "id", 64);
   if (index === null) return { id: parsedId, index: null };

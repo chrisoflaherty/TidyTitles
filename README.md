@@ -52,6 +52,16 @@ Download the installer for your system from the [Releases page](https://github.c
 
 The installers are **not code signed**, so macOS and Windows warn you the first time. [Installation](wiki/Installation.md) explains each warning and how to get past it, and how to add the `tidytitles` command to your terminal.
 
+### Updates
+
+The desktop app checks for new versions shortly after it starts and every few hours, downloads them in the background, and shows **Restart to Update** in the status bar when one is ready (or installs it when you quit). **Check for Updates…** is in the **TidyTitles** menu on macOS and the **Help** menu on Windows and Linux; **Settings** → **Updates** turns automatic checks off. Beta versions are offered newer betas and stable releases; stable versions only stable releases.
+
+- **Windows:** updates install themselves. The installer now installs for the current user by default, so neither installing nor updating asks for administrator permission. If you installed 0.2.0-beta.2 or earlier (installed for all users), see [Installation](wiki/Installation.md#windows).
+- **macOS:** the current builds are not signed with a Developer ID, and macOS lets only signed apps replace themselves. Until the builds are signed, the app tells you about a new version and offers **Download** instead.
+- **Linux:** updates install themselves when you run the AppImage.
+
+Details: [Installation → Updates](wiki/Installation.md#updates).
+
 To build from source instead, you need Node.js 22.12 or newer:
 
 ```bash

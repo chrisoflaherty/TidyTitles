@@ -8,7 +8,8 @@ This page covers installing the TidyTitles desktop app from a release, getting p
 - [Linux](#linux)
 - [The command-line tool](#the-command-line-tool)
 - [From source](#from-source)
-- [Upgrading](#upgrading)
+- [Updates](#updates)
+- [Upgrading by hand](#upgrading-by-hand)
 - [Uninstalling](#uninstalling)
 
 ## Download a release
@@ -19,14 +20,18 @@ Installers are attached to each release on the [Releases page](https://github.co
 |--------|------|-------|
 | macOS on Apple silicon (M1, M2, M3, M4, ...) | `TidyTitles-<version>-macos-arm64.dmg` | |
 | macOS on an Intel Mac | `TidyTitles-<version>-macos-x64.dmg` | |
-| Windows, 64-bit | `TidyTitles-<version>-windows-setup.exe` | Installs for all users |
+| Windows, 64-bit | `TidyTitles-<version>-windows-setup.exe` | Installs for you; no administrator prompt |
 | Linux, 64-bit (x86-64) | `TidyTitles-<version>-x86_64.AppImage` | No installation; one file |
+
+The release also lists `.zip`, `.yml`, and `.blockmap` files. The app's automatic updates use them; you do not need to download them.
 
 Not sure which Mac you have? Open the Apple menu → **About This Mac**. If it lists a **Chip** (for example "Apple M2"), take `arm64`. If it lists a **Processor** (for example "Intel Core i7"), take `x64`.
 
 ### About the warnings: the builds are not code signed
 
 The release builds are **not code signed and not notarized**. Nothing is wrong with the files, but macOS and Windows cannot confirm who made them, so they warn you or refuse to open the app the first time. The sections below show what you will see and how to continue. You only need to do this once per installed version.
+
+Code signing also decides whether the app can [update itself](#updates): on macOS an unsigned copy tells you about a new version and offers a download instead.
 
 ## macOS
 
@@ -59,10 +64,13 @@ Run TidyTitles from **Applications**, not from inside the disk image. The comman
 
 1. Run `TidyTitles-<version>-windows-setup.exe`.
 2. Microsoft Defender SmartScreen shows **"Windows protected your PC"**. Click **More info**, then **Run anyway**.
-3. Windows asks for administrator permission (a User Account Control prompt). This is expected: the installer installs TidyTitles for all users of the computer, by default under Program Files. Click **Yes**.
-4. Accept the MIT license, choose the installation folder if you want a different one, and click **Install**.
+3. Accept the MIT license.
+4. Choose who to install for. **Only for me** (the default) installs into `%LOCALAPPDATA%\Programs\TidyTitles` with no administrator prompt, and updates install without one too. **Anyone who uses this computer** installs under Program Files; it asks for administrator permission now and again for every update.
+5. Choose the installation folder if you want a different one, and click **Install**.
 
 The installer creates a **TidyTitles** shortcut on the desktop and in the Start menu.
+
+**If you installed 0.2.0-beta.2 or earlier:** those versions always installed for all users. A newer installer, or an update, finds that installation and keeps it where it is, for all users, so every update shows one administrator prompt. To switch to an installation without prompts, uninstall TidyTitles (**Settings** → **Apps** → **Installed apps** → **TidyTitles** → **Uninstall**), then run the new installer and choose **Only for me**. Your settings, API keys, and rename history are not affected; they are stored per user, outside the app. (This is what the installer's source says it does; it has not been tried on Windows yet.)
 
 The Windows build is produced by the release workflow but has not yet been tried by hand. Please report problems on the [issue tracker](https://github.com/chrisoflaherty/TidyTitles/issues).
 
@@ -174,7 +182,21 @@ npm run dev
 
 [BUILD.md](../BUILD.md) explains the repository layout, tests, and how to make installers.
 
-## Upgrading
+## Updates
+
+The desktop app looks for a new version about 15 seconds after it starts and then every 4 hours while it runs. A new version downloads in the background; you keep working. When it is ready, the status bar shows **Update ready** with a **Restart to Update** button. Click it to restart into the new version, or leave it: the update installs the next time you quit TidyTitles. The app never restarts on its own, and **Restart to Update** waits while files are being fetched or renamed.
+
+To check yourself, choose **TidyTitles** → **Check for Updates…** (macOS) or **Help** → **Check for Updates…** (Windows, Linux). To stop the automatic checks, turn off **Check for updates automatically** in **Settings** → **Updates**. A failed automatic check is silent; a check you start always reports what happened.
+
+Beta versions are offered newer betas and stable versions; stable versions are offered only stable versions. The app never offers an older version.
+
+What each system can do:
+
+- **macOS:** a copy signed with Apple's Developer ID installs updates itself. The current builds are not signed that way, so the app tells you when a new version exists and offers **Download**, which opens the release page; install it as described below. Updates also need the app to be in a folder it can change, such as Applications (not the disk image).
+- **Windows:** updates install themselves (the app was installed by the installer). With **Only for me** there is no prompt; an installation for all users asks for administrator permission each time. The builds are not code signed, so the app checks a downloaded update only against the checksum published with the release, not against a signature, and Windows may show its SmartScreen warning when you run a downloaded installer by hand. (Not tried on Windows yet.)
+- **Linux:** updates install themselves when you run the AppImage file, which is replaced by the new version. Run any other way, the app offers **Download** instead. Choose **Install Command Line Tool…** again after an update if you use the command-line tool. (Not tried on Linux yet.)
+
+## Upgrading by hand
 
 - **macOS:** download the new `.dmg` and drag TidyTitles into Applications again, replacing the old copy. Repeat the Gatekeeper step above for the new version.
 - **Windows:** run the new installer. Repeat the SmartScreen step.
@@ -197,4 +219,4 @@ Uninstalling does not remove your settings, API keys, history, or cache. To remo
 | Windows | `%LOCALAPPDATA%\file-renamer\file-renamer\` | `%LOCALAPPDATA%\file-renamer\file-renamer\Cache\` |
 | Linux | `~/.config/file-renamer/` | `~/.cache/file-renamer/` |
 
-The desktop app also keeps its window size and position in its own folder: `~/Library/Application Support/TidyTitles/` (macOS), `%APPDATA%\TidyTitles\` (Windows), or `~/.config/TidyTitles/` (Linux).
+The desktop app also keeps its window size and position, and the **Check for updates automatically** setting (`preferences.json`), in its own folder: `~/Library/Application Support/TidyTitles/` (macOS), `%APPDATA%\TidyTitles\` (Windows), or `~/.config/TidyTitles/` (Linux).
