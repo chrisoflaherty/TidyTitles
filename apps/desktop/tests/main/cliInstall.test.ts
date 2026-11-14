@@ -69,7 +69,8 @@ describe("command-line tool installer", () => {
     expect(shellQuote("/a b/it's")).toBe(`'/a b/it'\\''s'`);
   });
 
-  it("writes a launcher that runs the bundle with ELECTRON_RUN_AS_NODE and passes arguments", async () => {
+  // The launcher is a POSIX shell script; Windows gets a PowerShell command instead.
+  it.skipIf(process.platform === "win32")("writes a launcher that runs the bundle with ELECTRON_RUN_AS_NODE and passes arguments", async () => {
     // A stand-in "Electron binary" that prints what it was given.
     const fakeExe = path.join(dir, "My App's", "TidyTitles");
     await mkdir(path.dirname(fakeExe), { recursive: true });

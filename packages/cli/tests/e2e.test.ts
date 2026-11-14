@@ -14,13 +14,15 @@ import { MATRIX_FILE, touch, writeKeys } from "./helpers";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(pkgDir, "dist");
-const tsup = path.resolve(pkgDir, "../../node_modules/.bin/tsup");
+// Run tsup through Node (not the node_modules/.bin shim, which is a shell
+// script on POSIX and a .cmd file on Windows).
+const tsup = path.resolve(pkgDir, "../../node_modules/tsup/dist/cli-default.js");
 
 let tmp: string;
 
 beforeAll(async () => {
   // Build from the current sources so these tests never run a stale bundle.
-  execFileSync(tsup, [], { cwd: pkgDir, stdio: "pipe" });
+  execFileSync(process.execPath, [tsup], { cwd: pkgDir, stdio: "pipe" });
   tmp = await mkdtemp(path.join(os.tmpdir(), "tidytitles-e2e-"));
 }, 60_000);
 
@@ -178,7 +180,8 @@ describe.each(binaries)("%s", (_name, bin) => {
     expect(await readFile(path.join(dir, "config.toml"), "utf8")).not.toContain("KEEPME");
   });
 
-  it("Ctrl+C at a prompt exits 130 without a stack trace", async () => {
+  // Windows cannot deliver SIGINT to a child process: kill() ends it outright.
+  it.skipIf(process.platform === "win32")("Ctrl+C at a prompt exits 130 without a stack trace", async () => {
     const dir = freshDir();
     await writeKeys(dir, { tmdb: "k" });
     const r = await runBin(bin(), ["config", "init", "--config-dir", dir], {
