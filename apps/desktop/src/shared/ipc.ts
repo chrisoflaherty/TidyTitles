@@ -25,6 +25,7 @@ export const IPC = {
   getState: "state:get",
   addFilesDialog: "files:add-dialog",
   addPaths: "files:add-paths",
+  takeOpenedPaths: "files:take-opened",
   removeFiles: "files:remove",
   clearFiles: "files:clear",
   setOptions: "options:set",
@@ -52,6 +53,7 @@ export const EVENTS = {
   selectionClosed: "event:selection-closed",
   menuCommand: "event:menu-command",
   updateState: "event:update-state",
+  pathsOpened: "event:paths-opened",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -174,6 +176,11 @@ export interface EventPayloads {
   [EVENTS.selectionClosed]: { id: string };
   [EVENTS.menuCommand]: MenuCommand;
   [EVENTS.updateState]: UpdateState;
+  /**
+   * Files or folders were opened with the app (Dock, Finder's Open With, the
+   * command line) and wait in main; take them with `takeOpenedPaths`.
+   */
+  [EVENTS.pathsOpened]: null;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +355,13 @@ export interface TidyTitlesApi {
   addFilesDialog(kind: "files" | "folder"): Promise<AddResult | null>;
   /** Add dropped files and folders. */
   addPaths(paths: string[]): Promise<AddResult>;
+  /**
+   * Add the files and folders opened with the app (Dock, Finder's Open With,
+   * the command line) that wait in main. `accept` is whether a drop would be
+   * accepted right now; when it is false, or main is busy, they are refused
+   * with a message. Resolves to null when nothing was added.
+   */
+  takeOpenedPaths(accept: boolean): Promise<AddResult | null>;
   /** The filesystem path of a dropped `File`, or "" when it has none. */
   pathForFile(file: File): string;
   removeFiles(ids: number[]): Promise<void>;
@@ -378,4 +392,5 @@ export interface TidyTitlesApi {
   onSelectionRequest(listener: (request: SelectionRequest) => void): Unsubscribe;
   onSelectionClosed(listener: (event: { id: string }) => void): Unsubscribe;
   onMenuCommand(listener: (command: MenuCommand) => void): Unsubscribe;
+  onPathsOpened(listener: () => void): Unsubscribe;
 }

@@ -22,6 +22,7 @@ const api: TidyTitlesApi = {
   getState: () => ipcRenderer.invoke(IPC.getState),
   addFilesDialog: (kind) => ipcRenderer.invoke(IPC.addFilesDialog, kind),
   addPaths: (paths) => ipcRenderer.invoke(IPC.addPaths, paths),
+  takeOpenedPaths: (accept) => ipcRenderer.invoke(IPC.takeOpenedPaths, accept),
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file);
@@ -52,6 +53,7 @@ const api: TidyTitlesApi = {
   onSelectionRequest: (listener) => subscribe(EVENTS.selectionRequest, listener),
   onSelectionClosed: (listener) => subscribe(EVENTS.selectionClosed, listener),
   onMenuCommand: (listener) => subscribe(EVENTS.menuCommand, listener),
+  onPathsOpened: (listener) => subscribe(EVENTS.pathsOpened, () => listener()),
 };
 
 contextBridge.exposeInMainWorld("tidytitles", api);
