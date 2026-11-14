@@ -151,4 +151,4 @@ The original Python implementation is still in `src/file_renamer/` for reference
 
 ## License
 
-MIT, as declared in `package.json`.
+MIT. See [LICENSE](LICENSE).

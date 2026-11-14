@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TidyTitles is a cross-platform media file renaming application. It fetches metadata from TMDB (movies), TVDB (TV shows), and MusicBrainz (music) to rename files with consistent naming patterns.
 
-The app is being rewritten from Python to TypeScript on the `electron-rewrite` branch. Both versions live in this repository until the Python one is retired:
+The app has been rewritten from Python to TypeScript. Both versions live in this repository until the Python one is retired:
 
 - **TypeScript (current work):** an npm-workspace monorepo with a shared core, a Node CLI (`tidytitles`), and an Electron desktop app.
 - **Python (reference):** `src/file_renamer/`, `tests/`, `build.py`, `installer/`. It is the behavioral reference for the port. Do not change it; fix behavior in the TypeScript code.
