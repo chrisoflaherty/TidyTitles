@@ -580,7 +580,8 @@ export interface SessionOptions {
   config?: ConfigService;
   /**
    * Response cache. Default: an APICache in `config.cacheDir` when a config
-   * is given, else none. Pass false for no cache.
+   * is given, else none; that cache removes its expired entries in the
+   * background at most once a day. Pass false for no cache.
    */
   cache?: ResponseCache | false;
   /** Fetch implementation for providers and cover art. */
@@ -631,7 +632,11 @@ export class RenameSession {
     let cache: ResponseCache | undefined;
     if (options.cache) cache = options.cache;
     else if (options.cache === undefined && options.config) {
-      cache = new APICache({ cacheDir: options.config.cacheDir });
+      const apiCache = new APICache({ cacheDir: options.config.cacheDir });
+      // Expired entries are otherwise removed only when read again. At most
+      // once a day, in the background; never throws or delays the caller.
+      void apiCache.scheduleCleanup();
+      cache = apiCache;
     }
 
     const built = buildProviders(settings, {

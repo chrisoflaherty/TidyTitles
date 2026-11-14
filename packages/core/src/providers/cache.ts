@@ -5,6 +5,11 @@
  * the same way (first 16 hex chars of SHA-256 over
  * `provider:endpoint:json.dumps(params, sort_keys=True)`), and expiry
  * timestamps are naive local ISO strings like Python's `datetime.isoformat()`.
+ *
+ * Expired entries are removed when read again, by `clearExpired()`, and by
+ * `scheduleCleanup()`, which the session runs in the background at most
+ * once a day (tracked by the modification time of `CLEANUP_STAMP_FILE`,
+ * which is not a `.json` file, so the Python app ignores it).
  */
 
 import { createHash } from "node:crypto";
@@ -15,13 +20,42 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
+  type Stats,
 } from "node:fs";
 import path from "node:path";
 import { isRecord, type QueryParams, type ResponseCache } from "./util";
 
 /** Default time-to-live for cached responses: 24 hours. */
 export const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** File in the cache directory whose modification time records the last cleanup. */
+export const CLEANUP_STAMP_FILE = "last-cleanup";
+
+/** Background cleanup runs at most this often: once a day. */
+export const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export interface ScheduleCleanupOptions {
+  /** Wait before starting, so cleanup stays out of startup. Default 500 ms. */
+  delayMs?: number;
+  /** Minimum time since the last cleanup. Default `CLEANUP_INTERVAL_MS`. */
+  intervalMs?: number;
+  /** Entries examined per step; each step is one short synchronous burst. Default 25. */
+  batchSize?: number;
+}
+
+/** What an entry file holds, for cleanup. */
+type EntryState = "fresh" | "expired" | "invalid";
+
+/**
+ * An unreadable entry younger than this is left alone by the background
+ * cleanup: another process (or the Python app) may be writing it.
+ */
+const UNREADABLE_GRACE_MS = 60 * 60 * 1000;
+
+/** Cache directories with a background cleanup running in this process. */
+const cleanupsRunning = new Set<string>();
 
 export interface APICacheOptions {
   /** Directory to store cache files. Created (recursively) if missing. */
@@ -116,21 +150,87 @@ export class APICache implements ResponseCache {
     let count = 0;
     const now = Date.now();
     for (const file of this.entryFiles()) {
-      try {
-        const data: unknown = JSON.parse(readFileSync(file, "utf8"));
-        if (!isRecord(data)) throw new Error("invalid entry");
-        const expiresAt = parsePythonIsoDateTime(data.expires_at);
-        if (expiresAt === undefined) throw new Error("invalid expiry");
-        if (now > expiresAt) {
-          rmSync(file, { force: true });
-          count += 1;
-        }
-      } catch {
+      if (entryState(file, now) !== "fresh") {
         rmSync(file, { force: true });
         count += 1;
       }
     }
     return count;
+  }
+
+  /**
+   * Remove expired entries in the background, at most once per
+   * `intervalMs` across processes (the stamp file records the last
+   * completed run). Returns at once; never throws.
+   *
+   * The work is split into small synchronous steps on unref'd timers, so
+   * it never blocks for long and never keeps a process alive: a CLI run
+   * that ends first simply leaves the rest (and the stamp) for next time.
+   * Unreadable entries are removed only when older than an hour, in case
+   * another process is writing them.
+   *
+   * The promise resolves with the number of entries removed, or
+   * `undefined` when cleanup was not due or already running. It may never
+   * resolve if the process exits first.
+   */
+  scheduleCleanup(options: ScheduleCleanupOptions = {}): Promise<number | undefined> {
+    const delayMs = options.delayMs ?? 500;
+    const intervalMs = options.intervalMs ?? CLEANUP_INTERVAL_MS;
+    const batchSize = Math.max(1, options.batchSize ?? 25);
+    const stamp = path.join(this.cacheDir, CLEANUP_STAMP_FILE);
+    const dirKey = path.resolve(this.cacheDir);
+
+    try {
+      if (cleanupsRunning.has(dirKey)) return Promise.resolve(undefined);
+      const last = statIfExists(stamp)?.mtimeMs;
+      // A stamp far in the future (clock changes) does not block cleanup forever.
+      if (last !== undefined && Math.abs(Date.now() - last) < intervalMs) {
+        return Promise.resolve(undefined);
+      }
+    } catch {
+      return Promise.resolve(undefined);
+    }
+
+    cleanupsRunning.add(dirKey);
+    return new Promise<number | undefined>((resolve) => {
+      let files: string[] | undefined;
+      let next = 0;
+      let removed = 0;
+      const finish = (result: number | undefined): void => {
+        cleanupsRunning.delete(dirKey);
+        resolve(result);
+      };
+      const step = (): void => {
+        try {
+          files ??= readdirSync(this.cacheDir)
+            .filter((name) => name.endsWith(".json"))
+            .map((name) => path.join(this.cacheDir, name));
+          const now = Date.now();
+          const end = Math.min(files.length, next + batchSize);
+          for (; next < end; next++) {
+            const file = files[next]!;
+            const state = entryState(file, now);
+            if (state === "fresh") continue;
+            if (state === "invalid") {
+              const stat = statIfExists(file);
+              if (!stat || !stat.isFile() || now - stat.mtimeMs < UNREADABLE_GRACE_MS) continue;
+            }
+            rmSync(file, { force: true });
+            removed += 1;
+          }
+          if (next < files.length) {
+            setTimeout(step, 0).unref();
+            return;
+          }
+          touchStamp(stamp);
+          finish(removed);
+        } catch {
+          // Cleanup is best effort; try again next time.
+          finish(undefined);
+        }
+      };
+      setTimeout(step, delayMs).unref();
+    });
   }
 
   private entryFiles(): string[] {
@@ -139,6 +239,42 @@ export class APICache implements ResponseCache {
       .filter((name) => name.endsWith(".json"))
       .map((name) => path.join(this.cacheDir, name))
       .filter((file) => statSync(file).isFile());
+  }
+}
+
+/** Whether an entry file is still valid. Missing files count as fresh (nothing to do). */
+function entryState(file: string, now: number): EntryState {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "fresh" : "invalid";
+  }
+  try {
+    const data: unknown = JSON.parse(text);
+    if (!isRecord(data)) return "invalid";
+    const expiresAt = parsePythonIsoDateTime(data.expires_at);
+    if (expiresAt === undefined) return "invalid";
+    return now > expiresAt ? "expired" : "fresh";
+  } catch {
+    return "invalid";
+  }
+}
+
+function statIfExists(file: string): Stats | undefined {
+  try {
+    return statSync(file);
+  } catch {
+    return undefined;
+  }
+}
+
+function touchStamp(stamp: string): void {
+  const now = new Date();
+  try {
+    utimesSync(stamp, now, now);
+  } catch {
+    writeFileSync(stamp, "");
   }
 }
 
