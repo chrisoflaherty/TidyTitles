@@ -11,7 +11,7 @@ import {
   relativeTo,
   shortcut,
 } from "../../src/renderer/src/format";
-import { availability, initialUiState, listCounts, reducer } from "../../src/renderer/src/state";
+import { availability, initialUiState, listCounts, reconcileAppState, reducer, sameJson } from "../../src/renderer/src/state";
 import { operationStatus, providerLabel } from "../../src/renderer/src/status";
 import { appState, file, matrix, op, pilot } from "./fixtures";
 
@@ -133,5 +133,56 @@ describe("reducer", () => {
     expect(availability(planned)).toMatchObject({ rename: true, fetch: true, undo: false });
     expect(availability({ ...planned, busy: "renaming" })).toMatchObject({ rename: false, add: false });
     expect(availability(null).add).toBe(false);
+  });
+});
+
+describe("state snapshots keep unchanged objects", () => {
+  const files = [file(1, "a.mkv"), file(2, "b.mkv"), file(3, "c.mkv")];
+  const ops = files.map((f) => op(f, { newName: `${f.name}.new.mkv` }));
+  // Main sends a fresh copy of everything with each snapshot.
+  const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+  const prev = appState({ files, operations: ops, plan: "planned" });
+
+  it("compares JSON values deeply", () => {
+    expect(sameJson({ a: [1, { b: "x" }], c: null }, { a: [1, { b: "x" }], c: null })).toBe(true);
+    expect(sameJson({ a: [1, 2] }, { a: [1, 3] })).toBe(false);
+    expect(sameJson({ a: 1 }, { a: 1, b: undefined })).toBe(true);
+    expect(sameJson({ a: 1 }, { a: 1, b: null })).toBe(false);
+    expect(sameJson([1], { 0: 1 })).toBe(false);
+  });
+
+  it("reuses the arrays when nothing in the list changed", () => {
+    const next = reconcileAppState(prev, copy({ ...prev, busy: "renaming" }));
+    expect(next.busy).toBe("renaming");
+    expect(next.files).toBe(prev.files);
+    expect(next.operations).toBe(prev.operations);
+    expect(next.options).toBe(prev.options);
+  });
+
+  it("replaces only what changed", () => {
+    const changed = copy(prev);
+    changed.operations![1]!.status = "completed";
+    const next = reconcileAppState(prev, changed);
+    expect(next.files).toBe(prev.files);
+    expect(next.operations).not.toBe(prev.operations);
+    expect(next.operations![0]).toBe(ops[0]);
+    expect(next.operations![1]).not.toBe(ops[1]);
+    expect(next.operations![1]!.status).toBe("completed");
+    expect(next.operations![2]).toBe(ops[2]);
+  });
+
+  it("follows files by id when the list is reordered or shrinks", () => {
+    const next = reconcileAppState(prev, copy(appState({ files: [files[2]!, files[0]!], operations: null })));
+    expect(next.files).not.toBe(prev.files);
+    expect(next.files[0]).toBe(files[2]);
+    expect(next.files[1]).toBe(files[0]);
+    expect(next.operations).toBeNull();
+  });
+
+  it("is what the reducer stores", () => {
+    const s1 = reducer(initialUiState, { type: "state", state: prev });
+    const s2 = reducer(s1, { type: "state", state: copy(prev) });
+    expect(s2.app!.files).toBe(s1.app!.files);
+    expect(s2.app!.operations).toBe(s1.app!.operations);
   });
 });

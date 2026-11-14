@@ -1,4 +1,34 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+/**
+ * The file list: a real <table role="grid"> whose body is windowed, so a list
+ * of thousands of files keeps only the rows near the viewport in the DOM.
+ *
+ * Layout model: each file is one *group* (its row plus the associated-file
+ * rows beneath it). A group's height starts as an estimate (its row count
+ * times the measured height of one row) and becomes its measured height once
+ * it has been rendered. Prefix sums of the group heights give each group's
+ * offset; spacer rows above, between, and below the rendered groups stand in
+ * for the rest, so the scrollbar reflects the full length. When a group above
+ * the viewport turns out taller or shorter than assumed, the scroll position
+ * is corrected in the same frame, so the visible rows do not jump.
+ *
+ * The tab-stop row (the selected row, or the first) is always rendered, at its
+ * real position, so keyboard focus survives scrolling it out of view.
+ * Assistive technology gets the full size from aria-rowcount and each
+ * rendered row's position from aria-rowindex.
+ */
+
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import type { AssociatedFileType, PlannedOperation } from "@tidytitles/core";
 import type { AppState, FileEntry } from "../../../shared/ipc";
 import { baseName, dirName, relativeTo } from "../format";
@@ -19,6 +49,11 @@ const ASSOC_ICON: Record<AssociatedFileType, IconName> = {
   other: "doc",
 };
 
+/** `--row-h` in styles.css; replaced by the measured height of a row once one is rendered. */
+const DEFAULT_ROW_HEIGHT = 28;
+/** Extra content rendered above and below the viewport, in pixels. */
+const OVERSCAN_PX = 320;
+
 export function StatusBadge({ status }: { status: StatusView }) {
   return (
     <span className={`badge tone-${status.tone}`} title={status.detail} data-testid="status-badge">
@@ -28,19 +63,125 @@ export function StatusBadge({ status }: { status: StatusView }) {
   );
 }
 
-interface Row {
-  key: string;
-  file: FileEntry;
-  op: PlannedOperation | undefined;
-  status: StatusView;
-}
-
 function newNameCell(op: PlannedOperation | undefined, plan: AppState["plan"]) {
   if (!op || plan === "none") return <span className="muted">—</span>;
   if (op.destination === op.source) return <span className="muted" title="The name stays the same">Unchanged</span>;
   const shown = relativeTo(dirName(op.source), op.destination);
   return <MiddleEllipsis text={shown} title={op.destination} />;
 }
+
+/** One file of the list. */
+interface Item {
+  file: FileEntry;
+  op: PlannedOperation | undefined;
+  /** Rows in this group: the file's row plus its associated files. */
+  rows: number;
+}
+
+/** Stable callbacks shared by every row. */
+interface RowHandlers {
+  click: (id: number) => void;
+  focus: (id: number) => void;
+  register: (id: number, el: HTMLTableRowElement | null) => void;
+}
+
+interface FileRowProps {
+  file: FileEntry;
+  op: PlannedOperation | undefined;
+  plan: AppState["plan"];
+  selected: boolean;
+  tabStop: boolean;
+  /** aria-rowindex of the file's row (the header is row 1). */
+  rowIndex: number;
+  handlers: RowHandlers;
+}
+
+/** A file's row and its associated-file rows. Re-renders only when its own props change. */
+const FileRow = memo(function FileRow({ file, op, plan, selected, tabStop, rowIndex, handlers }: FileRowProps) {
+  const status = operationStatus(op, plan);
+  const original = op ? baseName(op.source) : file.name;
+  const originalPath = op ? op.source : file.path;
+  const id = file.id;
+  return (
+    <>
+      <tr
+        ref={(el) => handlers.register(id, el)}
+        className={selected ? "selected" : undefined}
+        data-tone={status.rowTone}
+        aria-selected={selected}
+        aria-rowindex={rowIndex}
+        tabIndex={tabStop ? 0 : -1}
+        onClick={() => handlers.click(id)}
+        onFocus={() => handlers.focus(id)}
+        data-testid="file-row"
+      >
+        <td className="cell-type">
+          <Icon name={file.kind === "audio" ? "music" : "film"} size={14} />
+          <span>{file.kind === "audio" ? "Audio" : "Video"}</span>
+        </td>
+        <td>
+          <MiddleEllipsis text={original} title={originalPath} />
+        </td>
+        <td className="cell-arrow" aria-hidden="true">
+          {op && plan !== "none" && op.destination !== op.source ? "→" : ""}
+        </td>
+        <td>{newNameCell(op, plan)}</td>
+        <td>
+          <StatusBadge status={status} />
+        </td>
+      </tr>
+      {op && plan !== "none"
+        ? op.associatedFiles.map((assoc, i) => (
+            <tr key={assoc.source} className="assoc-row" data-tone={status.rowTone} aria-rowindex={rowIndex + 1 + i}>
+              <td className="cell-type">
+                <span className="assoc-branch" aria-hidden="true">
+                  └
+                </span>
+                <Icon name={ASSOC_ICON[assoc.fileType]} size={14} />
+                <span>{ASSOC_LABEL[assoc.fileType]}</span>
+              </td>
+              <td>
+                <MiddleEllipsis text={baseName(assoc.source)} title={assoc.source} />
+              </td>
+              <td className="cell-arrow" aria-hidden="true">
+                →
+              </td>
+              <td>
+                <MiddleEllipsis text={relativeTo(dirName(op.source), assoc.destination)} title={assoc.destination} />
+              </td>
+              <td>
+                <span className="muted assoc-note">Moves with the file</span>
+              </td>
+            </tr>
+          ))
+        : null}
+    </>
+  );
+});
+
+/** Stands in for groups that are not rendered. */
+function Spacer({ height }: { height: number }) {
+  return (
+    <tr className="spacer-row" aria-hidden="true">
+      <td colSpan={5} style={{ height }} />
+    </tr>
+  );
+}
+
+/** The first index whose group ends below `y` (offsets has one more entry than groups). */
+function groupAt(offsets: Float64Array, y: number): number {
+  const n = offsets.length - 1;
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (offsets[mid + 1]! <= y) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+const heightKey = (item: Item) => `${item.file.id}:${item.rows}`;
 
 export interface FileTableProps {
   app: AppState;
@@ -49,15 +190,153 @@ export interface FileTableProps {
   onRemove: (ids: number[]) => void;
 }
 
-export function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTableProps) {
+export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTableProps) {
+  const { files, operations, plan, busy } = app;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLTableSectionElement>(null);
   const rowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const focusPending = useRef(false);
+  /** Measured group heights, by file id and row count. */
+  const heights = useRef(new Map<string, number>());
+  const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
+  const [heightsVersion, heightsChanged] = useReducer((n: number) => n + 1, 0);
+  const [viewport, setViewport] = useState(() => ({
+    top: 0,
+    // Until the container is measured (and in jsdom, which has no layout), assume a window's height.
+    height: typeof window === "undefined" ? 800 : window.innerHeight,
+    width: 0,
+  }));
 
-  const rows: Row[] = app.files.map((file, i) => {
-    const op = app.operations?.[i];
-    return { key: `f${file.id}`, file, op, status: operationStatus(op, app.plan) };
+  const items: Item[] = useMemo(
+    () =>
+      files.map((file, i) => {
+        const op = operations?.[i];
+        return { file, op, rows: 1 + (op && plan !== "none" ? op.associatedFiles.length : 0) };
+      }),
+    [files, operations, plan],
+  );
+  const indexById = useMemo(() => new Map(items.map((item, i) => [item.file.id, i])), [items]);
+
+  // Forget heights of files no longer in the list.
+  useEffect(() => {
+    const keep = new Set(items.map(heightKey));
+    for (const key of heights.current.keys()) if (!keep.has(key)) heights.current.delete(key);
+  }, [items]);
+
+  /** offsets[i]: top of group i within the body; ariaRows[i]: aria-rowindex of its file row. */
+  const layout = useMemo(() => {
+    const n = items.length;
+    const offsets = new Float64Array(n + 1);
+    const ariaRows = new Int32Array(n + 1);
+    ariaRows[0] = 2;
+    for (let i = 0; i < n; i++) {
+      const item = items[i]!;
+      offsets[i + 1] = offsets[i]! + (heights.current.get(heightKey(item)) ?? item.rows * rowHeight);
+      ariaRows[i + 1] = ariaRows[i]! + item.rows;
+    }
+    return { offsets, ariaRows };
+    // heightsVersion: the heights map (a ref) changed.
+  }, [items, rowHeight, heightsVersion]);
+
+  // The first row is reachable with Tab even before anything is selected.
+  const tabStopId = selectedFileId ?? items[0]?.file.id ?? null;
+  const tabStopIndex = tabStopId === null ? -1 : (indexById.get(tabStopId) ?? -1);
+
+  // The row that has keyboard focus (it may differ from the tab stop after Escape).
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const focusedIndex = focusedId === null ? -1 : (indexById.get(focusedId) ?? -1);
+
+  // Groups to render: those near the viewport, plus the tab stop and the focused row.
+  const headerHeight = headRef.current?.offsetHeight ?? DEFAULT_ROW_HEIGHT;
+  const bodyTop = viewport.top - headerHeight;
+  const start = groupAt(layout.offsets, Math.max(0, bodyTop - OVERSCAN_PX));
+  const end = Math.min(items.length, groupAt(layout.offsets, bodyTop + viewport.height + OVERSCAN_PX) + 1);
+  const pinned = [...new Set([tabStopIndex, focusedIndex])].filter((i) => i >= 0 && (i < start || i >= end));
+  pinned.sort((a, b) => a - b);
+  const rendered: number[] = [...pinned.filter((i) => i < start)];
+  for (let i = start; i < end; i++) rendered.push(i);
+  rendered.push(...pinned.filter((i) => i >= end));
+
+  // Latest values for the stable callbacks.
+  const latest = useRef({ selectedFileId, onSelect });
+  latest.current = { selectedFileId, onSelect };
+  const handlers = useMemo<RowHandlers>(
+    () => ({
+      click: (id) => latest.current.onSelect(id),
+      focus: (id) => {
+        setFocusedId(id);
+        if (latest.current.selectedFileId === null) latest.current.onSelect(id);
+      },
+      register: (id, el) => {
+        if (el) rowRefs.current.set(id, el);
+        else rowRefs.current.delete(id);
+      },
+    }),
+    [],
+  );
+
+  // Track the viewport.
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const top = el.scrollTop;
+    setViewport((v) => (v.top === top ? v : { ...v, top }));
+  }, []);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const read = () => {
+      const height = el.clientHeight;
+      const width = el.clientWidth;
+      if (height > 0) setViewport((v) => (v.height === height && v.width === width ? v : { ...v, height, width }));
+    };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(read);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Measure what was rendered; keep the visible rows still if groups above them changed size.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const viewTop = el.getBoundingClientRect().top + (headRef.current?.offsetHeight ?? 0);
+    let changed = false;
+    let shift = 0;
+    let firstRow = 0;
+    for (const i of rendered) {
+      const item = items[i]!;
+      const tr = rowRefs.current.get(item.file.id);
+      if (!tr) continue;
+      const rect = tr.getBoundingClientRect();
+      if (rect.height <= 0) continue; // not laid out (e.g. jsdom)
+      if (firstRow === 0) firstRow = rect.height;
+      let height = rect.height;
+      let bottom = rect.bottom;
+      let row: Element | null = tr;
+      for (let r = 1; r < item.rows; r++) {
+        row = row?.nextElementSibling ?? null;
+        if (!row) break;
+        const assocRect = row.getBoundingClientRect();
+        height += assocRect.height;
+        bottom = assocRect.bottom;
+      }
+      const key = heightKey(item);
+      const assumed = heights.current.get(key) ?? item.rows * rowHeight;
+      if (Math.abs(height - assumed) > 0.5) {
+        changed = true;
+        // A group entirely above the viewport pushed the visible rows down (or up).
+        if (bottom <= viewTop) shift += height - assumed;
+      }
+      heights.current.set(key, height);
+    }
+    if (shift !== 0) el.scrollTop += shift;
+    if (firstRow > 0 && Math.abs(firstRow - rowHeight) > 0.5) setRowHeight(firstRow);
+    else if (changed) heightsChanged();
   });
 
+  // Focus the newly selected row once it is rendered (it may have been off-screen).
   useEffect(() => {
     if (focusPending.current && selectedFileId !== null) {
       rowRefs.current.get(selectedFileId)?.focus();
@@ -66,13 +345,13 @@ export function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTable
   }, [selectedFileId]);
 
   const move = (delta: number | "start" | "end") => {
-    if (rows.length === 0) return;
-    const index = rows.findIndex((r) => r.file.id === selectedFileId);
+    if (items.length === 0) return;
+    const index = selectedFileId === null ? -1 : (indexById.get(selectedFileId) ?? -1);
     let next: number;
     if (delta === "start") next = 0;
-    else if (delta === "end") next = rows.length - 1;
-    else next = index < 0 ? 0 : Math.min(rows.length - 1, Math.max(0, index + delta));
-    const id = rows[next]!.file.id;
+    else if (delta === "end") next = items.length - 1;
+    else next = index < 0 ? 0 : Math.min(items.length - 1, Math.max(0, index + delta));
+    const id = items[next]!.file.id;
     focusPending.current = true;
     onSelect(id);
     rowRefs.current.get(id)?.focus();
@@ -100,9 +379,9 @@ export function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTable
         break;
       case "Delete":
       case "Backspace":
-        if (selectedFileId !== null && app.busy === null) {
-          const index = rows.findIndex((r) => r.file.id === selectedFileId);
-          const neighbor = rows[index + 1] ?? rows[index - 1];
+        if (selectedFileId !== null && busy === null) {
+          const index = indexById.get(selectedFileId) ?? -1;
+          const neighbor = items[index + 1] ?? items[index - 1];
           onRemove([selectedFileId]);
           focusPending.current = true;
           onSelect(neighbor ? neighbor.file.id : null);
@@ -117,12 +396,41 @@ export function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTable
     event.preventDefault();
   };
 
-  // The first row is reachable with Tab even before anything is selected.
-  const tabStopId = selectedFileId ?? rows[0]?.file.id ?? null;
+  // Rendered groups, with spacers for the gaps. A spacer is keyed by the group
+  // after it, so keyed children always stay in list order and React never
+  // moves a row in the DOM (moving the focused row would blur it).
+  const body: ReactNode[] = [];
+  let cursor = 0;
+  for (const i of rendered) {
+    const gap = layout.offsets[i]! - layout.offsets[cursor]!;
+    if (gap > 0) body.push(<Spacer key={`gap-${i}`} height={gap} />);
+    const item = items[i]!;
+    body.push(
+      <FileRow
+        key={`f${item.file.id}`}
+        file={item.file}
+        op={item.op}
+        plan={plan}
+        selected={item.file.id === selectedFileId}
+        tabStop={item.file.id === tabStopId}
+        rowIndex={layout.ariaRows[i]!}
+        handlers={handlers}
+      />,
+    );
+    cursor = i + 1;
+  }
+  const rest = layout.offsets[items.length]! - layout.offsets[cursor]!;
+  if (rest > 0) body.push(<Spacer key="gap-end" height={rest} />);
 
   return (
-    <div className="table-scroll" data-testid="file-table">
-      <table className="file-table" role="grid" aria-readonly="true" aria-label="Files">
+    <div className="table-scroll" data-testid="file-table" ref={scrollRef} onScroll={onScroll}>
+      <table
+        className="file-table"
+        role="grid"
+        aria-readonly="true"
+        aria-label="Files"
+        aria-rowcount={layout.ariaRows[items.length]! - 1}
+      >
         <colgroup>
           <col className="col-type" />
           <col className="col-name" />
@@ -130,8 +438,8 @@ export function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTable
           <col className="col-name" />
           <col className="col-status" />
         </colgroup>
-        <thead>
-          <tr>
+        <thead ref={headRef}>
+          <tr aria-rowindex={1}>
             <th scope="col">Type</th>
             <th scope="col">Original name</th>
             <th scope="col" aria-label="becomes" />
@@ -139,72 +447,15 @@ export function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTable
             <th scope="col">Status</th>
           </tr>
         </thead>
-        <tbody onKeyDown={onKeyDown}>
-          {rows.map((row) => {
-            const selected = row.file.id === selectedFileId;
-            const original = row.op ? baseName(row.op.source) : row.file.name;
-            const originalPath = row.op ? row.op.source : row.file.path;
-            return [
-              <tr
-                key={row.key}
-                ref={(el) => {
-                  if (el) rowRefs.current.set(row.file.id, el);
-                  else rowRefs.current.delete(row.file.id);
-                }}
-                className={selected ? "selected" : undefined}
-                data-tone={row.status.rowTone}
-                aria-selected={selected}
-                tabIndex={row.file.id === tabStopId ? 0 : -1}
-                onClick={() => onSelect(row.file.id)}
-                onFocus={() => {
-                  if (!selected && selectedFileId === null) onSelect(row.file.id);
-                }}
-                data-testid="file-row"
-              >
-                <td className="cell-type">
-                  <Icon name={row.file.kind === "audio" ? "music" : "film"} size={14} />
-                  <span>{row.file.kind === "audio" ? "Audio" : "Video"}</span>
-                </td>
-                <td>
-                  <MiddleEllipsis text={original} title={originalPath} />
-                </td>
-                <td className="cell-arrow" aria-hidden="true">
-                  {row.op && app.plan !== "none" && row.op.destination !== row.op.source ? "→" : ""}
-                </td>
-                <td>{newNameCell(row.op, app.plan)}</td>
-                <td>
-                  <StatusBadge status={row.status} />
-                </td>
-              </tr>,
-              ...(row.op && app.plan !== "none"
-                ? row.op.associatedFiles.map((assoc) => (
-                    <tr key={`${row.key}-${assoc.source}`} className="assoc-row" data-tone={row.status.rowTone}>
-                      <td className="cell-type">
-                        <span className="assoc-branch" aria-hidden="true">
-                          └
-                        </span>
-                        <Icon name={ASSOC_ICON[assoc.fileType]} size={14} />
-                        <span>{ASSOC_LABEL[assoc.fileType]}</span>
-                      </td>
-                      <td>
-                        <MiddleEllipsis text={baseName(assoc.source)} title={assoc.source} />
-                      </td>
-                      <td className="cell-arrow" aria-hidden="true">
-                        →
-                      </td>
-                      <td>
-                        <MiddleEllipsis text={relativeTo(dirName(row.op!.source), assoc.destination)} title={assoc.destination} />
-                      </td>
-                      <td>
-                        <span className="muted assoc-note">Moves with the file</span>
-                      </td>
-                    </tr>
-                  ))
-                : []),
-            ];
-          })}
+        <tbody
+          onKeyDown={onKeyDown}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setFocusedId(null);
+          }}
+        >
+          {body}
         </tbody>
       </table>
     </div>
   );
-}
+});

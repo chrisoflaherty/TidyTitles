@@ -3,8 +3,10 @@
  * what only the window cares about (open dialog, selected row, drag state).
  */
 
+import type { PlannedOperation } from "@tidytitles/core";
 import type {
   AppState,
+  FileEntry,
   ProgressEvent,
   RenameOutcome,
   SelectionRequest,
@@ -71,7 +73,7 @@ export function reducer(state: UiState, action: Action): UiState {
       // A finished fetch withdraws any selection still on screen.
       const selection = action.state.busy === "fetching" ? state.selection : null;
       const progress = action.state.busy === null ? null : state.progress;
-      return { ...state, app: action.state, selectedFileId, selection, progress };
+      return { ...state, app: reconcileAppState(state.app, action.state), selectedFileId, selection, progress };
     }
     case "progress":
       return { ...state, progress: action.progress };
@@ -96,6 +98,80 @@ export function reducer(state: UiState, action: Action): UiState {
     case "dismissUpdateNote":
       return { ...state, dismissedCheckId: state.updates?.checkId ?? state.dismissedCheckId };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Structural sharing
+// ---------------------------------------------------------------------------
+
+/** Deep equality for plain JSON-like values (what arrives over IPC). */
+export function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameJson(a[i], b[i])) return false;
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  // A missing key and an undefined value are the same absent value.
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  for (const k in ao) if (!sameJson(ao[k], bo[k])) return false;
+  for (const k in bo) if (!(k in ao) && bo[k] !== undefined) return false;
+  return true;
+}
+
+function sameFile(a: FileEntry, b: FileEntry): boolean {
+  return a.id === b.id && a.path === b.path && a.name === b.name && a.directory === b.directory && a.kind === b.kind;
+}
+
+/**
+ * Every snapshot from main arrives as new objects. Keep the previous object
+ * for each file and operation that did not change (and the previous arrays
+ * when nothing in them did), so memoized rows and derived layouts skip the
+ * files a state change did not touch.
+ */
+export function reconcileAppState(prev: AppState | null, next: AppState): AppState {
+  if (!prev) return next;
+  const prevIndex = new Map<number, number>();
+  prev.files.forEach((f, i) => prevIndex.set(f.id, i));
+
+  let filesSame = prev.files.length === next.files.length;
+  const files = next.files.map((f, i) => {
+    const j = prevIndex.get(f.id);
+    const old = j === undefined ? undefined : prev.files[j];
+    if (old && sameFile(old, f)) {
+      if (j !== i) filesSame = false;
+      return old;
+    }
+    filesSame = false;
+    return f;
+  });
+
+  let operations = next.operations;
+  if (operations && prev.operations) {
+    const prevOps = prev.operations;
+    let opsSame = filesSame && prevOps.length === operations.length;
+    operations = operations.map((op, i): PlannedOperation => {
+      const j = prevIndex.get(next.files[i]?.id ?? -1);
+      const old = j === undefined ? undefined : prevOps[j];
+      if (old && sameJson(old, op)) {
+        if (j !== i) opsSame = false;
+        return old;
+      }
+      opsSame = false;
+      return op;
+    });
+    if (opsSame) operations = prevOps;
+  }
+
+  return {
+    ...next,
+    files: filesSame ? prev.files : files,
+    operations,
+    options: sameJson(prev.options, next.options) ? prev.options : next.options,
+  };
 }
 
 /** Counts for the status bar. */
