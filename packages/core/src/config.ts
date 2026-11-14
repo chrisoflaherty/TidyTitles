@@ -95,8 +95,9 @@
  * file does not set.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -109,6 +110,10 @@ export const ENV_PREFIX = "FILE_RENAMER_";
 export const ENV_NESTED_DELIMITER = "__";
 /** Number of history entries kept. */
 export const MAX_HISTORY_ENTRIES = 10;
+/** How long `saveHistory` and friends wait for another process's history lock. */
+export const HISTORY_LOCK_TIMEOUT_MS = 10_000;
+/** A history lock file older than this was left behind by a crashed process. */
+export const HISTORY_LOCK_STALE_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Settings (camelCase, in memory)
@@ -752,8 +757,58 @@ export class ConfigService {
     }
   }
 
+  /**
+   * Write the history atomically (temporary file, then rename), so a crash
+   * mid-write never leaves a truncated file that the next save would treat
+   * as empty and replace.
+   */
   private async writeRawHistory(history: unknown[]): Promise<void> {
-    await writeFile(this.historyFile, pythonJson(history), "utf8");
+    const temp = `${this.historyFile}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+    try {
+      await writeFile(temp, pythonJson(history), "utf8");
+      await rename(temp, this.historyFile);
+    } catch (error) {
+      await unlink(temp).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /**
+   * Run a read-modify-write of the history while holding a lock file, so the
+   * CLI and the desktop app (or two of either) never overwrite each other's
+   * entries. A lock older than HISTORY_LOCK_STALE_MS is treated as left
+   * behind by a crashed process.
+   * @throws ConfigError when the lock cannot be taken within HISTORY_LOCK_TIMEOUT_MS.
+   */
+  private async withHistoryLock<T>(fn: () => Promise<T>): Promise<T> {
+    await mkdir(this.configDir, { recursive: true });
+    const lockFile = `${this.historyFile}.lock`;
+    const deadline = Date.now() + HISTORY_LOCK_TIMEOUT_MS;
+    for (;;) {
+      try {
+        const handle = await open(lockFile, "wx");
+        await handle.close();
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        const info = await stat(lockFile).catch(() => undefined);
+        if (info && Date.now() - info.mtimeMs > HISTORY_LOCK_STALE_MS) {
+          await unlink(lockFile).catch(() => undefined);
+          continue;
+        }
+        if (Date.now() > deadline) {
+          throw new ConfigError(
+            `The rename history is in use by another TidyTitles process (lock file ${lockFile})`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    try {
+      return await fn();
+    } finally {
+      await unlink(lockFile).catch(() => undefined);
+    }
   }
 
   /**
@@ -762,12 +817,43 @@ export class ConfigService {
    */
   async saveHistory(operations: HistoryOperation[]): Promise<void> {
     await this.ensureDirs();
-    const history = await this.readRawHistory();
-    history.unshift({
-      timestamp: pythonIsoTimestamp(),
-      operations: operations.map(operationToDisk),
+    await this.withHistoryLock(async () => {
+      const history = await this.readRawHistory();
+      history.unshift({
+        timestamp: pythonIsoTimestamp(),
+        operations: operations.map(operationToDisk),
+      });
+      await this.writeRawHistory(history.slice(0, MAX_HISTORY_ENTRIES));
     });
-    await this.writeRawHistory(history.slice(0, MAX_HISTORY_ENTRIES));
+  }
+
+  /**
+   * Replace one history entry, found by its timestamp and operations, with
+   * `operations` (keeping its timestamp and position), or remove it when
+   * `operations` is empty. Other entries are untouched, even ones another
+   * process added since `entry` was read. Returns false when the entry is no
+   * longer in the history.
+   */
+  async replaceHistoryEntry(
+    entry: HistoryEntry,
+    operations: readonly HistoryOperation[],
+  ): Promise<boolean> {
+    if (!existsSync(this.historyFile)) return false;
+    return this.withHistoryLock(async () => {
+      const history = await this.readRawHistory();
+      const wanted = JSON.stringify(entry);
+      const index = history.findIndex((raw) => JSON.stringify(entryFromDisk(raw)) === wanted);
+      if (index < 0) return false;
+      if (operations.length === 0) history.splice(index, 1);
+      else {
+        history[index] = {
+          timestamp: entry.timestamp,
+          operations: operations.map(operationToDisk),
+        };
+      }
+      await this.writeRawHistory(history);
+      return true;
+    });
   }
 
   /** Rename history, most recent first. Returns [] when missing or unreadable. */
@@ -783,10 +869,13 @@ export class ConfigService {
 
   /** Remove the most recent history entry (after a successful undo). */
   async clearLastHistory(): Promise<void> {
-    const history = await this.readRawHistory();
-    if (history.length > 0) {
-      history.shift();
-      await this.writeRawHistory(history);
-    }
+    if (!existsSync(this.historyFile)) return;
+    await this.withHistoryLock(async () => {
+      const history = await this.readRawHistory();
+      if (history.length > 0) {
+        history.shift();
+        await this.writeRawHistory(history);
+      }
+    });
   }
 }

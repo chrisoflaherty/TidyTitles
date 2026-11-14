@@ -89,7 +89,9 @@ export function launcherScript(locations: CliLocations): string {
 
 /** PowerShell command for Windows users (no installer changes yet). */
 export function windowsCommand(locations: CliLocations): string {
-  const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  // PowerShell ends a single-quoted string on "'" and on the typographic
+  // single quotes U+2018 to U+201B; each is escaped by doubling it.
+  const q = (s: string) => `'${s.replace(/['\u2018-\u201B]/g, "$&$&")}'`;
   return (
     `function tidytitles { $env:ELECTRON_RUN_AS_NODE = '1'; ` +
     `& ${q(locations.executable)} ${q(locations.bundle)} @args; ` +

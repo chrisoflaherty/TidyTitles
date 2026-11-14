@@ -57,7 +57,12 @@ export async function undoCommand(ctx: CommandContext, options: UndoCommandOptio
     result.confirmed = true;
   }
 
-  const undo = await undoLastRename(config, { progressCallback: ui.progress.callback() });
+  // Undo exactly the entry that was listed and confirmed: if another rename
+  // was recorded meanwhile, this throws instead of reversing that one.
+  const undo = await undoLastRename(config, {
+    progressCallback: ui.progress.callback(),
+    expectedTimestamp: last!.timestamp,
+  });
   ui.progress.clear();
   Object.assign(result, {
     undone: undo.undone,

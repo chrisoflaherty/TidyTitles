@@ -127,4 +127,13 @@ describe("command-line tool installer", () => {
     expect(command).toContain("$env:ELECTRON_RUN_AS_NODE = '1'");
     expect(command).toContain("& 'C:\\Program Files\\TidyTitles\\TidyTitles.exe' 'C:\\Program Files\\TidyTitles\\resources\\cli\\tidytitles.mjs' @args");
   });
+
+  it("escapes every quote character PowerShell ends a single-quoted string on", () => {
+    // PowerShell treats the typographic quotes U+2018..U+201B like "'".
+    const command = windowsCommand({
+      executable: "C:\\Users\\O\u2019Brien\\TidyTitles.exe",
+      bundle: "C:\\Users\\it's\\cli.mjs",
+    });
+    expect(command).toContain("& 'C:\\Users\\O\u2019\u2019Brien\\TidyTitles.exe' 'C:\\Users\\it''s\\cli.mjs' @args");
+  });
 });

@@ -12,7 +12,7 @@ import {
   type SelectionCallback,
 } from "@tidytitles/core";
 import type { CommandContext, GlobalOptions } from "../context";
-import { CancelledError, EXIT_ERROR, EXIT_OK, raceAbort } from "../errors";
+import { CancelledError, EXIT_ERROR, EXIT_OK, raceAbort, uninterruptible } from "../errors";
 import { base, capitalize, destinationLabel, describeOption, describeSkip, formatCount, operationToJson } from "../format";
 import type { Ui } from "../ui";
 import { makeTable } from "../ui";
@@ -250,11 +250,13 @@ export async function renameCommand(
     result.confirmed = true;
   }
 
-  // Renaming is not interrupted halfway: Ctrl+C takes effect once it is done
-  // and the history (for undo) has been saved.
-  await session.execute(operations, progress.callback());
-  progress.clear();
-  result.historySaved = await session.saveHistory(operations);
+  // Renaming is not interrupted halfway, not even by a second Ctrl+C: Ctrl+C
+  // takes effect once it is done and the history (for undo) has been saved.
+  result.historySaved = await uninterruptible(async () => {
+    await session.execute(operations, progress.callback());
+    progress.clear();
+    return session.saveHistory(operations);
+  });
 
   if (!json) showResults(ui, operations);
   if (signal?.aborted) throw new CancelledError();

@@ -2,7 +2,7 @@
 /** Entry point: run the CLI with the real process streams, environment, and prompts. */
 
 import path from "node:path";
-import { EXIT_CANCELLED } from "./errors";
+import { EXIT_CANCELLED, isUninterruptible } from "./errors";
 import { runCli } from "./program";
 import { createRealPrompter } from "./prompts";
 
@@ -12,10 +12,17 @@ const argv = process.argv.slice(2);
 if (argv.includes("--no-color")) process.env.NO_COLOR = "1";
 
 // First Ctrl+C: cancel cleanly (exit 130 once the current step stops).
-// Second Ctrl+C: exit at once.
+// Second Ctrl+C: exit at once, except while files are being renamed: exiting
+// then would leave renamed files with no history to undo them.
 const controller = new AbortController();
 process.on("SIGINT", () => {
-  if (controller.signal.aborted) process.exit(EXIT_CANCELLED);
+  if (controller.signal.aborted) {
+    if (isUninterruptible()) {
+      process.stderr.write("\nStill renaming. Stopping once the history for undo is saved.\n");
+      return;
+    }
+    process.exit(EXIT_CANCELLED);
+  }
   controller.abort();
 });
 

@@ -65,6 +65,28 @@ describe("undo", () => {
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual([]);
   });
 
+  it("undoes nothing when another rename is recorded while the prompt is open", async () => {
+    const { a } = await seedHistory();
+    const other = await touch(sb.media, "Other (2003).mkv");
+    const config = new ConfigService({ configDir: sb.configDir, cacheDir: path.join(sb.configDir, "cache"), env: {} });
+    const prompter = new FakePrompter([
+      async () => {
+        // The desktop app (or another terminal) renames a file meanwhile.
+        await config.saveHistory([
+          { source: path.join(sb.media, "other.old.mkv"), destination: other, associatedFiles: [] },
+        ]);
+        return true;
+      },
+    ]);
+    const r = await undo([], { prompter });
+
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("history changed");
+    expect(existsSync(other)).toBe(true);
+    expect(existsSync(a.destination)).toBe(true);
+    expect(await config.loadHistory()).toHaveLength(2);
+  });
+
   it("does nothing when the user declines", async () => {
     await seedHistory();
     const r = await undo([], { prompter: new FakePrompter([false]) });

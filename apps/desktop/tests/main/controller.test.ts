@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { ConfigService } from "@tidytitles/core";
 import { createConfigService } from "../../src/main/configDir";
 import { toEditableSettings } from "../../src/main/controller";
 import { EVENTS, type AppState } from "../../src/shared/ipc";
@@ -270,6 +271,26 @@ describe("AppController: rename and undo", () => {
     expect(state.plan).toBe("none");
     expect(state.lastRename).toBeNull();
     expect(await h.controller.undo()).toMatchObject({ kind: "done", historyFound: false });
+  });
+
+  it("does not undo a newer rename recorded elsewhere than the one it showed", async () => {
+    h = await createHarness(KEYS_TOML);
+    await planned(h);
+    await h.controller.rename();
+    const shown = h.controller.getState().lastRename;
+    // The CLI records another rename while the app shows the old one.
+    await new Promise((r) => setTimeout(r, 5));
+    const cliFile = await h.touch("Renamed By CLI.mkv");
+    const cli = new ConfigService({ configDir: h.config.configDir, cacheDir: h.config.cacheDir, env: {} });
+    await cli.saveHistory([{ source: path.join(h.media, "cli.old.mkv"), destination: cliFile, associatedFiles: [] }]);
+
+    const outcome = await h.controller.undo();
+    expect(outcome.kind).toBe("error");
+    expect(existsSync(cliFile)).toBe(true);
+    expect(existsSync(path.join(h.media, "Inception (2010).mkv"))).toBe(true);
+    // The app now shows the entry an undo would reverse.
+    expect(h.controller.getState().lastRename).not.toEqual(shown);
+    expect(h.controller.getState().lastRename).toMatchObject({ operations: 1, files: 1 });
   });
 
   it("refuses to rename without a plan", async () => {

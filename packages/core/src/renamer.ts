@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, lstatSync, statSync } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -69,6 +69,23 @@ export function isCaseOnlyRename(source: string, destination: string): boolean {
     return false;
   }
 }
+
+/**
+ * A stable identity (device and inode) for the file or link at `p`, or
+ * undefined when nothing is there. Links are not followed: renaming a link
+ * moves the link, and overwriting one does not touch its target.
+ */
+function fileIdentity(p: string): string | undefined {
+  try {
+    const s = lstatSync(p, { bigint: true });
+    return `${s.dev}:${s.ino}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Skip message for an operation whose destination is another file of the same batch. */
+export const BATCH_OVERWRITE_MESSAGE = "Would overwrite another file in this batch";
 
 /** Handles file renaming operations. */
 export class FileRenamer {
@@ -183,21 +200,48 @@ export class FileRenamer {
 
   /**
    * Rename associated files. Returns error messages ("name: reason"), empty
-   * when all succeeded.
+   * when all succeeded, and the files that were actually moved.
    */
   private async renameAssociatedFiles(
     associated: AssociatedFileRename[],
-  ): Promise<string[]> {
+    batchFiles: Set<string>,
+  ): Promise<{ errors: string[]; moved: AssociatedFileRename[] }> {
     const errors: string[] = [];
+    const moved: AssociatedFileRename[] = [];
     for (const assoc of associated) {
       try {
+        if (this.clobbersBatchFile(assoc.source, assoc.destination, batchFiles)) {
+          throw new RenameError(BATCH_OVERWRITE_MESSAGE);
+        }
         await this.rename(assoc.source, assoc.destination);
+        this.rememberMoved(assoc.destination, batchFiles);
+        moved.push(assoc);
       } catch (error) {
         if (!(error instanceof RenameError)) throw error;
         errors.push(`${path.basename(assoc.source)}: ${error.message}`);
       }
     }
-    return errors;
+    return { errors, moved };
+  }
+
+  /**
+   * True when overwriting is on and `destination` is a different file that
+   * this batch moves (still at its old name, or already at its new one).
+   * Overwriting it would destroy a file the user is renaming, not one they
+   * agreed to replace. (With overwrite off, `rename` refuses any existing
+   * destination anyway.)
+   */
+  private clobbersBatchFile(source: string, destination: string, batchFiles: Set<string>): boolean {
+    if (!this.overwrite) return false;
+    const target = fileIdentity(destination);
+    return target !== undefined && target !== fileIdentity(source) && batchFiles.has(target);
+  }
+
+  /** Track a file this batch moved (a cross-device move gives it a new identity). */
+  private rememberMoved(destination: string, batchFiles: Set<string>): void {
+    if (this.dryRun) return;
+    const id = fileIdentity(destination);
+    if (id !== undefined) batchFiles.add(id);
   }
 
   /**
@@ -207,8 +251,12 @@ export class FileRenamer {
    * Only "pending" operations run. Each one ends as:
    * - "skipped" with "Source and destination are the same"
    * - "skipped" with "Would overwrite existing file" (overwrite off)
+   * - "skipped" with BATCH_OVERWRITE_MESSAGE (overwrite on, but the
+   *   destination is another file this batch moves)
    * - "completed" (errorMessage "Associated files: ..." if some associated
-   *   files failed; the main file still counts as renamed)
+   *   files failed; the main file still counts as renamed, and
+   *   `associatedFiles` is narrowed to the files that actually moved, so
+   *   history and undo never touch the others)
    * - "failed" with the RenameError message
    */
   async execute(
@@ -216,6 +264,17 @@ export class FileRenamer {
     progressCallback?: ProgressCallback,
   ): Promise<RenameOperation[]> {
     const total = operations.length;
+
+    // Every file this batch is going to move, so no operation overwrites
+    // another one's source (a swap or chain of names) or result.
+    const batchFiles = new Set<string>();
+    for (const op of operations) {
+      if (op.status !== "pending") continue;
+      for (const p of [op.source, ...op.associatedFiles.map((a) => a.source)]) {
+        const id = fileIdentity(p);
+        if (id !== undefined) batchFiles.add(id);
+      }
+    }
 
     for (const [i, op] of operations.entries()) {
       progressCallback?.(i + 1, total, `Renaming: ${path.basename(op.source)}`);
@@ -238,13 +297,24 @@ export class FileRenamer {
         continue;
       }
 
+      if (this.clobbersBatchFile(op.source, op.destination, batchFiles)) {
+        op.status = "skipped";
+        op.errorMessage = BATCH_OVERWRITE_MESSAGE;
+        continue;
+      }
+
       try {
         await this.rename(op.source, op.destination);
+        this.rememberMoved(op.destination, batchFiles);
 
         if (op.associatedFiles.length > 0) {
-          const assocErrors = await this.renameAssociatedFiles(op.associatedFiles);
-          if (assocErrors.length > 0) {
-            op.errorMessage = `Associated files: ${assocErrors.join("; ")}`;
+          const { errors, moved } = await this.renameAssociatedFiles(
+            op.associatedFiles,
+            batchFiles,
+          );
+          if (errors.length > 0) {
+            op.errorMessage = `Associated files: ${errors.join("; ")}`;
+            op.associatedFiles = moved;
           }
         }
 

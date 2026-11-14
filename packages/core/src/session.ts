@@ -28,7 +28,7 @@ import {
 } from "./config";
 import { isConflictStrategy, type ConflictStrategy } from "./conflictResolution";
 import { CoverArtDownloader } from "./coverArt";
-import { ConfigError, RenameError } from "./errors";
+import { ConfigError, HistoryChangedError, RenameError } from "./errors";
 import type { MediaType, RenameOperation } from "./models";
 import type { MusicParser } from "./musicParser";
 import type { FilenameParser } from "./parser";
@@ -440,6 +440,13 @@ export interface UndoOptions {
   progressCallback?: ProgressCallback;
   /** Renamer used to move files back. Default: a new FileRenamer (no overwrite). */
   renamer?: FileRenamer;
+  /**
+   * `undoLastRename` only: the timestamp of the history entry the user
+   * confirmed. When the most recent entry has a different timestamp (another
+   * process recorded a rename since), nothing is moved and
+   * HistoryChangedError is thrown.
+   */
+  expectedTimestamp?: string;
 }
 
 interface UndoItemInternal extends UndoItemResult {
@@ -516,26 +523,37 @@ export async function undoHistoryOperations(
  * Undo the most recent history entry and update the history: the entry is
  * removed when everything was undone; when some moves failed, it is
  * replaced by an entry holding only what is still renamed, so undo can be
- * retried; when nothing could be moved at all, it is left as it was.
+ * retried; when nothing could be moved at all, it is left as it was. Only
+ * that entry is changed, even if another process records a rename while
+ * the undo runs.
+ * @throws HistoryChangedError when `expectedTimestamp` is given and the most
+ *   recent entry is a different one.
  */
 export async function undoLastRename(
   config: ConfigService,
   options: UndoOptions = {},
 ): Promise<UndoResult> {
-  const operations = await config.getLastOperations();
-  if (operations.length === 0) {
+  const entry = (await config.loadHistory())[0];
+  if (
+    options.expectedTimestamp !== undefined &&
+    (!entry || entry.timestamp !== options.expectedTimestamp)
+  ) {
+    throw new HistoryChangedError(
+      "The rename history changed since it was shown (another rename was recorded or undone). Review the last rename and try again.",
+    );
+  }
+  if (!entry || entry.operations.length === 0) {
     return { historyFound: false, items: [], undone: 0, missing: 0, failed: 0 };
   }
 
-  const items = await undoItems(operations, options);
+  const items = await undoItems(entry.operations, options);
   const failed = items.filter((i) => i.status === "failed");
   if (failed.length === 0) {
-    await config.clearLastHistory();
+    await config.replaceHistoryEntry(entry, []);
   } else if (items.some((i) => i.moved)) {
-    await config.clearLastHistory();
     // History is undone last-first; store the remainder in the original order.
     const remaining = failed.map((i) => i.remaining!).reverse();
-    await config.saveHistory(remaining);
+    await config.replaceHistoryEntry(entry, remaining);
   }
   return toUndoResult(items);
 }

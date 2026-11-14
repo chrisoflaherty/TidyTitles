@@ -45,6 +45,26 @@ export function isPromptInterrupt(error: unknown): boolean {
   );
 }
 
+let uninterruptibleDepth = 0;
+
+/** True while a step that a second Ctrl+C must not cut short is running. */
+export function isUninterruptible(): boolean {
+  return uninterruptibleDepth > 0;
+}
+
+/**
+ * Run `fn` so that a second Ctrl+C does not exit the process halfway
+ * (renaming files and then saving the history that undo needs).
+ */
+export async function uninterruptible<T>(fn: () => Promise<T>): Promise<T> {
+  uninterruptibleDepth += 1;
+  try {
+    return await fn();
+  } finally {
+    uninterruptibleDepth -= 1;
+  }
+}
+
 /** Reject with CancelledError as soon as `signal` aborts. */
 export function raceAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (!signal) return promise;

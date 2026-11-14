@@ -53,7 +53,12 @@ import {
 import { createMusicParser, isMusicFile, type MusicParser } from "./musicParser";
 import { createParser, type FilenameParser } from "./parser";
 import type { MovieProvider, MusicProvider, TVProvider } from "./providers/base";
-import { FileRenamer, isCaseOnlyRename, type ProgressCallback } from "./renamer";
+import {
+  BATCH_OVERWRITE_MESSAGE,
+  FileRenamer,
+  isCaseOnlyRename,
+  type ProgressCallback,
+} from "./renamer";
 import { scanDirectory, type ScanOptions } from "./scan";
 import { TemplateEngine, type TemplateContext } from "./template";
 
@@ -119,7 +124,8 @@ export interface PlannedMediaFile extends MediaFile {
  * - "template_error": the template could not be rendered; see `errorMessage`
  * - "duplicate_destination": an earlier file in the batch has the same destination
  * - "same_path": the file already has its target name (set by `executeRename`)
- * - "would_overwrite": the destination exists and overwriting is off (set by `executeRename`)
+ * - "would_overwrite": the destination exists and overwriting is off, or it is
+ *   another file in this batch (set by `executeRename`)
  */
 export type SkipReason =
   | "no_match"
@@ -243,6 +249,7 @@ export function isNullProvider(provider: unknown): boolean {
 const RENAMER_SKIP_REASONS: Record<string, SkipReason> = {
   "Source and destination are the same": "same_path",
   "Would overwrite existing file": "would_overwrite",
+  [BATCH_OVERWRITE_MESSAGE]: "would_overwrite",
 };
 
 export const NO_MATCH_MESSAGE = "No metadata match found";

@@ -28,3 +28,10 @@ export class TemplateError extends FileRenamerError {}
 
 /** Configuration error. */
 export class ConfigError extends FileRenamerError {}
+
+/**
+ * The rename history changed between showing an entry and acting on it (for
+ * example, another process recorded a newer rename), so the confirmed entry
+ * is no longer the one an undo would reverse.
+ */
+export class HistoryChangedError extends ConfigError {}

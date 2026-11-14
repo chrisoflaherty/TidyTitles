@@ -12,6 +12,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import {
   ConfigError,
+  HistoryChangedError,
   RenameSession,
   TemplateEngine,
   availableProviderChoices,
@@ -523,9 +524,12 @@ export class AppController {
     this.setStatus("Undoing the last rename…");
     this.emitState();
     try {
+      // Undo only the entry the confirmation showed; the CLI may have
+      // recorded a newer one since.
       const result = await undoLastRename(this.config, {
         progressCallback: (current, total, message) =>
           this.emitProgress({ phase: "undo", current, total, message }),
+        ...(this.lastRename ? { expectedTimestamp: this.lastRename.timestamp } : {}),
       });
 
       // Put the original names back into the list.
@@ -565,6 +569,7 @@ export class AppController {
         })),
       };
     } catch (error) {
+      if (error instanceof HistoryChangedError) await this.refreshLastRename().catch(() => undefined);
       const message = errorMessage(error);
       this.setStatus(`Undo failed: ${message}`, "error");
       return { kind: "error", message };

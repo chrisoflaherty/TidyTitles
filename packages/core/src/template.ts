@@ -302,17 +302,22 @@ export class TemplateEngine {
   /**
    * Remove invalid characters from each path component, preserving "/" as
    * the directory separator. Empty components (leading, trailing, or doubled
-   * slashes) are dropped. Backslashes are always removed, never treated as
-   * separators, so output is the same on every OS.
+   * slashes) are dropped, and so are components made only of dots and
+   * spaces (".", ".."), so neither a template nor metadata (a tag such as
+   * artist "../..") can point outside the destination folder. Backslashes
+   * are always removed, never treated as separators, so output is the same
+   * on every OS.
    */
   cleanPath(path: string): string {
+    const isDotsOnly = (part: string) => /^[.\s]*$/u.test(part) && part.includes(".");
     if (!path.includes("/")) {
-      return path.replace(TemplateEngine.INVALID_CHARS, "");
+      const cleaned = path.replace(TemplateEngine.INVALID_CHARS, "");
+      return isDotsOnly(cleaned) ? "" : cleaned;
     }
     return path
       .split("/")
       .map((part) => part.replace(TemplateEngine.INVALID_CHARS, ""))
-      .filter((part) => part)
+      .filter((part) => part && !isDotsOnly(part))
       .join("/");
   }
 

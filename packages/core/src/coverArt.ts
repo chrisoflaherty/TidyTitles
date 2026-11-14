@@ -158,6 +158,8 @@ export class CoverArtDownloader {
       let finalPath = destPath;
       if (pathSuffix(finalPath).toLowerCase() !== ext) {
         finalPath = withSuffix(finalPath, ext);
+        // The new name gets the same no-overwrite protection as the requested one.
+        if (existsSync(finalPath) && !this.overwrite) return finalPath;
       }
 
       await writeFile(finalPath, body);
