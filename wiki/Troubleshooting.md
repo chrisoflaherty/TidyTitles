@@ -172,7 +172,7 @@ When standard input is not a terminal (in a script, a cron job, or with input pi
 
 ### Music shows "Unverified"
 
-The new name comes from the file's own tags (or, without tags, from its filename) and MusicBrainz could not confirm them, or was not asked (provider set to TMDB or TVDB). Check these names before renaming. Tags are confirmed when MusicBrainz has a recording with the same artist and title (ignoring case, punctuation, a leading "The", and "(feat. ...)").
+The new name comes from the file's own tags (or, without tags, from its filename) and MusicBrainz could not confirm them, or was not asked (provider set to TMDB or TVDB). Check these names before renaming. Tags are confirmed when MusicBrainz has a recording with the same artist and title (ignoring case, punctuation, a leading "The", and "(feat. ...)"). Several files from one album are first checked against that album's track list on MusicBrainz; a file the list does not confirm is then searched on its own.
 
 ## Files and renaming
 

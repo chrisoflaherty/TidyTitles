@@ -299,7 +299,7 @@ Deleting `history.json` is safe; you just cannot undo earlier renames any more.
 
 ## Cache
 
-Responses from TMDB, TVDB, and MusicBrainz are cached on disk for **24 hours**, one small JSON file per request, so looking up the same files again is fast and makes fewer requests. The cache format is shared with the Python version. Deleting the cache folder is always safe:
+Responses from TMDB, TVDB, and MusicBrainz are cached on disk for **24 hours**, one small JSON file per request, so looking up the same files again is fast and makes fewer requests. Expired entries are removed in the background, at most once a day. The cache format is shared with the Python version. Deleting the cache folder is always safe:
 
 ```bash
 rm -rf ~/Library/Caches/file-renamer      # macOS

@@ -18,11 +18,13 @@ import type { FetchFn, MusicProvider } from "./base";
 import {
   buildUrl,
   DEFAULT_TIMEOUT_MS,
+  InflightRequests,
   isRecord,
   optionalArray,
   optionalNumber,
   optionalString,
   readJson,
+  requestKey,
   requireObject,
   sendRequest,
   truthy,
@@ -60,6 +62,8 @@ export class MusicBrainzClient implements MusicProvider {
   private lastRequestTime = 0;
   /** Serializes requests so the rate limit holds under concurrent calls. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Identical requests in flight at the same time share one queue slot. */
+  private readonly inflight = new InflightRequests<JsonObject>();
 
   constructor(options: MusicBrainzClientOptions = {}) {
     this.cache = options.cache;
@@ -68,8 +72,16 @@ export class MusicBrainzClient implements MusicProvider {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  /** Make a rate-limited API request (one at a time). */
+  /**
+   * Make a rate-limited API request (one at a time). There is deliberately
+   * no retry here: a 503 means we are over the limit, and retrying would
+   * only keep us there.
+   */
   private request(endpoint: string, params: QueryParams): Promise<JsonObject> {
+    return this.inflight.run(requestKey(endpoint, params), () => this.enqueue(endpoint, params));
+  }
+
+  private enqueue(endpoint: string, params: QueryParams): Promise<JsonObject> {
     const run = this.queue.then(
       () => this.requestNow(endpoint, params),
       () => this.requestNow(endpoint, params),
@@ -167,6 +179,19 @@ export class MusicBrainzClient implements MusicProvider {
     }
   }
 
+  /**
+   * The tracks of a release, in order, as `Track` objects (title and artist
+   * from each track's recording, as `searchRecording` returns them). Uses
+   * the same request as `getRelease`, so the two share the cache. Unlike
+   * `getRelease`, provider errors are thrown.
+   */
+  async getReleaseTracks(releaseId: string): Promise<Track[]> {
+    const data = await this.request(`/release/${releaseId}`, {
+      inc: "artist-credits+recordings",
+    });
+    return parseReleaseTracks(data);
+  }
+
   /** Get release details by MusicBrainz ID, or `undefined` on any provider error. */
   async getRelease(releaseId: string): Promise<Album | undefined> {
     try {
@@ -217,6 +242,40 @@ export function parseRecording(data: JsonObject): Track {
     trackNumber,
     durationMs: optionalNumber(data.length),
   });
+}
+
+/**
+ * Parse the media of a release lookup (`inc=artist-credits+recordings`)
+ * into tracks. Each track takes the title and first artist credit of its
+ * recording, falling back to the track's own, then the release's credit.
+ */
+export function parseReleaseTracks(data: JsonObject): Track[] {
+  const album = parseRelease(data);
+  const tracks: Track[] = [];
+  for (const rawMedium of optionalArray(data.media, LABEL, "media")) {
+    const medium = asObject(rawMedium);
+    for (const rawTrack of optionalArray(medium.tracks, LABEL, "tracks")) {
+      const track = asObject(rawTrack);
+      const recording = asObject(track.recording);
+      const creditSource = truthy(recording["artist-credit"])
+        ? recording
+        : truthy(track["artist-credit"])
+          ? track
+          : data;
+      tracks.push(
+        createTrack({
+          id: optionalString(recording.id) ?? optionalString(track.id) ?? "",
+          title: optionalString(recording.title) ?? optionalString(track.title) ?? "",
+          artist: firstCreditedArtist(creditSource, true),
+          album,
+          trackNumber: optionalNumber(track.position),
+          discNumber: optionalNumber(medium.position),
+          durationMs: optionalNumber(recording.length) ?? optionalNumber(track.length),
+        }),
+      );
+    }
+  }
+  return tracks;
 }
 
 /**

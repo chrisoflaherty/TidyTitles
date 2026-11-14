@@ -4,7 +4,7 @@ import { vi } from "vitest";
 import type { FetchFn } from "../../src/providers/base";
 
 export type MockReply =
-  | { status?: number; json?: unknown; body?: string }
+  | { status?: number; json?: unknown; body?: string; headers?: Record<string, string> }
   | Error
   | ((request: RecordedRequest) => MockReply | Promise<MockReply>);
 
@@ -57,7 +57,7 @@ export function mockFetch(routes: Route[]) {
     const body = reply.body ?? (reply.json === undefined ? "" : JSON.stringify(reply.json));
     return new Response(body, {
       status: reply.status ?? 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...reply.headers },
     });
   };
 

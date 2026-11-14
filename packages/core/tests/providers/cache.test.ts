@@ -1,9 +1,20 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APICache,
+  CLEANUP_STAMP_FILE,
   cacheKey,
   DEFAULT_CACHE_TTL_MS,
   formatPythonIsoDateTime,
@@ -217,5 +228,100 @@ describe("APICache", () => {
     const cache = new APICache({ cacheDir: dir });
     expect(cache.clear()).toBe(0);
     expect(cache.clearExpired()).toBe(0);
+  });
+});
+
+describe("APICache.scheduleCleanup", () => {
+  /** An entry written `ageMs` ago that expired `expiredMs` ago (negative: still valid). */
+  function entry(name: string, expiredMs: number, ageMs = 2 * HOUR): string {
+    const file = path.join(dir, `${name}.json`);
+    writeFileSync(
+      file,
+      JSON.stringify({ response: name, expires_at: formatPythonIsoDateTime(Date.now() - expiredMs) }),
+    );
+    const when = new Date(Date.now() - ageMs);
+    utimesSync(file, when, when);
+    return file;
+  }
+  const stamp = () => path.join(dir, CLEANUP_STAMP_FILE);
+
+  it("removes expired entries in batches, keeps fresh ones, and records the run", async () => {
+    for (let i = 0; i < 7; i++) entry(`old${i}`, HOUR);
+    entry("fresh", -HOUR);
+    const cache = new APICache({ cacheDir: dir });
+
+    expect(await cache.scheduleCleanup({ delayMs: 0, batchSize: 2 })).toBe(7);
+    expect(entryFiles()).toEqual(["fresh.json"]);
+    expect(existsSync(stamp())).toBe(true);
+  });
+
+  it("does not delay the caller: nothing is removed synchronously", () => {
+    entry("old", HOUR);
+    void new APICache({ cacheDir: dir }).scheduleCleanup({ delayMs: 0 });
+    expect(entryFiles()).toEqual(["old.json"]);
+  });
+
+  it("runs at most once per interval, across cache instances", async () => {
+    const cache = new APICache({ cacheDir: dir });
+    expect(await cache.scheduleCleanup({ delayMs: 0 })).toBe(0);
+    entry("old", HOUR);
+    expect(await new APICache({ cacheDir: dir }).scheduleCleanup({ delayMs: 0 })).toBeUndefined();
+    expect(entryFiles()).toEqual(["old.json"]);
+
+    // A day later it runs again.
+    const yesterday = new Date(Date.now() - 25 * HOUR);
+    utimesSync(stamp(), yesterday, yesterday);
+    expect(await cache.scheduleCleanup({ delayMs: 0 })).toBe(1);
+    expect(statSync(stamp()).mtimeMs).toBeGreaterThan(Date.now() - HOUR);
+  });
+
+  it("does not start a second run while one is in progress", async () => {
+    entry("old", HOUR);
+    const cache = new APICache({ cacheDir: dir });
+    const first = cache.scheduleCleanup({ delayMs: 0 });
+    expect(await cache.scheduleCleanup({ delayMs: 0 })).toBeUndefined();
+    expect(await first).toBe(1);
+  });
+
+  it("removes unreadable entries only when they are old", async () => {
+    writeFileSync(path.join(dir, "partial.json"), "{");
+    const old = path.join(dir, "corrupt.json");
+    writeFileSync(old, "{");
+    const when = new Date(Date.now() - 2 * HOUR);
+    utimesSync(old, when, when);
+    mkdirSync(path.join(dir, "folder.json"));
+    writeFileSync(path.join(dir, "notes.txt"), "keep");
+
+    expect(await new APICache({ cacheDir: dir }).scheduleCleanup({ delayMs: 0 })).toBe(1);
+    expect(entryFiles().sort()).toEqual(["folder.json", "partial.json"]);
+    expect(existsSync(path.join(dir, "notes.txt"))).toBe(true);
+  });
+
+  it("never throws, even when the directory disappears", async () => {
+    const cache = new APICache({ cacheDir: dir });
+    rmSync(dir, { recursive: true, force: true });
+    expect(await cache.scheduleCleanup({ delayMs: 0 })).toBeUndefined();
+  });
+
+  it("uses unref'd timers, so it cannot keep a process alive", () => {
+    const unref = vi.fn();
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((() => ({ unref })) as unknown) as typeof setTimeout);
+    try {
+      void new APICache({ cacheDir: dir }).scheduleCleanup();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]![1]).toBe(500);
+      expect(unref).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps the entry format the Python app reads (the stamp is not a .json file)", async () => {
+    const cache = new APICache({ cacheDir: dir });
+    cache.set("tmdb", "/search/movie", { query: "Alien" }, { results: [] });
+    await cache.scheduleCleanup({ delayMs: 0 });
+    expect(CLEANUP_STAMP_FILE.endsWith(".json")).toBe(false);
+    expect(cache.get("tmdb", "/search/movie", { query: "Alien" })).toEqual({ results: [] });
+    expect(entryFiles()).toEqual([`${cacheKey("tmdb", "/search/movie", { query: "Alien" })}.json`]);
   });
 });

@@ -4,12 +4,14 @@ import path from "node:path";
 import { AuthenticationError, ProviderError } from "@tidytitles/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CancelledError } from "../src/errors";
+import { runCli } from "../src/program";
 import {
   BB_FILE,
   FakeMovieProvider,
   FakePrompter,
   FakeTVProvider,
   MATRIX_FILE,
+  OutputBuffer,
   breakingBad,
   createSandbox,
   matrix,
@@ -217,6 +219,48 @@ describe("rename", () => {
     const deep = await rename([sb.media, "-r", "-y"]);
     expect(deep.code).toBe(0);
     expect(await readdir(path.join(sb.media, "sub"))).toEqual(["The Matrix (1999).mkv"]);
+  });
+
+  describe("progress and prompts", () => {
+    it("never draws progress while a selection prompt is open", async () => {
+      // File 1 has one show; its episode arrives while the question for
+      // file 2 (two shows) is on screen.
+      const other = { ...breakingBad, id: 2, title: "Zebra Show" };
+      const remake = { ...breakingBad, id: 3, title: "Zebra Show (2030)" };
+      const tv = new FakeTVProvider({ "Breaking Bad": [breakingBad], "Zebra Show": [other, remake] });
+      tv.getEpisode = async (showId: number) => {
+        if (showId === breakingBad.id) await new Promise((resolve) => setTimeout(resolve, 20));
+        return { ...pilot, show: showId === breakingBad.id ? breakingBad : other };
+      };
+      await touch(sb.media, "Breaking.Bad.S01E01.mkv");
+      await touch(sb.media, "Zebra.Show.S01E01.mkv");
+
+      const stderr = new OutputBuffer();
+      const writtenDuringPrompt: string[] = [];
+      const prompter = new FakePrompter([], [
+        async () => {
+          const before = stderr.text.length;
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          writtenDuringPrompt.push(stderr.text.slice(before));
+          return 0;
+        },
+      ]);
+      const code = await runCli(["rename", sb.media, "-n", "--config-dir", sb.configDir], {
+        prompter,
+        env: {},
+        stdout: new OutputBuffer(),
+        stderr,
+        stdinIsTTY: true,
+        stderrIsTTY: true,
+        session: { providers: { movieProvider: movies(), tvProvider: tv } },
+      });
+
+      expect(code).toBe(0);
+      expect(prompter.calls.map((c) => c.kind)).toEqual(["select"]);
+      expect(writtenDuringPrompt).toEqual([""]);
+      // Progress resumes after the prompt and counts up to the total.
+      expect(strip(stderr.text)).toContain("[2/2] Fetching:");
+    });
   });
 
   describe("--type / -t", () => {

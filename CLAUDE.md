@@ -38,6 +38,9 @@ npm run dist                   # Installers: DMG (macOS), NSIS (Windows), AppIma
 
 # Parser parity against Python guessit (needs python3 with guessit; run inside packages/core)
 npx tsx scripts/parser-parity.ts
+
+# Lookup benchmark against simulated APIs (no network; run inside packages/core)
+npx --no-install tsx scripts/bench-lookups.ts
 ```
 
 `@tidytitles/core` is consumed from its built `dist/`, so rebuild core after changing it before running the CLI or desktop app.
@@ -56,10 +59,10 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `parser.ts` - Hand-written filename parser that reproduces guessit's output, plus a regex fallback
 - `musicParser.ts` - Tag reading with `music-metadata`, with filename fallback
 - `template.ts` - Placeholder-based filename generation (`{title} ({year})`)
-- `providers/` - `tmdb.ts`, `tvdb.ts`, `musicbrainz.ts` (fetch-based, implement the interfaces in `base.ts`), `cache.ts`
+- `providers/` - `tmdb.ts`, `tvdb.ts`, `musicbrainz.ts` (fetch-based, implement the interfaces in `base.ts`), `cache.ts`. Identical requests in flight share one call; TMDB/TVDB retry a 429 a bounded number of times, MusicBrainz never retries
 - `renamer.ts`, `associatedFiles.ts`, `conflictResolution.ts`, `coverArt.ts` - File operations
 - `config.ts` - `ConfigService`: zod-validated settings in TOML, plus rename history
-- `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo
+- `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo. Lookups run concurrently (`concurrency.ts`); questions to the selection callback and progress stay one at a time, in file order
 - `session.ts` - Wiring shared by both front ends: providers from settings, `RenameSession`, history, undo
 - `scan.ts` - Media file discovery
 

@@ -118,7 +118,7 @@ export class FakeMusicProvider implements MusicProvider {
     this.calls.push([title, artist, album]);
     return resolve(this.recordings[title] ?? [], [title]);
   }
-  async searchRelease(): Promise<Album[]> {
+  async searchRelease(_album?: string, _artist?: string): Promise<Album[]> {
     return [];
   }
   async getRecording(): Promise<Track | undefined> {

@@ -274,7 +274,8 @@ describe("TVDBClient.getShow", () => {
   it("returns undefined when the request fails", async () => {
     for (const status of [404, 429, 500]) {
       const { fetch } = mockFetch([LOGIN, { path: /\/v4\/series\//, reply: { status } }]);
-      expect(await new TVDBClient({ apiKey: API_KEY, fetch }).getShow(1)).toBeUndefined();
+      const client = new TVDBClient({ apiKey: API_KEY, fetch, rateLimitRetry: { retries: 0 } });
+      expect(await client.getShow(1)).toBeUndefined();
     }
   });
 
@@ -330,7 +331,11 @@ describe("TVDBClient.getEpisode", () => {
 
 describe("TVDBClient error mapping", () => {
   const client = (reply: Route["reply"]) =>
-    new TVDBClient({ apiKey: API_KEY, fetch: mockFetch([LOGIN, { path: "/v4/search", reply }]).fetch });
+    new TVDBClient({
+      apiKey: API_KEY,
+      fetch: mockFetch([LOGIN, { path: "/v4/search", reply }]).fetch,
+      rateLimitRetry: { retries: 0 },
+    });
 
   it("maps 429 to RateLimitError", async () => {
     await expect(client({ status: 429 }).searchShow("x")).rejects.toThrow(RateLimitError);

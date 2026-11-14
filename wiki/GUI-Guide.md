@@ -254,7 +254,7 @@ View → Actual Size, Zoom In, and Zoom Out change the text size.
 ## Tips
 
 - **A file matched the wrong title.** Fetch again and choose the right match when asked. If you were not asked (only one result was found), the filename probably misleads the search: rename the file by hand to something like `Title (Year).mkv` and fetch again. Setting **Type** to Movies or TV Shows also helps when Auto-detect guesses wrong.
-- **Large collections.** API responses are cached for 24 hours, so fetching the same files again is fast. MusicBrainz allows one request per second, so large music batches take a while.
+- **Large collections.** API responses are cached for 24 hours, so fetching the same files again is fast. Movie and TV lookups run several at a time. MusicBrainz allows one request per second: tracks of one album with complete tags are checked together in about two requests, but music without complete tags needs a request per file, so large batches of it take a while.
 - **Trying things out safely.** Fetching never changes anything on disk. Only **Rename** does, and **Undo** reverts it.
 - **Using another settings folder** (for example to test): start the app with the `TIDYTITLES_CONFIG_DIR` environment variable set. See [Configuration](Configuration.md#using-a-different-settings-folder).
 

@@ -12,15 +12,19 @@ import {
   optionalString,
   parseIsoDate,
   pyInt,
+  InflightRequests,
   readJson,
+  requestKey,
   requireKey,
   requireObject,
   requireString,
   sendRequest,
+  sendWithRateLimitRetry,
   truthy,
   yearPrefix,
   type JsonObject,
   type QueryParams,
+  type RateLimitRetryOptions,
   type ResponseCache,
 } from "./util";
 
@@ -37,6 +41,8 @@ export interface TVDBClientOptions {
   fetch?: FetchFn;
   /** Per-request timeout in milliseconds (default 30,000). */
   timeoutMs?: number;
+  /** Retries for HTTP 429 (default: 2 retries, honoring `Retry-After` up to 10 s). */
+  rateLimitRetry?: RateLimitRetryOptions;
 }
 
 /** Client for TheTVDB API v4. */
@@ -49,6 +55,8 @@ export class TVDBClient implements TVProvider {
   private readonly cache?: ResponseCache;
   private readonly fetchFn: FetchFn;
   private readonly timeoutMs: number;
+  private readonly rateLimitRetry: RateLimitRetryOptions;
+  private readonly inflight = new InflightRequests<JsonObject>();
   private token?: string;
   private pendingLogin?: Promise<string>;
 
@@ -58,6 +66,7 @@ export class TVDBClient implements TVProvider {
     this.cache = options.cache;
     this.fetchFn = options.fetch ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.rateLimitRetry = options.rateLimitRetry ?? {};
   }
 
   /** True once a bearer token has been obtained. */
@@ -131,15 +140,26 @@ export class TVDBClient implements TVProvider {
       return requireObject(cached, LABEL, "cached response");
     }
 
-    const response = await sendRequest(
-      this.fetchFn,
-      buildUrl(TVDBClient.BASE_URL, endpoint, params),
-      {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      },
-      LABEL,
-      this.timeoutMs,
+    // Identical requests in flight at the same time share one network call.
+    return this.inflight.run(requestKey(endpoint, params), () =>
+      this.fetchJson(endpoint, params, token),
+    );
+  }
+
+  private async fetchJson(endpoint: string, params: QueryParams, token: string): Promise<JsonObject> {
+    const response = await sendWithRateLimitRetry(
+      () =>
+        sendRequest(
+          this.fetchFn,
+          buildUrl(TVDBClient.BASE_URL, endpoint, params),
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+          },
+          LABEL,
+          this.timeoutMs,
+        ),
+      this.rateLimitRetry,
     );
 
     if (response.status === 401) throw new AuthenticationError("TVDB token expired or invalid");

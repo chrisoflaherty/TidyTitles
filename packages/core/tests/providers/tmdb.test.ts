@@ -174,7 +174,8 @@ describe("TMDBClient.getMovie", () => {
   it("returns undefined when the request fails", async () => {
     for (const status of [404, 401, 429, 500]) {
       const { fetch } = mockFetch([{ path: /.*/, reply: { status } }]);
-      expect(await new TMDBClient({ apiKey: V3_KEY, fetch }).getMovie(1)).toBeUndefined();
+      const client = new TMDBClient({ apiKey: V3_KEY, fetch, rateLimitRetry: { retries: 0 } });
+      expect(await client.getMovie(1)).toBeUndefined();
     }
   });
 
@@ -239,17 +240,17 @@ describe("TMDBClient TV", () => {
     expect(show?.year).toBe(0);
   });
 
-  it("gets an episode after looking up the show", async () => {
+  it("gets an episode from its season after looking up the show", async () => {
     const { fetch, requests } = mockFetch([
       { path: "/3/tv/1396", reply: { json: SHOW_DETAILS } },
-      { path: "/3/tv/1396/season/1/episode/1", reply: { json: EPISODE } },
+      {
+        path: "/3/tv/1396/season/1",
+        reply: { json: { season_number: 1, episodes: [{ ...EPISODE, episode_number: 2, name: "Cat's in the Bag..." }, EPISODE] } },
+      },
     ]);
     const episode = await new TMDBClient({ apiKey: V3_KEY, fetch }).getEpisode(1396, 1, 1);
 
-    expect(requests.map((r) => r.url.pathname)).toEqual([
-      "/3/tv/1396",
-      "/3/tv/1396/season/1/episode/1",
-    ]);
+    expect(requests.map((r) => r.url.pathname)).toEqual(["/3/tv/1396", "/3/tv/1396/season/1"]);
     expect(episode).toMatchObject({
       kind: "episode",
       season: 1,
@@ -261,33 +262,78 @@ describe("TMDBClient TV", () => {
     expect(episode?.show.title).toBe("Breaking Bad");
   });
 
-  it("falls back to the requested numbers and an empty title", async () => {
+  it("falls back to the requested season and an empty title", async () => {
     const { fetch } = mockFetch([
       { path: "/3/tv/1396", reply: { json: SHOW_DETAILS } },
-      { path: "/3/tv/1396/season/2/episode/5", reply: { json: { air_date: "bad" } } },
+      { path: "/3/tv/1396/season/2", reply: { json: { episodes: [{ episode_number: 5, air_date: "bad" }] } } },
     ]);
     const episode = await new TMDBClient({ apiKey: V3_KEY, fetch }).getEpisode(1396, 2, 5);
     expect(episode).toMatchObject({ season: 2, episode: 5, title: "" });
     expect(episode?.airDate).toBeUndefined();
   });
 
-  it("returns undefined when the show or the episode is missing", async () => {
+  it("returns undefined when the show, the season, or the episode is missing", async () => {
     const noShow = mockFetch([]);
     expect(
       await new TMDBClient({ apiKey: V3_KEY, fetch: noShow.fetch }).getEpisode(1, 1, 1),
     ).toBeUndefined();
     expect(noShow.requests).toHaveLength(1);
 
-    const noEpisode = mockFetch([{ path: "/3/tv/1396", reply: { json: SHOW_DETAILS } }]);
+    const noSeason = mockFetch([{ path: "/3/tv/1396", reply: { json: SHOW_DETAILS } }]);
     expect(
-      await new TMDBClient({ apiKey: V3_KEY, fetch: noEpisode.fetch }).getEpisode(1396, 9, 9),
+      await new TMDBClient({ apiKey: V3_KEY, fetch: noSeason.fetch }).getEpisode(1396, 9, 9),
     ).toBeUndefined();
+
+    const noEpisode = mockFetch([
+      { path: "/3/tv/1396", reply: { json: SHOW_DETAILS } },
+      { path: "/3/tv/1396/season/1", reply: { json: { episodes: [EPISODE] } } },
+    ]);
+    expect(
+      await new TMDBClient({ apiKey: V3_KEY, fetch: noEpisode.fetch }).getEpisode(1396, 1, 9),
+    ).toBeUndefined();
+
+    const noList = mockFetch([
+      { path: "/3/tv/1396", reply: { json: SHOW_DETAILS } },
+      { path: "/3/tv/1396/season/1", reply: { json: { season_number: 1 } } },
+    ]);
+    expect(
+      await new TMDBClient({ apiKey: V3_KEY, fetch: noList.fetch }).getEpisode(1396, 1, 1),
+    ).toBeUndefined();
+  });
+
+  it("fetches a season once for all of its episodes", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "tidytitles-tmdb-season-"));
+    try {
+      const { fetch, requests } = mockFetch([
+        { path: "/3/tv/1396", reply: { json: SHOW_DETAILS } },
+        {
+          path: "/3/tv/1396/season/1",
+          reply: {
+            json: {
+              episodes: Array.from({ length: 24 }, (_, i) => ({ ...EPISODE, episode_number: i + 1, name: `E${i + 1}` })),
+            },
+          },
+        },
+      ]);
+      const client = new TMDBClient({ apiKey: V3_KEY, fetch, cache: new APICache({ cacheDir: dir }) });
+      // Concurrent calls share the in-flight requests; later ones hit the cache.
+      const first = await Promise.all([1, 2, 3, 4, 5, 6].map((e) => client.getEpisode(1396, 1, e)));
+      const rest = await Promise.all([7, 8, 24].map((e) => client.getEpisode(1396, 1, e)));
+      expect([...first, ...rest].map((e) => e?.title)).toEqual(["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E24"]);
+      expect(requests.map((r) => r.url.pathname)).toEqual(["/3/tv/1396", "/3/tv/1396/season/1"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
 describe("TMDBClient error mapping", () => {
   const client = (status: number) =>
-    new TMDBClient({ apiKey: V3_KEY, fetch: mockFetch([{ path: /.*/, reply: { status } }]).fetch });
+    new TMDBClient({
+      apiKey: V3_KEY,
+      fetch: mockFetch([{ path: /.*/, reply: { status } }]).fetch,
+      rateLimitRetry: { retries: 0 },
+    });
 
   it("maps 401 to AuthenticationError", async () => {
     await expect(client(401).searchMovie("x")).rejects.toThrow(AuthenticationError);
