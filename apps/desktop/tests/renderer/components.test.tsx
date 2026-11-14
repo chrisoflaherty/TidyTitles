@@ -58,6 +58,67 @@ describe("FileTable", () => {
   });
 });
 
+describe("FileTable with a large list", () => {
+  const many = Array.from({ length: 10_000 }, (_, i) => file(i + 1, `Movie.${String(i + 1).padStart(5, "0")}.2020.mkv`));
+  const manyPlanned = appState({
+    files: many,
+    plan: "planned",
+    operations: many.map((f, i) =>
+      op(f, {
+        newName: `Movie ${i + 1} (2020).mkv`,
+        // Every tenth file has a subtitle, so groups differ in height.
+        associatedFiles:
+          i % 10 === 0 ? [{ source: `${f.path}.srt`, destination: `/media/Movie ${i + 1} (2020).srt`, fileType: "subtitle" }] : [],
+      }),
+    ),
+  });
+
+  it("renders only the rows near the viewport, with the full count for assistive technology", () => {
+    render(<FileTable app={manyPlanned} selectedFileId={null} onSelect={() => {}} onRemove={() => {}} />);
+    const rows = screen.getAllByTestId("file-row");
+    expect(rows.length).toBeGreaterThan(10);
+    expect(rows.length).toBeLessThan(100);
+    expect(rows[0]!.textContent).toContain("Movie.00001.2020.mkv");
+    const grid = screen.getByRole("grid");
+    // Header + 10,000 files + 1,000 subtitles.
+    expect(grid.getAttribute("aria-rowcount")).toBe("11001");
+    expect(rows[0]!.getAttribute("aria-rowindex")).toBe("2");
+    // Row 2 (file 2) follows file 1 and its subtitle.
+    expect(rows[1]!.getAttribute("aria-rowindex")).toBe("4");
+    // The rest of the list is a spacer, hidden from assistive technology.
+    const spacers = document.querySelectorAll("tr.spacer-row");
+    expect(spacers).toHaveLength(1);
+    expect(spacers[0]!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("keeps the selected row rendered and focusable wherever it is", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(<FileTable app={manyPlanned} selectedFileId={1} onSelect={onSelect} onRemove={() => {}} />);
+    const first = screen.getAllByTestId("file-row")[0]!;
+    first.focus();
+    fireEvent.keyDown(first, { key: "End" });
+    expect(onSelect).toHaveBeenLastCalledWith(10_000);
+    rerender(<FileTable app={manyPlanned} selectedFileId={10_000} onSelect={onSelect} onRemove={() => {}} />);
+    const last = screen.getAllByTestId("file-row").at(-1)!;
+    expect(last.textContent).toContain("Movie.10000.2020.mkv");
+    expect(last.getAttribute("aria-rowindex")).toBe("11001");
+    expect(last.tabIndex).toBe(0);
+    expect(document.activeElement).toBe(last);
+    // Spacers stand in for the rows between the window and the selected row.
+    expect(document.querySelectorAll("tr.spacer-row")).toHaveLength(1);
+    expect(screen.getAllByTestId("file-row").length).toBeLessThan(100);
+
+    // Escape clears the selection; the focused row stays rendered and focused.
+    fireEvent.keyDown(last, { key: "Escape" });
+    expect(onSelect).toHaveBeenLastCalledWith(null);
+    rerender(<FileTable app={manyPlanned} selectedFileId={null} onSelect={onSelect} onRemove={() => {}} />);
+    expect(document.activeElement).toBe(last);
+    expect(last.isConnected).toBe(true);
+    expect(last.tabIndex).toBe(-1);
+    expect(screen.getAllByTestId("file-row")[0]!.tabIndex).toBe(0);
+  });
+});
+
 describe("SelectionDialog", () => {
   const request: SelectionRequest = {
     id: "req-1",

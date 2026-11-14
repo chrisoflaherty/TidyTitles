@@ -77,6 +77,9 @@ export function App() {
     if (can().settings) dispatch({ type: "openModal", modal: { kind: "settings" } });
   }, []);
   const setOptions = useCallback((options: Partial<RunOptions>) => void api.setOptions(options), [api]);
+  // Stable, so the (memoized) file list skips renders that only change the progress.
+  const selectFile = useCallback((id: number | null) => dispatch({ type: "selectFile", id }), []);
+  const removeFiles = useCallback((ids: number[]) => void api.removeFiles(ids), [api]);
 
   // --- updates --------------------------------------------------------------
 
@@ -230,8 +233,8 @@ export function App() {
           <FileTable
             app={app}
             selectedFileId={ui.selectedFileId}
-            onSelect={(id) => dispatch({ type: "selectFile", id })}
-            onRemove={(ids) => void api.removeFiles(ids)}
+            onSelect={selectFile}
+            onRemove={removeFiles}
           />
         )}
         {dragging && (

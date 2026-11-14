@@ -137,7 +137,15 @@ cd apps/desktop
 npm run test:e2e
 ```
 
-This builds a test version of the app (`npm run build:e2e`, output in `out-e2e/`) whose main process uses fake metadata providers, then launches it with Playwright and drives the real window: security settings, adding a folder, fetching and choosing a match, canceling a fetch, renaming on disk, undo from history, editing a template in Settings, and restoring the window size. `e2e/updates.e2e.test.ts` drives the update UI (Check for Updates…, download progress, Restart to Update, the Download fallback, up to date, a failed check) with a scripted update engine in place of electron-updater, and saves light and dark screenshots. It uses a temporary config folder and media folder. `out-e2e/` is never packaged.
+This builds a test version of the app (`npm run build:e2e`, output in `out-e2e/`) whose main process uses fake metadata providers, then launches it with Playwright and drives the real window: security settings, adding a folder, fetching and choosing a match, canceling a fetch, renaming on disk, undo from history, editing a template in Settings, and restoring the window size. `e2e/updates.e2e.test.ts` drives the update UI (Check for Updates…, download progress, Restart to Update, the Download fallback, up to date, a failed check) with a scripted update engine in place of electron-updater, and saves light and dark screenshots. `e2e/largeList.e2e.test.ts` adds 2,000 files and checks the windowed file list: only rows near the viewport are in the DOM, the scrollbar covers the whole list, keyboard focus survives scrolling, and rows of unexpected height do not make the list jump. It uses a temporary config folder and media folder. `out-e2e/` is never packaged.
+
+To measure the file list with a large list (time to add, frame times while scrolling, and the renderer's cost while a fetch or rename streams progress), build the test app and run the measurement script. It opens one app window while it runs:
+
+```bash
+cd apps/desktop
+npm run build:e2e
+node scripts/measure-file-list.mjs --files 10000 --out /tmp/file-list.json
+```
 
 The same command also runs a smoke test of the **packaged** app (`e2e/packaged.e2e.test.ts`) if one exists: it starts the app, checks that its window loads and that core works inside the asar (TOML parsing, templates, reading MP3 tags), and that the bundled updater is wired up (it runs with `TIDYTITLES_DISABLE_UPDATES=1`, so it never checks). It looks for `release/mac-<arch>/TidyTitles.app` (made by `npm run package` on macOS), or the executable named in `TIDYTITLES_PACKAGED_APP`, and is skipped when there is none.
 

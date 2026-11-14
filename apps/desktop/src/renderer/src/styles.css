@@ -395,6 +395,10 @@ select {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* The list corrects its own scroll position when rows above the viewport change size. */
+  overflow-anchor: none;
+  /* A row focused from the keyboard scrolls into view below the sticky header. */
+  scroll-padding-top: 28px;
 }
 
 .file-table {
@@ -473,6 +477,13 @@ select {
 }
 .file-table tbody tr:focus-visible td:last-child {
   box-shadow: inset -2px 2px 0 var(--focus), inset 0 -2px 0 var(--focus);
+}
+
+/* Stands in for the rows outside the rendered window (see FileTable.tsx). */
+.file-table tbody tr.spacer-row td {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 .cell-type {
