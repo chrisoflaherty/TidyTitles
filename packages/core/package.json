@@ -1,0 +1,27 @@
+{
+  "name": "@tidytitles/core",
+  "version": "0.1.0",
+  "description": "TidyTitles core: parsing, metadata providers, templates, and rename operations",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ctrl/video-filename-parser": "^5.12.0",
+    "music-metadata": "^12.5.0",
+    "smol-toml": "^1.9.1",
+    "zod": "^4.6.7"
+  }
+}

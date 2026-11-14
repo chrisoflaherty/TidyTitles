@@ -83,3 +83,11 @@ Thumbs.db
 # Project specific
 config.toml
 *.log
+
+# Node / TypeScript rewrite
+node_modules/
+packages/*/dist/
+apps/*/dist/
+apps/*/out/
+apps/*/release/
+*.tsbuildinfo
