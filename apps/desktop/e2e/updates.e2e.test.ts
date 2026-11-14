@@ -26,7 +26,8 @@ declare global {
 const APP_DIR = path.resolve(import.meta.dirname, "..");
 const MAIN = path.join(APP_DIR, "out-e2e", "main", "index.js");
 const SHOTS = process.env.TIDYTITLES_SCREENSHOT_DIR ?? path.join(APP_DIR, "out-e2e", "screenshots");
-const NEW = "0.2.0-beta.3";
+// Must be newer than whatever version the app is at, so it is never a real one.
+const NEW = "99.0.0";
 
 let tmp: string | undefined;
 let electronApp: ElectronApplication | undefined;
