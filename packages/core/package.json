@@ -1,6 +1,6 @@
 {
   "name": "@tidytitles/core",
-  "version": "0.2.0-beta.5",
+  "version": "0.2.0-beta.6",
   "description": "TidyTitles core: parsing, metadata providers, templates, and rename operations",
   "license": "MIT",
   "type": "module",
