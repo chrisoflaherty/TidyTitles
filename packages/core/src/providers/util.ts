@@ -73,6 +73,91 @@ export async function sendRequest(
   }
 }
 
+/**
+ * Shares one promise among identical requests that are in flight at the
+ * same time. With concurrent lookups, every episode of a show asks for the
+ * same search before the first response reaches the cache; this makes them
+ * one network call. A settled request is forgotten (the cache takes over).
+ */
+export class InflightRequests<T> {
+  private readonly pending = new Map<string, Promise<T>>();
+
+  /** The in-flight promise for `key`, or a new one from `start`. */
+  run(key: string, start: () => Promise<T>): Promise<T> {
+    const existing = this.pending.get(key);
+    if (existing) return existing;
+    const promise = start();
+    this.pending.set(key, promise);
+    const forget = (): void => {
+      if (this.pending.get(key) === promise) this.pending.delete(key);
+    };
+    promise.then(forget, forget);
+    return promise;
+  }
+
+  /** Number of requests in flight (for tests). */
+  get size(): number {
+    return this.pending.size;
+  }
+}
+
+/** A stable in-memory key for a request (not the on-disk cache key). */
+export function requestKey(endpoint: string, params: QueryParams): string {
+  return JSON.stringify([endpoint, Object.entries(params).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))]);
+}
+
+/** Retries for HTTP 429 (TMDB and TVDB only; MusicBrainz is never retried). */
+export interface RateLimitRetryOptions {
+  /** Retries after the first 429 (default 2, so at most 3 attempts). */
+  retries?: number;
+  /**
+   * Longest wait honored, in milliseconds (default 10,000). A `Retry-After`
+   * longer than this is not waited out: the 429 is reported at once.
+   */
+  maxDelayMs?: number;
+}
+
+export const DEFAULT_RATE_LIMIT_RETRIES = 2;
+export const DEFAULT_MAX_RETRY_DELAY_MS = 10_000;
+/** Wait used when a 429 carries no usable `Retry-After`. */
+export const DEFAULT_RETRY_DELAY_MS = 1_000;
+
+/**
+ * Milliseconds to wait from a `Retry-After` header: delay-seconds or an
+ * HTTP date. `undefined` when absent or unparseable.
+ */
+export function parseRetryAfter(value: string | null, now = Date.now()): number | undefined {
+  if (value === null) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  // An HTTP date always has a weekday or month name.
+  if (!/[a-z]/i.test(trimmed)) return undefined;
+  const date = Date.parse(trimmed);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, date - now);
+}
+
+/**
+ * Send a request, retrying a bounded number of times while the server
+ * answers 429, waiting as `Retry-After` asks (or 1 s without one). Returns
+ * the last response, which may still be a 429 for the caller to report.
+ */
+export async function sendWithRateLimitRetry(
+  send: () => Promise<Response>,
+  options: RateLimitRetryOptions = {},
+): Promise<Response> {
+  const retries = options.retries ?? DEFAULT_RATE_LIMIT_RETRIES;
+  const maxDelayMs = options.maxDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
+  for (let attempt = 0; ; attempt++) {
+    const response = await send();
+    if (response.status !== 429 || attempt >= retries) return response;
+    const delay = parseRetryAfter(response.headers.get("Retry-After")) ?? DEFAULT_RETRY_DELAY_MS;
+    if (delay > maxDelayMs) return response;
+    await response.body?.cancel().catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+
 /** Parse a response body as JSON, rethrowing parse failures as `ProviderError`. */
 export async function readJson(response: Response, label: string): Promise<unknown> {
   try {

@@ -45,4 +45,10 @@ export interface MusicProvider {
   getRecording(recordingId: string): Promise<Track | undefined>;
   /** Get release details by MusicBrainz ID. */
   getRelease(releaseId: string): Promise<Album | undefined>;
+  /**
+   * Optional: the tracks of a release, in order. Lets the rename service
+   * verify a whole album with one lookup instead of one search per track.
+   * Throws on provider errors.
+   */
+  getReleaseTracks?(releaseId: string): Promise<Track[]>;
 }

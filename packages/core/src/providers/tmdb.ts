@@ -18,14 +18,18 @@ import {
   optionalNumber,
   optionalString,
   parseIsoDate,
+  InflightRequests,
   readJson,
+  requestKey,
   requireNumber,
   requireObject,
   requireString,
   sendRequest,
+  sendWithRateLimitRetry,
   yearPrefix,
   type JsonObject,
   type QueryParams,
+  type RateLimitRetryOptions,
   type ResponseCache,
 } from "./util";
 
@@ -46,6 +50,8 @@ export interface TMDBClientOptions {
   fetch?: FetchFn;
   /** Per-request timeout in milliseconds (default 30,000). */
   timeoutMs?: number;
+  /** Retries for HTTP 429 (default: 2 retries, honoring `Retry-After` up to 10 s). */
+  rateLimitRetry?: RateLimitRetryOptions;
 }
 
 /** Client for The Movie Database (TMDB) API. */
@@ -58,6 +64,8 @@ export class TMDBClient implements MovieProvider, TVProvider {
   private readonly language: string;
   private readonly fetchFn: FetchFn;
   private readonly timeoutMs: number;
+  private readonly rateLimitRetry: RateLimitRetryOptions;
+  private readonly inflight = new InflightRequests<JsonObject>();
   /** True when the key is a v4 bearer token (those are 200+ characters). */
   readonly usesBearerToken: boolean;
 
@@ -67,6 +75,7 @@ export class TMDBClient implements MovieProvider, TVProvider {
     this.language = options.language ?? "en-US";
     this.fetchFn = options.fetch ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.rateLimitRetry = options.rateLimitRetry ?? {};
     this.usesBearerToken = options.apiKey.length > 50;
   }
 
@@ -80,15 +89,24 @@ export class TMDBClient implements MovieProvider, TVProvider {
       return requireObject(cached, LABEL, "cached response");
     }
 
+    // Identical requests in flight at the same time share one network call.
+    return this.inflight.run(requestKey(endpoint, query), () => this.fetchJson(endpoint, query));
+  }
+
+  private async fetchJson(endpoint: string, query: QueryParams): Promise<JsonObject> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.usesBearerToken) headers.Authorization = `Bearer ${this.apiKey}`;
 
-    const response = await sendRequest(
-      this.fetchFn,
-      buildUrl(TMDBClient.BASE_URL, endpoint, query),
-      { method: "GET", headers },
-      LABEL,
-      this.timeoutMs,
+    const response = await sendWithRateLimitRetry(
+      () =>
+        sendRequest(
+          this.fetchFn,
+          buildUrl(TMDBClient.BASE_URL, endpoint, query),
+          { method: "GET", headers },
+          LABEL,
+          this.timeoutMs,
+        ),
+      this.rateLimitRetry,
     );
 
     if (response.status === 401) throw new AuthenticationError("Invalid TMDB API key");
@@ -175,8 +193,10 @@ export class TMDBClient implements MovieProvider, TVProvider {
   }
 
   /**
-   * Get episode details. Fetches the show first; returns `undefined` if
-   * either the show or the episode request fails.
+   * Get episode details. Fetches the show, then the whole season (one
+   * request per season, shared by its episodes through the cache), and
+   * picks the episode. Returns `undefined` if the show or season request
+   * fails or the season has no such episode.
    */
   async getEpisode(
     showId: number,
@@ -188,20 +208,25 @@ export class TMDBClient implements MovieProvider, TVProvider {
 
     let data: JsonObject;
     try {
-      data = await this.request(`/tv/${showId}/season/${season}/episode/${episode}`);
+      data = await this.request(`/tv/${showId}/season/${season}`);
     } catch (error) {
       if (error instanceof ProviderError) return undefined;
       throw error;
     }
 
-    return createEpisode({
-      show,
-      season: optionalNumber(data.season_number) ?? season,
-      episode: optionalNumber(data.episode_number) ?? episode,
-      title: optionalString(data.name) ?? "",
-      airDate: parseIsoDate(data.air_date),
-      overview: optionalString(data.overview),
-    });
+    for (const raw of optionalArray(data.episodes, LABEL, "episodes")) {
+      const ep = requireObject(raw, LABEL, "episode");
+      if (ep.episode_number !== episode) continue;
+      return createEpisode({
+        show,
+        season: optionalNumber(ep.season_number) ?? season,
+        episode,
+        title: optionalString(ep.name) ?? "",
+        airDate: parseIsoDate(ep.air_date),
+        overview: optionalString(ep.overview),
+      });
+    }
+    return undefined;
   }
 }
 
