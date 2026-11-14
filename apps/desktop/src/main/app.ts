@@ -1,0 +1,378 @@
+/**
+ * Electron wiring: the window, security policy, menu, IPC, and the
+ * command-line tool installer. The workflow itself lives in `controller.ts`.
+ *
+ * Production starts here from `index.ts`. The e2e test build starts here from
+ * `src/e2e/main.ts`, passing fake providers through `sessionOverrides`; that
+ * entry is compiled only into the separate `out-e2e` build.
+ */
+
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  BrowserWindow,
+  Menu,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  screen,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
+  type MessageBoxOptions,
+  type OpenDialogOptions,
+} from "electron";
+import { MUSIC_EXTENSIONS, VIDEO_EXTENSIONS } from "@tidytitles/core";
+import { EVENTS, IPC, type AppState, type EventPayloads, type MenuCommand } from "../shared/ipc";
+import {
+  LAUNCHER_NAME,
+  chooseBinDir,
+  defaultCliEnvironment,
+  inspectExisting,
+  installLauncher,
+  loginShellPath,
+  pathContains,
+  resolveCliAvailability,
+  windowsCommand,
+} from "./cliInstall";
+import { createConfigService } from "./configDir";
+import { AppController, type SessionOverrides } from "./controller";
+import { REPO_URL, applyMenuState, buildMenuTemplate } from "./menu";
+import {
+  isSafeExternalUrl,
+  parseDialogKind,
+  parseEditableSettings,
+  parseFileIds,
+  parsePaths,
+  parseRunOptions,
+  parseSelectionAnswer,
+  parseTemplates,
+} from "./validate";
+import { MIN_SIZE, fitToDisplays, loadWindowState, saveWindowState } from "./windowState";
+
+export interface StartOptions {
+  /** Test builds only: replace providers / HTTP for every session. */
+  sessionOverrides?: SessionOverrides;
+}
+
+const APP_NAME = "TidyTitles";
+
+export function startApp(options: StartOptions = {}): void {
+  app.setName(APP_NAME);
+
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+    return;
+  }
+
+  const isDev = !app.isPackaged && Boolean(process.env.ELECTRON_RENDERER_URL);
+  const mac = process.platform === "darwin";
+  const rendererIndex = path.join(import.meta.dirname, "../renderer/index.html");
+  const preloadPath = path.join(import.meta.dirname, "../preload/index.cjs");
+  const windowStateFile = () => path.join(app.getPath("userData"), "window-state.json");
+
+  let mainWindow: BrowserWindow | null = null;
+  let lastState: AppState | null = null;
+
+  const send = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  };
+
+  const controller = new AppController({
+    config: createConfigService(),
+    emit: (channel, payload) => {
+      if (channel === EVENTS.state) {
+        lastState = payload as AppState;
+        applyMenuState(Menu.getApplicationMenu(), lastState);
+      }
+      send(channel, payload);
+    },
+    sessionOverrides: options.sessionOverrides,
+  });
+
+  // -------------------------------------------------------------------------
+  // Security policy for every web contents
+  // -------------------------------------------------------------------------
+
+  app.on("web-contents-created", (_event, contents) => {
+    contents.on("will-navigate", (event) => event.preventDefault());
+    contents.on("will-redirect", (event) => event.preventDefault());
+    contents.on("will-attach-webview", (event) => event.preventDefault());
+    contents.setWindowOpenHandler(({ url }) => {
+      if (isSafeExternalUrl(url)) void shell.openExternal(url);
+      return { action: "deny" };
+    });
+  });
+
+  /** Only our own renderer page may call the IPC API. */
+  const isTrustedSender = (event: IpcMainInvokeEvent): boolean => {
+    const frame = event.senderFrame;
+    if (!frame || !mainWindow || event.sender !== mainWindow.webContents) return false;
+    try {
+      const url = new URL(frame.url);
+      if (isDev && process.env.ELECTRON_RENDERER_URL) {
+        return url.origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+      }
+      return url.protocol === "file:" && url.pathname === pathToFileURL(rendererIndex).pathname;
+    } catch {
+      return false;
+    }
+  };
+
+  const handle = (channel: string, fn: (...args: unknown[]) => unknown) => {
+    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+      if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      return fn(...args);
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // IPC
+  // -------------------------------------------------------------------------
+
+  const mediaExtensions = (set: ReadonlySet<string>) => [...set].map((e) => e.slice(1)).sort();
+
+  const showAddDialog = async (kind: "files" | "folder") => {
+    if (controller.isBusy) return null;
+    const dialogOptions: OpenDialogOptions =
+      kind === "folder"
+        ? { title: "Add Folder", buttonLabel: "Add", properties: ["openDirectory", "multiSelections"] }
+        : {
+            title: "Add Files",
+            buttonLabel: "Add",
+            properties: ["openFile", "multiSelections"],
+            filters: [
+              {
+                name: "Media Files",
+                extensions: [...mediaExtensions(VIDEO_EXTENSIONS), ...mediaExtensions(MUSIC_EXTENSIONS)],
+              },
+              { name: "Video Files", extensions: mediaExtensions(VIDEO_EXTENSIONS) },
+              { name: "Audio Files", extensions: mediaExtensions(MUSIC_EXTENSIONS) },
+              { name: "All Files", extensions: ["*"] },
+            ],
+          };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    // Files picked in the dialog are taken as chosen; folders are filtered.
+    return controller.addPaths(result.filePaths, { filterExplicitFiles: false });
+  };
+
+  handle(IPC.getState, () => controller.getState());
+  handle(IPC.addFilesDialog, (kind) => showAddDialog(parseDialogKind(kind)));
+  handle(IPC.addPaths, (paths) => controller.addPaths(parsePaths(paths), { filterExplicitFiles: true }));
+  handle(IPC.removeFiles, (ids) => controller.removeFiles(parseFileIds(ids)));
+  handle(IPC.clearFiles, () => controller.clearFiles());
+  handle(IPC.setOptions, (opts) => controller.setOptions(parseRunOptions(opts)));
+  handle(IPC.fetch, () => controller.fetch());
+  handle(IPC.cancelFetch, () => controller.cancelFetch());
+  handle(IPC.answerSelection, (id, index) => {
+    const answer = parseSelectionAnswer(id, index);
+    controller.answerSelection(answer.id, answer.index);
+  });
+  handle(IPC.rename, () => controller.rename());
+  handle(IPC.undo, () => controller.undo());
+  handle(IPC.getSettings, () => controller.getSettingsPayload());
+  handle(IPC.previewTemplates, (templates) => controller.previewTemplates(parseTemplates(templates)));
+  handle(IPC.saveSettings, (settings) => controller.saveSettings(parseEditableSettings(settings)));
+  handle(IPC.openExternal, async (url) => {
+    if (!isSafeExternalUrl(url)) throw new Error("Only https links can be opened");
+    await shell.openExternal(url);
+  });
+
+  // -------------------------------------------------------------------------
+  // Command-line tool
+  // -------------------------------------------------------------------------
+
+  const messageBox = (opts: MessageBoxOptions) =>
+    mainWindow ? dialog.showMessageBox(mainWindow, opts) : dialog.showMessageBox(opts);
+
+  const installCli = async () => {
+    const availability = resolveCliAvailability(defaultCliEnvironment());
+    if (!availability.available) {
+      await messageBox({ type: "info", message: "The command-line tool is not available", detail: availability.reason });
+      return;
+    }
+    const { locations } = availability;
+
+    if (process.platform === "win32") {
+      const command = windowsCommand(locations);
+      const { response } = await messageBox({
+        type: "info",
+        message: "Use TidyTitles from PowerShell",
+        detail:
+          "Add this function to your PowerShell profile (open it with: notepad $PROFILE), " +
+          `then open a new PowerShell window and run "tidytitles --help".\n\n${command}`,
+        buttons: ["Copy Command", "Close"],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (response === 0) clipboard.writeText(command);
+      return;
+    }
+
+    const binDir = await chooseBinDir(os.homedir());
+    const target = path.join(binDir, LAUNCHER_NAME);
+    if ((await inspectExisting(target)) === "other") {
+      const { response } = await messageBox({
+        type: "warning",
+        message: `Replace the existing “${LAUNCHER_NAME}” in ${binDir}?`,
+        detail: "A file with that name is already there and was not installed by TidyTitles.",
+        buttons: ["Replace", "Cancel"],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      if (response !== 0) return;
+    }
+
+    try {
+      await installLauncher(locations, binDir);
+    } catch (error) {
+      await messageBox({
+        type: "error",
+        message: "Could not install the command-line tool",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    const onPath = pathContains(await loginShellPath(process.env), binDir);
+    await messageBox({
+      type: "info",
+      message: `Installed “${LAUNCHER_NAME}” in ${binDir}`,
+      detail: onPath
+        ? `${binDir} is on your PATH. Open a new terminal window and run:\n\n${LAUNCHER_NAME} --help`
+        : `${binDir} is not on your PATH yet. Add this line to your shell profile (for example ~/.zshrc or ~/.bashrc):\n\n` +
+          `export PATH="${binDir}:$PATH"\n\nThen open a new terminal window and run: ${LAUNCHER_NAME} --help`,
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Window
+  // -------------------------------------------------------------------------
+
+  const createWindow = async () => {
+    const saved = await loadWindowState(windowStateFile());
+    const bounds = fitToDisplays(
+      saved,
+      screen.getAllDisplays().map((d) => d.workArea),
+    );
+
+    const win = new BrowserWindow({
+      ...(bounds.x !== undefined && bounds.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
+      width: bounds.width,
+      height: bounds.height,
+      minWidth: MIN_SIZE.width,
+      minHeight: MIN_SIZE.height,
+      show: false,
+      title: APP_NAME,
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#1f1f22" : "#ffffff",
+      ...(mac ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 18 } } : {}),
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        spellcheck: false,
+      },
+    });
+    mainWindow = win;
+
+    win.once("ready-to-show", () => {
+      if (bounds.maximized) win.maximize();
+      win.show();
+    });
+
+    win.on("close", (event) => {
+      const busy = controller.getState().busy;
+      if (busy === "renaming" || busy === "undoing") {
+        event.preventDefault();
+        void messageBox({
+          type: "warning",
+          message: "Files are being renamed",
+          detail: "Wait for renaming to finish before closing the window.",
+        });
+        return;
+      }
+      if (busy === "fetching") controller.cancelFetch();
+      const normal = win.getNormalBounds();
+      void saveWindowState(windowStateFile(), { ...normal, maximized: win.isMaximized() }).catch(() => undefined);
+    });
+    win.on("closed", () => {
+      if (mainWindow === win) mainWindow = null;
+    });
+
+    try {
+      if (isDev && process.env.ELECTRON_RENDERER_URL) await win.loadURL(process.env.ELECTRON_RENDERER_URL);
+      else await win.loadFile(rendererIndex);
+    } catch (error) {
+      console.error("Could not load the window:", error);
+    }
+  };
+
+  const sendMenuCommand = (command: MenuCommand) => {
+    if (!mainWindow) {
+      void createWindow().then(() => send(EVENTS.menuCommand, command));
+      return;
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    send(EVENTS.menuCommand, command);
+  };
+
+  const installMenu = () => {
+    const cli = resolveCliAvailability(defaultCliEnvironment());
+    const template = buildMenuTemplate({
+      platform: process.platform,
+      appName: APP_NAME,
+      isDev,
+      cliUnavailableReason: cli.available ? undefined : cli.reason,
+      send: sendMenuCommand,
+      installCli: () => void installCli(),
+      openExternal: (url) => {
+        if (isSafeExternalUrl(url)) void shell.openExternal(url);
+      },
+    });
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+    if (lastState) applyMenuState(Menu.getApplicationMenu(), lastState);
+  };
+
+  // -------------------------------------------------------------------------
+  // Lifecycle
+  // -------------------------------------------------------------------------
+
+  app.on("second-instance", () => {
+    if (!mainWindow) return void createWindow();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+
+  app.on("window-all-closed", () => {
+    if (!mac) app.quit();
+  });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  });
+
+  void app.whenReady().then(async () => {
+    nativeTheme.themeSource = "system";
+    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    app.setAboutPanelOptions({
+      applicationName: APP_NAME,
+      applicationVersion: app.getVersion(),
+      copyright: "Copyright © 2024 Chris O’Flaherty. MIT License.",
+      website: REPO_URL,
+    });
+    installMenu();
+    await controller.init();
+    await createWindow();
+  });
+}

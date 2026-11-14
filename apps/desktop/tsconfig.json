@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": [
+    "src/main",
+    "src/preload",
+    "src/shared",
+    "src/e2e",
+    "tests/main",
+    "tests/setup.ts",
+    "e2e",
+    "*.config.ts"
+  ]
+}

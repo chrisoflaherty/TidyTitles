@@ -1,0 +1,71 @@
+# electron-builder configuration for TidyTitles.
+# Identifiers and names follow the PyInstaller/NSIS/DMG/AppImage setup
+# (file-renamer.spec, installer/): bundle id com.filerenamer.tidytitles,
+# product name TidyTitles, artifacts TidyTitles-<version>-macos.dmg,
+# TidyTitles-<version>-windows-setup.exe, TidyTitles-<version>-<arch>.AppImage.
+
+appId: com.filerenamer.tidytitles
+productName: TidyTitles
+copyright: Copyright © 2024 Chris O’Flaherty
+artifactName: ${productName}-${version}-${os}.${ext}
+
+directories:
+  output: release
+  buildResources: build
+
+# Only the production build. out-e2e/ (the test build with fake providers)
+# is never packaged. Main bundles @tidytitles/core and its dependencies, so
+# no node_modules are needed.
+files:
+  - out/**/*
+  - "!out/**/*.map"
+  - package.json
+asar: true
+afterPack: scripts/after-pack.cjs
+
+# The command-line tool, run by the "Install Command Line Tool…" launcher.
+extraResources:
+  - from: ../../packages/cli/dist/tidytitles.mjs
+    to: cli/tidytitles.mjs
+
+mac:
+  target: dmg
+  category: public.app-category.utilities
+  icon: build/icon.icns
+  darkModeSupport: true
+  hardenedRuntime: true
+  artifactName: ${productName}-${version}-macos.${ext}
+
+dmg:
+  title: ${productName} ${version}
+  artifactName: ${productName}-${version}-macos.${ext}
+
+win:
+  target: nsis
+  icon: build/icon.png
+  artifactName: ${productName}-${version}-windows-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TidyTitles
+  license: ../../installer/windows/license.txt
+  artifactName: ${productName}-${version}-windows-setup.${ext}
+
+linux:
+  target: AppImage
+  icon: build/icon.png
+  category: Utility
+  executableName: TidyTitles
+  synopsis: Media file renaming application
+  desktop:
+    entry:
+      Name: TidyTitles
+      Comment: Media file renaming application
+      Categories: AudioVideo;Video;Audio;Utility;
+      Keywords: rename;media;movie;tv;music;metadata;
+      StartupWMClass: TidyTitles
+  artifactName: ${productName}-${version}-${arch}.${ext}

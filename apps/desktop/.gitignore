@@ -1,0 +1,7 @@
+# Build output
+out/
+out-e2e/
+release/
+
+# The root .gitignore ignores build/ (Python); here it holds the app icon sources.
+!/build/

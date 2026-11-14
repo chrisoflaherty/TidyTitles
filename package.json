@@ -10,7 +10,7 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "npm run build -w @tidytitles/core && npm run build -w @tidytitles/cli --if-present && npm run build -w @tidytitles/desktop --if-present",

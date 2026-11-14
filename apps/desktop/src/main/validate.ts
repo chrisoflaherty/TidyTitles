@@ -1,0 +1,162 @@
+/**
+ * Validation of IPC arguments. Everything the renderer sends is untrusted:
+ * each handler parses its arguments here and rejects anything malformed.
+ */
+
+import path from "node:path";
+import { MEDIA_TYPE_CHOICES, PROVIDER_CHOICES } from "@tidytitles/core";
+import {
+  CONFLICT_CHOICES,
+  COVER_SIZE_CHOICES,
+  TV_PROVIDER_CHOICES,
+  type EditableSettings,
+  type RunOptions,
+  type TemplateSet,
+} from "../shared/ipc";
+
+export class IpcValidationError extends Error {
+  constructor(message: string) {
+    super(`Invalid IPC argument: ${message}`);
+    this.name = "IpcValidationError";
+  }
+}
+
+const MAX_PATHS = 10_000;
+const MAX_STRING = 4_096;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function str(value: unknown, name: string, max = MAX_STRING): string {
+  if (typeof value !== "string") throw new IpcValidationError(`${name} must be a string`);
+  if (value.length > max) throw new IpcValidationError(`${name} is too long`);
+  if (value.includes("\0")) throw new IpcValidationError(`${name} contains a NUL character`);
+  return value;
+}
+
+function bool(value: unknown, name: string): boolean {
+  if (typeof value !== "boolean") throw new IpcValidationError(`${name} must be a boolean`);
+  return value;
+}
+
+function oneOf<T extends string>(value: unknown, choices: readonly T[], name: string): T {
+  if (typeof value !== "string" || !(choices as readonly string[]).includes(value)) {
+    throw new IpcValidationError(`${name} must be one of ${choices.join(", ")}`);
+  }
+  return value as T;
+}
+
+function record(value: unknown, name: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new IpcValidationError(`${name} must be an object`);
+  return value;
+}
+
+/** Absolute filesystem paths (dropped files and folders). */
+export function parsePaths(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new IpcValidationError("paths must be an array");
+  if (value.length > MAX_PATHS) throw new IpcValidationError("too many paths");
+  return value.map((p, i) => {
+    const s = str(p, `paths[${i}]`);
+    if (!path.isAbsolute(s)) throw new IpcValidationError(`paths[${i}] must be absolute`);
+    return s;
+  });
+}
+
+export function parseFileIds(value: unknown): number[] {
+  if (!Array.isArray(value)) throw new IpcValidationError("ids must be an array");
+  if (value.length > MAX_PATHS) throw new IpcValidationError("too many ids");
+  return value.map((id, i) => {
+    if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0) {
+      throw new IpcValidationError(`ids[${i}] must be a non-negative integer`);
+    }
+    return id;
+  });
+}
+
+export function parseDialogKind(value: unknown): "files" | "folder" {
+  return oneOf(value, ["files", "folder"] as const, "kind");
+}
+
+export function parseRunOptions(value: unknown): Partial<RunOptions> {
+  const r = record(value, "options");
+  const out: Partial<RunOptions> = {};
+  for (const key of Object.keys(r)) {
+    if (!["mediaType", "provider", "recursive", "coverArt"].includes(key)) {
+      throw new IpcValidationError(`unknown option ${key}`);
+    }
+  }
+  if (r.mediaType !== undefined) out.mediaType = oneOf(r.mediaType, MEDIA_TYPE_CHOICES, "mediaType");
+  if (r.provider !== undefined) out.provider = oneOf(r.provider, PROVIDER_CHOICES, "provider");
+  if (r.recursive !== undefined) out.recursive = bool(r.recursive, "recursive");
+  if (r.coverArt !== undefined) out.coverArt = bool(r.coverArt, "coverArt");
+  return out;
+}
+
+export function parseSelectionAnswer(id: unknown, index: unknown): { id: string; index: number | null } {
+  const parsedId = str(id, "id", 64);
+  if (index === null) return { id: parsedId, index: null };
+  if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0) {
+    throw new IpcValidationError("index must be a non-negative integer or null");
+  }
+  return { id: parsedId, index };
+}
+
+export function parseTemplates(value: unknown): TemplateSet {
+  const r = record(value, "templates");
+  return {
+    movie: str(r.movie, "templates.movie", 1_000),
+    tv: str(r.tv, "templates.tv", 1_000),
+    music: str(r.music, "templates.music", 1_000),
+  };
+}
+
+export function parseEditableSettings(value: unknown): EditableSettings {
+  const r = record(value, "settings");
+  const api = record(r.api, "api");
+  const assoc = record(r.associatedFiles, "associatedFiles");
+  const cover = record(r.coverArt, "coverArt");
+  return {
+    templates: parseTemplates(r.templates),
+    api: {
+      tmdbApiKey: str(api.tmdbApiKey, "api.tmdbApiKey", 512),
+      tvdbApiKey: str(api.tvdbApiKey, "api.tvdbApiKey", 512),
+      tvdbPin: str(api.tvdbPin, "api.tvdbPin", 512),
+    },
+    associatedFiles: {
+      enabled: bool(assoc.enabled, "associatedFiles.enabled"),
+      subtitles: bool(assoc.subtitles, "associatedFiles.subtitles"),
+      nfo: bool(assoc.nfo, "associatedFiles.nfo"),
+      images: bool(assoc.images, "associatedFiles.images"),
+    },
+    coverArt: {
+      enabled: bool(cover.enabled, "coverArt.enabled"),
+      filename: safeFilename(cover.filename, "coverArt.filename"),
+      musicFilename: safeFilename(cover.musicFilename, "coverArt.musicFilename"),
+      overwrite: bool(cover.overwrite, "coverArt.overwrite"),
+      size: oneOf(cover.size, COVER_SIZE_CHOICES, "coverArt.size"),
+    },
+    conflictResolution: oneOf(r.conflictResolution, CONFLICT_CHOICES, "conflictResolution"),
+    tvProvider: oneOf(r.tvProvider, TV_PROVIDER_CHOICES, "tvProvider"),
+  };
+}
+
+/** A bare filename: no directory parts (cover art is written next to the media). */
+function safeFilename(value: unknown, name: string): string {
+  const s = str(value, name, 255).trim();
+  if (s.includes("/") || s.includes("\\") || s === "." || s === "..") {
+    throw new IpcValidationError(`${name} must be a file name without folders`);
+  }
+  return s;
+}
+
+/** Only https URLs leave the app, and only to the system browser. */
+export function isSafeExternalUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 2_048) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
+}

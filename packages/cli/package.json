@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "tidytitles": "./dist/index.js"
+    "tidytitles": "./dist/index.js",
+    "file-renamer": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -16,5 +17,13 @@
     "cli-table3": "^0.6.5",
     "commander": "^15.1.0",
     "picocolors": "^1.1.1"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   }
 }

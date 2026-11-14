@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- TidyTitles app icon. Source for build/icon.png and build/icon.icns (npm run icons). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D7BF0"/>
+      <stop offset="1" stop-color="#2447B8"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E8EEFB"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#0B1B4D" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Body on the macOS icon grid: 824 x 824 with a 100 px margin. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <!-- A film strip behind the title card. -->
+  <g opacity="0.28" fill="#FFFFFF">
+    <rect x="196" y="262" width="96" height="500" rx="20"/>
+    <rect x="732" y="262" width="96" height="500" rx="20"/>
+  </g>
+  <g fill="#2447B8">
+    <rect x="226" y="300" width="36" height="44" rx="8"/>
+    <rect x="226" y="390" width="36" height="44" rx="8"/>
+    <rect x="226" y="480" width="36" height="44" rx="8"/>
+    <rect x="226" y="570" width="36" height="44" rx="8"/>
+    <rect x="226" y="660" width="36" height="44" rx="8"/>
+    <rect x="762" y="300" width="36" height="44" rx="8"/>
+    <rect x="762" y="390" width="36" height="44" rx="8"/>
+    <rect x="762" y="480" width="36" height="44" rx="8"/>
+    <rect x="762" y="570" width="36" height="44" rx="8"/>
+    <rect x="762" y="660" width="36" height="44" rx="8"/>
+  </g>
+  <!-- The title card: neat, aligned lines of text. -->
+  <g filter="url(#shadow)">
+    <rect x="300" y="276" width="424" height="472" rx="44" fill="url(#card)"/>
+  </g>
+  <rect x="356" y="350" width="312" height="44" rx="22" fill="#2447B8"/>
+  <rect x="356" y="434" width="248" height="30" rx="15" fill="#9DB3E8"/>
+  <rect x="356" y="494" width="280" height="30" rx="15" fill="#9DB3E8"/>
+  <rect x="356" y="554" width="196" height="30" rx="15" fill="#9DB3E8"/>
+  <!-- Check badge. -->
+  <circle cx="680" cy="684" r="104" fill="#1FA45A" stroke="#FFFFFF" stroke-width="22"/>
+  <path d="M632 686 L667 721 L731 653" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

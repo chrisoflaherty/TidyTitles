@@ -5,18 +5,36 @@
   "description": "TidyTitles desktop app (Electron)",
   "license": "MIT",
   "type": "module",
-  "dependencies": {
-    "@tidytitles/core": "*",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
-  },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.10",
+    "@tidytitles/core": "*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
-    "electron": "^45.3.2",
+    "electron": "45.3.2",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "jsdom": "^29.1.1",
+    "playwright-core": "^1.65.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "vite": "^8.3.8"
+  },
+  "productName": "TidyTitles",
+  "main": "./out/main/index.js",
+  "author": "Chris O'Flaherty",
+  "homepage": "https://github.com/chrisoflaherty/TidyTitles",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && node scripts/check-build.mjs",
+    "build:e2e": "electron-vite build --mode e2e",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:e2e": "npm run build:e2e && vitest run -c vitest.e2e.config.ts",
+    "package": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir -c.electronDist=../../node_modules/electron/dist",
+    "dist": "npm run build && electron-builder",
+    "icons": "electron scripts/render-icon.mjs"
   }
 }
