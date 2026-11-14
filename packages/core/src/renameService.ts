@@ -27,6 +27,7 @@ import {
   pathStem,
   pathSuffix,
 } from "./associatedFiles";
+import { abortable, Limiter, mapConcurrent, OrderedProgress } from "./concurrency";
 import type { AssociatedFilesSettings } from "./config";
 import type { ConflictStrategy } from "./conflictResolution";
 import {
@@ -182,13 +183,37 @@ export interface RenameServiceOptions {
    * same folder reuse the album already chosen.
    */
   selectionCallback?: SelectionCallback;
+  /**
+   * Metadata requests in flight at once during `fetchMetadata`. Default
+   * `DEFAULT_FETCH_CONCURRENCY` (6).
+   */
+  fetchConcurrency?: number;
+  /** Music files whose tags are read at once in `parseFiles`. Default 8. */
+  parseConcurrency?: number;
 }
+
+/**
+ * Default number of metadata requests in flight at once. Six keeps a batch
+ * well under TMDB's limit of about 50 requests per second per IP (six at a
+ * time with typical 100-200 ms responses is 30-60 per second at most before
+ * the cache and in-flight sharing take most of them), matches the
+ * connections a browser opens per host, and already hides most latency.
+ * MusicBrainz is unaffected: its client sends one request per second.
+ */
+export const DEFAULT_FETCH_CONCURRENCY = 6;
+
+/** Default number of music files whose tags are read at once. */
+export const DEFAULT_PARSE_CONCURRENCY = 8;
 
 export interface FetchOptions {
   /** Treat every non-music file as this media type. */
   forceType?: MediaType;
+  /**
+   * Called as files finish, in file order: `current` counts 1 to `total`.
+   * Never called while the selection callback is waiting for an answer.
+   */
   progressCallback?: ProgressCallback;
-  /** Checked before each file; aborting rejects with the signal's reason. */
+  /** Aborting stops new requests and rejects with the signal's reason. */
   signal?: AbortSignal;
 }
 
@@ -325,6 +350,65 @@ class SelectionCallbackFailure {
   constructor(readonly cause: unknown) {}
 }
 
+/** What one file's lookup produced; applied to the file when the whole fetch succeeds. */
+interface LookupOutcome {
+  matchedMetadata?: PlannedMediaFile["matchedMetadata"];
+  lookupError?: LookupErrorInfo;
+  selectionSkipped?: true;
+}
+
+/**
+ * Shared state of one `fetchMetadata` run.
+ *
+ * Network work runs concurrently through `net`. Anything that reads or
+ * changes the selection memory (and so may ask the user) runs inside
+ * `decide`, which runs files one at a time, in file order: file i decides
+ * only after files 0..i-1 have decided or passed the point where they
+ * would. So questions are asked one at a time, in file order, and the
+ * answers reused exactly as they were when files were fetched one by one.
+ */
+interface FetchRun {
+  memory: SelectionMemory;
+  signal: AbortSignal;
+  progress: OrderedProgress;
+  /** Run a network step when a slot is free (never starts after abort). */
+  net<T>(task: () => Promise<T>): Promise<T>;
+  /** Run `step` in file order (see above). Every file must call it, or `pass`, exactly once. */
+  decide<T>(index: number, step: () => Promise<T>): Promise<T>;
+  /** Mark that file `index` will not decide, so later files need not wait for it. */
+  pass(index: number): void;
+  /** Album verification shared by the files of one album (see `albumGroupKey`). */
+  albumChecks: Map<string, Promise<AlbumCheck>>;
+  /** How many files with complete tags share each album key. */
+  albumSizes: Map<string, number>;
+}
+
+/** Tracks of the album found for a group of files, or why there are none. */
+type AlbumCheck =
+  | { kind: "tracks"; tracks: Track[] }
+  | { kind: "not_found" }
+  | { kind: "failed" };
+
+/** Album grouping key for complete tags: normalized artist and album. */
+function albumGroupKey(parsed: ParsedMusicInfo): string {
+  return `${normalizeForMatch(parsed.artist ?? "")}\u0000${normalizeForMatch(parsed.album ?? "")}`;
+}
+
+/**
+ * True when the album's track list confirms the tags: a track with the same
+ * normalized title (exactly, not by containment) whose artist matches as in
+ * `verifyTrackMatch`. Stricter than the per-track search on purpose; a
+ * track this does not confirm falls back to that search.
+ */
+function confirmedOnAlbum(parsed: ParsedMusicInfo, tracks: readonly Track[]): boolean {
+  const title = normalizeForMatch(parsed.title ?? "");
+  if (title === "") return false;
+  return verifyTrackMatch(
+    parsed,
+    tracks.filter((track) => normalizeForMatch(track.title) === title),
+  );
+}
+
 /**
  * What the user answered during one `fetchMetadata` run, so the same
  * question is asked only once:
@@ -407,6 +491,8 @@ export class RenameService {
   readonly conflictStrategy: ConflictStrategy;
   /** May be replaced between runs. */
   selectionCallback: SelectionCallback | undefined;
+  readonly fetchConcurrency: number;
+  readonly parseConcurrency: number;
 
   constructor(options: RenameServiceOptions = {}) {
     this.parser = options.parser ?? createParser();
@@ -424,6 +510,8 @@ export class RenameService {
     };
     this.conflictStrategy = options.conflictStrategy ?? "skip";
     this.selectionCallback = options.selectionCallback;
+    this.fetchConcurrency = options.fetchConcurrency ?? DEFAULT_FETCH_CONCURRENCY;
+    this.parseConcurrency = options.parseConcurrency ?? DEFAULT_PARSE_CONCURRENCY;
   }
 
   /** Scan a directory for media files (see `scanDirectory`). */
@@ -440,13 +528,10 @@ export class RenameService {
     paths: readonly string[],
     progressCallback?: ProgressCallback,
   ): Promise<PlannedMediaFile[]> {
-    const mediaFiles: PlannedMediaFile[] = [];
-    const total = paths.length;
-
-    for (const [i, filePath] of paths.entries()) {
+    const progress = new OrderedProgress(paths.length, progressCallback);
+    // Tags are read concurrently; the result and the progress keep input order.
+    return mapConcurrent(paths, this.parseConcurrency, async (filePath, i) => {
       const name = path.basename(filePath);
-      progressCallback?.(i + 1, total, `Parsing: ${name}`);
-
       let parsedInfo = this.parser.parse(name);
       let parsedMusicInfo: ParsedMusicInfo | undefined;
       if (isMusicFile(filePath)) {
@@ -456,10 +541,9 @@ export class RenameService {
 
       const file: PlannedMediaFile = { path: filePath, parsedInfo };
       if (parsedMusicInfo) file.parsedMusicInfo = parsedMusicInfo;
-      mediaFiles.push(file);
-    }
-
-    return mediaFiles;
+      progress.complete(i, `Parsing: ${name}`);
+      return file;
+    });
   }
 
   /**
@@ -469,105 +553,203 @@ export class RenameService {
    *
    * The media type is the file's parsed type, or `forceType` when given;
    * music files (by extension) always use the music flow.
+   *
+   * Lookups run concurrently (`fetchConcurrency` requests at a time), but
+   * the result does not depend on which response arrives first: questions
+   * go to the selection callback one at a time, in file order, and progress
+   * is reported in file order. Files are updated only when the whole fetch
+   * succeeds; on abort or a selection callback error they are left as they
+   * were.
    */
   async fetchMetadata<T extends PlannedMediaFile>(
     mediaFiles: T[],
     options: FetchOptions = {},
   ): Promise<T[]> {
     const { forceType, progressCallback, signal } = options;
-    const total = mediaFiles.length;
-    const memory = new SelectionMemory();
+    signal?.throwIfAborted();
 
-    for (const [i, mediaFile] of mediaFiles.entries()) {
-      signal?.throwIfAborted();
-      progressCallback?.(i + 1, total, `Fetching: ${mediaFile.parsedInfo.title}`);
+    // Aborted by the caller's signal, or by a selection callback error.
+    const stop = new AbortController();
+    const onAbort = (): void => stop.abort(signal!.reason);
+    signal?.addEventListener("abort", onAbort, { once: true });
 
+    const run = this.createFetchRun(mediaFiles, stop.signal, progressCallback);
+    const outcomes = new Array<LookupOutcome>(mediaFiles.length);
+
+    const lookup = async (mediaFile: T, index: number): Promise<void> => {
       const mediaType: MediaType = isMusicFile(mediaFile.path)
         ? "music"
         : (forceType ?? mediaFile.parsedInfo.mediaType);
+      const out: LookupOutcome = {};
+      try {
+        if (mediaType === "movie") await this.fetchMovieMetadata(mediaFile, out, index, run);
+        else if (mediaType === "tv_episode") await this.fetchTVMetadata(mediaFile, out, index, run);
+        else if (mediaType === "music") await this.fetchMusicMetadata(mediaFile, out, index, run);
+      } catch (error) {
+        if (error instanceof SelectionCallbackFailure) {
+          stop.abort(error.cause);
+          throw error.cause;
+        }
+        if (stop.signal.aborted) throw stop.signal.reason;
+        out.lookupError = describeLookupError(error);
+      } finally {
+        // Files that never reached a decision must not hold up later files.
+        run.pass(index);
+      }
+      outcomes[index] = out;
+      run.progress.complete(index, `Fetching: ${mediaFile.parsedInfo.title}`);
+    };
 
+    try {
+      await abortable(Promise.all(mediaFiles.map(lookup)), stop.signal);
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
+
+    for (const [i, mediaFile] of mediaFiles.entries()) {
+      const out = outcomes[i]!;
       delete mediaFile.lookupError;
       delete mediaFile.selectionSkipped;
-      try {
-        if (mediaType === "movie") await this.fetchMovieMetadata(mediaFile, memory);
-        else if (mediaType === "tv_episode") await this.fetchTVMetadata(mediaFile, memory);
-        else if (mediaType === "music") await this.fetchMusicMetadata(mediaFile, memory);
-      } catch (error) {
-        if (error instanceof SelectionCallbackFailure) throw error.cause;
-        mediaFile.lookupError = describeLookupError(error);
+      if (out.matchedMetadata) mediaFile.matchedMetadata = out.matchedMetadata;
+      if (out.lookupError) mediaFile.lookupError = out.lookupError;
+      if (out.selectionSkipped) mediaFile.selectionSkipped = true;
+    }
+    return mediaFiles;
+  }
+
+  private createFetchRun(
+    mediaFiles: readonly PlannedMediaFile[],
+    signal: AbortSignal,
+    progressCallback: ProgressCallback | undefined,
+  ): FetchRun {
+    const limiter = new Limiter(this.fetchConcurrency);
+
+    // turnDone[i] resolves once files 0..i have each decided or passed;
+    // file i decides after turnDone[i - 1]. release[i] marks file i's part.
+    const release: Array<() => void> = [];
+    const turnDone: Promise<void>[] = [];
+    let previous: Promise<void> = Promise.resolve();
+    for (let i = 0; i < mediaFiles.length; i++) {
+      const own = new Promise<void>((resolve) => release.push(resolve));
+      previous = Promise.all([previous, own]).then(() => undefined);
+      turnDone.push(previous);
+    }
+
+    const albumSizes = new Map<string, number>();
+    if (this.musicProvider?.getReleaseTracks) {
+      for (const file of mediaFiles) {
+        const parsed = file.parsedMusicInfo;
+        if (!isMusicFile(file.path) || !parsed || !isMusicInfoComplete(parsed)) continue;
+        const key = albumGroupKey(parsed);
+        albumSizes.set(key, (albumSizes.get(key) ?? 0) + 1);
       }
     }
 
-    return mediaFiles;
+    return {
+      memory: new SelectionMemory(),
+      signal,
+      progress: new OrderedProgress(mediaFiles.length, progressCallback),
+      net: (task) => limiter.run(task, signal),
+      decide: async (index, step) => {
+        try {
+          if (index > 0) await abortable(turnDone[index - 1]!, signal);
+          signal.throwIfAborted();
+          return await step();
+        } finally {
+          release[index]!();
+        }
+      },
+      pass: (index) => release[index]!(),
+      albumChecks: new Map(),
+      albumSizes,
+    };
   }
 
   /**
    * Ask the selection callback, keeping its errors apart from provider
    * errors. A question already answered in this run (the same list of
    * options) is not asked again: the earlier answer, or skip, is reused.
+   * Must run inside `run.decide`. Progress is held while the callback waits,
+   * so a front end's prompt is never drawn over.
    */
   private async select(
     options: SelectableOption[],
     filename: string,
-    memory: SelectionMemory,
+    run: FetchRun,
   ): Promise<SelectionResult> {
-    const earlier = memory.recall(options);
+    const earlier = run.memory.recall(options);
     if (earlier) return earlier.answer;
 
     let answer: SelectionResult;
+    run.progress.hold();
     try {
       answer = await this.selectionCallback!(options, filename);
     } catch (error) {
       throw new SelectionCallbackFailure(error);
+    } finally {
+      run.progress.release();
     }
-    memory.remember(options, isValidIndex(answer, options.length) ? answer : undefined);
+    run.memory.remember(options, isValidIndex(answer, options.length) ? answer : undefined);
     return answer;
   }
 
-  private async fetchMovieMetadata(mediaFile: PlannedMediaFile, memory: SelectionMemory): Promise<void> {
+  private async fetchMovieMetadata(
+    mediaFile: PlannedMediaFile,
+    out: LookupOutcome,
+    index: number,
+    run: FetchRun,
+  ): Promise<void> {
     const parsed = mediaFile.parsedInfo;
-    const movies = await this.movieProvider.searchMovie(parsed.title, parsed.year);
+    const movies = await run.net(() => this.movieProvider.searchMovie(parsed.title, parsed.year));
     if (movies.length === 0) return;
 
     if (movies.length === 1 || !this.selectionCallback) {
-      mediaFile.matchedMetadata = { ...movies[0]!, verificationStatus: "auto_matched" };
+      out.matchedMetadata = { ...movies[0]!, verificationStatus: "auto_matched" };
       return;
     }
 
-    const index = await this.select(movies, mediaFileName(mediaFile), memory);
-    if (isValidIndex(index, movies.length)) {
-      mediaFile.matchedMetadata = { ...movies[index]!, verificationStatus: "manual_selection" };
+    const choice = await run.decide(index, () => this.select(movies, mediaFileName(mediaFile), run));
+    if (isValidIndex(choice, movies.length)) {
+      out.matchedMetadata = { ...movies[choice]!, verificationStatus: "manual_selection" };
     } else {
-      mediaFile.selectionSkipped = true;
+      out.selectionSkipped = true;
     }
   }
 
-  private async fetchTVMetadata(mediaFile: PlannedMediaFile, memory: SelectionMemory): Promise<void> {
+  private async fetchTVMetadata(
+    mediaFile: PlannedMediaFile,
+    out: LookupOutcome,
+    index: number,
+    run: FetchRun,
+  ): Promise<void> {
     const parsed = mediaFile.parsedInfo;
     // The Python searched first and then gave up; checking first saves a request.
     if (parsed.season == null || parsed.episode == null) return;
+    const { season, episode: episodeNumber } = parsed;
 
-    const shows = await this.tvProvider.searchShow(parsed.title, parsed.year);
+    const shows = await run.net(() => this.tvProvider.searchShow(parsed.title, parsed.year));
     if (shows.length === 0) return;
 
     let selected: TVShow | undefined;
     let userSelected = false;
     if (shows.length === 1 || !this.selectionCallback) {
       selected = shows[0];
+      run.pass(index);
     } else {
-      const index = await this.select(shows, mediaFileName(mediaFile), memory);
-      if (isValidIndex(index, shows.length)) {
-        selected = shows[index];
+      const choice = await run.decide(index, () => this.select(shows, mediaFileName(mediaFile), run));
+      if (isValidIndex(choice, shows.length)) {
+        selected = shows[choice];
         userSelected = true;
       } else {
-        mediaFile.selectionSkipped = true;
+        out.selectionSkipped = true;
       }
     }
     if (!selected) return;
 
-    const episode = await this.tvProvider.getEpisode(selected.id, parsed.season, parsed.episode);
+    const showId = selected.id;
+    const episode = await run.net(() => this.tvProvider.getEpisode(showId, season, episodeNumber));
     if (episode) {
-      mediaFile.matchedMetadata = {
+      out.matchedMetadata = {
         ...episode,
         verificationStatus: userSelected ? "manual_selection" : "auto_matched",
       };
@@ -576,80 +758,139 @@ export class RenameService {
 
   /**
    * Tag-first music flow:
-   * 1. Complete tags: search MusicBrainz to verify them; the track is built
+   * 1. Complete tags: check them against MusicBrainz; the track is built
    *    from the tags as "verified" or "unverified" (also "unverified" when
-   *    the search fails or there is no provider).
+   *    the lookup fails or there is no provider). When several files share
+   *    an album (same artist and album tags), the album is looked up once
+   *    (a release search and one release lookup with its tracks) and each
+   *    file is checked against its track list; a file the list does not
+   *    confirm falls back to its own recording search.
    * 2. Incomplete tags: search MusicBrainz and use the result
    *    ("from_provider"), falling back to the partial tags ("unverified").
    */
-  private async fetchMusicMetadata(mediaFile: PlannedMediaFile, memory: SelectionMemory): Promise<void> {
+  private async fetchMusicMetadata(
+    mediaFile: PlannedMediaFile,
+    out: LookupOutcome,
+    index: number,
+    run: FetchRun,
+  ): Promise<void> {
     const parsed = mediaFile.parsedMusicInfo;
     if (!parsed) return;
 
     if (!isMusicInfoComplete(parsed)) {
-      await this.fetchMusicMetadataFromProvider(mediaFile, parsed, memory);
+      await this.fetchMusicMetadataFromProvider(mediaFile, parsed, out, index, run);
       return;
     }
 
-    let status: "verified" | "unverified" = "unverified";
-    if (this.musicProvider) {
-      try {
-        const tracks = await this.musicProvider.searchRecording(
-          cleanTitleForSearch(parsed.title ?? ""),
-          parsed.artist,
-          parsed.album,
-        );
-        if (verifyTrackMatch(parsed, tracks)) status = "verified";
-      } catch {
-        // Network or API problem: keep the tags, unverified.
-      }
+    out.matchedMetadata = trackFromParsedInfo(parsed, await this.verifyTags(parsed, run));
+  }
+
+  /** "verified" when MusicBrainz confirms complete tags, else "unverified". */
+  private async verifyTags(
+    parsed: ParsedMusicInfo,
+    run: FetchRun,
+  ): Promise<"verified" | "unverified"> {
+    const provider = this.musicProvider;
+    if (!provider) return "unverified";
+
+    const key = albumGroupKey(parsed);
+    if ((run.albumSizes.get(key) ?? 0) >= 2) {
+      const album = await this.checkAlbum(key, parsed, run);
+      if (album.kind === "failed") return "unverified";
+      if (album.kind === "tracks" && confirmedOnAlbum(parsed, album.tracks)) return "verified";
     }
-    mediaFile.matchedMetadata = trackFromParsedInfo(parsed, status);
+
+    try {
+      const tracks = await run.net(() =>
+        provider.searchRecording(cleanTitleForSearch(parsed.title ?? ""), parsed.artist, parsed.album),
+      );
+      return verifyTrackMatch(parsed, tracks) ? "verified" : "unverified";
+    } catch (error) {
+      if (run.signal.aborted) throw error;
+      // Network or API problem: keep the tags, unverified.
+      return "unverified";
+    }
+  }
+
+  /**
+   * Look up the album named by complete tags, once per album per run: a
+   * release search, then the track list of the first release whose title
+   * and artist match the tags.
+   */
+  private checkAlbum(key: string, parsed: ParsedMusicInfo, run: FetchRun): Promise<AlbumCheck> {
+    const existing = run.albumChecks.get(key);
+    if (existing) return existing;
+
+    const provider = this.musicProvider!;
+    const albumTitle = normalizeForMatch(parsed.album ?? "");
+    const artist = normalizeForMatch(parsed.artist ?? "");
+    const check = run
+      .net(async (): Promise<AlbumCheck> => {
+        const releases = await provider.searchRelease(parsed.album ?? "", parsed.artist);
+        const release = releases.find(
+          (r) => normalizeForMatch(r.title) === albumTitle && normalizeForMatch(r.artist.name) === artist,
+        );
+        if (!release) return { kind: "not_found" };
+        const tracks = await provider.getReleaseTracks!(release.id);
+        return { kind: "tracks", tracks };
+      })
+      .catch((error: unknown): AlbumCheck => {
+        if (run.signal.aborted) throw error;
+        return { kind: "failed" };
+      });
+    run.albumChecks.set(key, check);
+    return check;
   }
 
   private async fetchMusicMetadataFromProvider(
     mediaFile: PlannedMediaFile,
     parsed: ParsedMusicInfo,
-    memory: SelectionMemory,
+    out: LookupOutcome,
+    index: number,
+    run: FetchRun,
   ): Promise<void> {
-    if (!this.musicProvider) return;
+    const provider = this.musicProvider;
+    if (!provider) return;
     const title = parsed.title ?? "";
     if (!title) return;
 
     let tracks: Track[];
     try {
-      tracks = await this.musicProvider.searchRecording(title, parsed.artist, parsed.album);
-    } catch {
-      mediaFile.matchedMetadata = trackFromParsedInfo(parsed, "unverified");
+      tracks = await run.net(() => provider.searchRecording(title, parsed.artist, parsed.album));
+    } catch (error) {
+      if (run.signal.aborted) throw error;
+      out.matchedMetadata = trackFromParsedInfo(parsed, "unverified");
       return;
     }
 
     if (tracks.length === 0) {
-      mediaFile.matchedMetadata = trackFromParsedInfo(parsed, "unverified");
+      out.matchedMetadata = trackFromParsedInfo(parsed, "unverified");
       return;
     }
 
     if (tracks.length === 1 || !this.selectionCallback) {
-      mediaFile.matchedMetadata = { ...tracks[0]!, verificationStatus: "from_provider" };
+      out.matchedMetadata = { ...tracks[0]!, verificationStatus: "from_provider" };
       return;
     }
 
-    // Tracks of one album each return a different list, but the question
-    // is the same ("which album?"): reuse the album chosen for this folder.
-    const dir = path.dirname(mediaFile.path);
-    const onChosenAlbum = memory.findOnChosenAlbum(dir, tracks, parsed.album);
-    if (onChosenAlbum >= 0) {
-      mediaFile.matchedMetadata = { ...tracks[onChosenAlbum]!, verificationStatus: "from_provider" };
-      return;
-    }
+    await run.decide(index, async () => {
+      // Tracks of one album each return a different list, but the question
+      // is the same ("which album?"): reuse the album chosen for this folder.
+      const dir = path.dirname(mediaFile.path);
+      const onChosenAlbum = run.memory.findOnChosenAlbum(dir, tracks, parsed.album);
+      if (onChosenAlbum >= 0) {
+        out.matchedMetadata = { ...tracks[onChosenAlbum]!, verificationStatus: "from_provider" };
+        return;
+      }
 
-    const index = await this.select(tracks, mediaFileName(mediaFile), memory);
-    if (isValidIndex(index, tracks.length)) {
-      mediaFile.matchedMetadata = { ...tracks[index]!, verificationStatus: "from_provider" };
-      memory.rememberAlbum(dir, tracks[index]!);
-    } else {
-      mediaFile.selectionSkipped = true;
-    }
+      const choice = await this.select(tracks, mediaFileName(mediaFile), run);
+      if (isValidIndex(choice, tracks.length)) {
+        out.matchedMetadata = { ...tracks[choice]!, verificationStatus: "from_provider" };
+        run.memory.rememberAlbum(dir, tracks[choice]!);
+      } else {
+        out.selectionSkipped = true;
+      }
+    });
   }
 
   /**
