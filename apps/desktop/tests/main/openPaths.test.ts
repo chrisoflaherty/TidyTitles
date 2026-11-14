@@ -66,7 +66,7 @@ describe("pathsFromArgv", () => {
     ];
     expect(pathsFromArgv(argv, ctx)).toEqual([path.resolve("/media/a.mkv")]);
     // A relative entry works too.
-    expect(pathsFromArgv(["/x/Electron", "out-e2e/main/index.js", "Shows"], ctx)).toEqual([path.join(appDir, "Shows")]);
+    expect(pathsFromArgv(["/x/Electron", "out-e2e/main/index.js", "Shows"], ctx)).toEqual([path.resolve(appDir, "Shows")]);
   });
 
   it("takes nothing when a development command line has no recognizable app path", () => {
