@@ -41,6 +41,7 @@ import {
   mediaFileName,
   trackFromParsedInfo,
   isMusicInfoComplete,
+  type Album,
   type AssociatedFileRename,
   type MediaFile,
   type MediaType,
@@ -114,6 +115,12 @@ export interface LookupErrorInfo {
 export interface PlannedMediaFile extends MediaFile {
   /** Set when the provider lookup for this file threw. */
   lookupError?: LookupErrorInfo;
+  /**
+   * Set when the search found several results and none was chosen: the
+   * selection callback skipped the file, or an earlier skip of the same
+   * question was reused.
+   */
+  selectionSkipped?: true;
 }
 
 /**
@@ -168,7 +175,12 @@ export interface RenameServiceOptions {
   associatedFilesSettings?: AssociatedFilesSettings;
   /** Conflict strategy. Default "skip". */
   conflictStrategy?: ConflictStrategy;
-  /** Chooses among multiple results. Without one, the first result is used. */
+  /**
+   * Chooses among multiple results. Without one, the first result is used.
+   * Within one fetch it is asked each question once: a later file with the
+   * same list of options reuses the earlier answer, and music files in the
+   * same folder reuse the album already chosen.
+   */
   selectionCallback?: SelectionCallback;
 }
 
@@ -313,6 +325,63 @@ class SelectionCallbackFailure {
   constructor(readonly cause: unknown) {}
 }
 
+/**
+ * What the user answered during one `fetchMetadata` run, so the same
+ * question is asked only once:
+ *
+ * - **Same candidates, same answer.** When a later file produces exactly
+ *   the same list of options (every episode of one show, or two copies of a
+ *   movie), the earlier answer is reused, including "skip".
+ * - **Same folder, same album.** Tracks of one album each produce a
+ *   different list, but the answer is really "which album". Once the user
+ *   picks a track, later files in the same folder take the option on that
+ *   album without asking.
+ */
+class SelectionMemory {
+  private readonly answers = new Map<string, number | undefined>();
+  private readonly albumByDir = new Map<string, { key: string; title: string }>();
+
+  private static optionsKey(options: readonly SelectableOption[]): string {
+    return options.map((option) => `${option.kind}:${option.id}`).join("|");
+  }
+
+  private static albumKey(album: Album): string {
+    return `${normalizeForMatch(album.title)}\u0000${normalizeForMatch(album.artist.name)}`;
+  }
+
+  /** The earlier answer to this exact list of options, if it was asked before. */
+  recall(options: readonly SelectableOption[]): { answer: number | undefined } | undefined {
+    const key = SelectionMemory.optionsKey(options);
+    return this.answers.has(key) ? { answer: this.answers.get(key) } : undefined;
+  }
+
+  remember(options: readonly SelectableOption[], answer: number | undefined): void {
+    this.answers.set(SelectionMemory.optionsKey(options), answer);
+  }
+
+  /** Remember the album the user chose for the files in `dir`. */
+  rememberAlbum(dir: string, track: Track): void {
+    if (!track.album) return;
+    this.albumByDir.set(path.normalize(dir), {
+      key: SelectionMemory.albumKey(track.album),
+      title: normalizeForMatch(track.album.title),
+    });
+  }
+
+  /**
+   * The index of the option on the album already chosen for `dir`, or -1.
+   * A file whose own tags name a different album is never matched this way.
+   */
+  findOnChosenAlbum(dir: string, tracks: readonly Track[], parsedAlbum: string | undefined): number {
+    const chosen = this.albumByDir.get(path.normalize(dir));
+    if (!chosen) return -1;
+    if (parsedAlbum && normalizeForMatch(parsedAlbum) !== chosen.title) return -1;
+    return tracks.findIndex(
+      (track) => track.album !== undefined && SelectionMemory.albumKey(track.album) === chosen.key,
+    );
+  }
+}
+
 function isValidIndex(index: SelectionResult, length: number): index is number {
   return typeof index === "number" && Number.isInteger(index) && index >= 0 && index < length;
 }
@@ -407,6 +476,7 @@ export class RenameService {
   ): Promise<T[]> {
     const { forceType, progressCallback, signal } = options;
     const total = mediaFiles.length;
+    const memory = new SelectionMemory();
 
     for (const [i, mediaFile] of mediaFiles.entries()) {
       signal?.throwIfAborted();
@@ -417,10 +487,11 @@ export class RenameService {
         : (forceType ?? mediaFile.parsedInfo.mediaType);
 
       delete mediaFile.lookupError;
+      delete mediaFile.selectionSkipped;
       try {
-        if (mediaType === "movie") await this.fetchMovieMetadata(mediaFile);
-        else if (mediaType === "tv_episode") await this.fetchTVMetadata(mediaFile);
-        else if (mediaType === "music") await this.fetchMusicMetadata(mediaFile);
+        if (mediaType === "movie") await this.fetchMovieMetadata(mediaFile, memory);
+        else if (mediaType === "tv_episode") await this.fetchTVMetadata(mediaFile, memory);
+        else if (mediaType === "music") await this.fetchMusicMetadata(mediaFile, memory);
       } catch (error) {
         if (error instanceof SelectionCallbackFailure) throw error.cause;
         mediaFile.lookupError = describeLookupError(error);
@@ -430,16 +501,30 @@ export class RenameService {
     return mediaFiles;
   }
 
-  /** Ask the selection callback, keeping its errors apart from provider errors. */
-  private async select(options: SelectableOption[], filename: string): Promise<SelectionResult> {
+  /**
+   * Ask the selection callback, keeping its errors apart from provider
+   * errors. A question already answered in this run (the same list of
+   * options) is not asked again: the earlier answer, or skip, is reused.
+   */
+  private async select(
+    options: SelectableOption[],
+    filename: string,
+    memory: SelectionMemory,
+  ): Promise<SelectionResult> {
+    const earlier = memory.recall(options);
+    if (earlier) return earlier.answer;
+
+    let answer: SelectionResult;
     try {
-      return await this.selectionCallback!(options, filename);
+      answer = await this.selectionCallback!(options, filename);
     } catch (error) {
       throw new SelectionCallbackFailure(error);
     }
+    memory.remember(options, isValidIndex(answer, options.length) ? answer : undefined);
+    return answer;
   }
 
-  private async fetchMovieMetadata(mediaFile: PlannedMediaFile): Promise<void> {
+  private async fetchMovieMetadata(mediaFile: PlannedMediaFile, memory: SelectionMemory): Promise<void> {
     const parsed = mediaFile.parsedInfo;
     const movies = await this.movieProvider.searchMovie(parsed.title, parsed.year);
     if (movies.length === 0) return;
@@ -449,13 +534,15 @@ export class RenameService {
       return;
     }
 
-    const index = await this.select(movies, mediaFileName(mediaFile));
+    const index = await this.select(movies, mediaFileName(mediaFile), memory);
     if (isValidIndex(index, movies.length)) {
       mediaFile.matchedMetadata = { ...movies[index]!, verificationStatus: "manual_selection" };
+    } else {
+      mediaFile.selectionSkipped = true;
     }
   }
 
-  private async fetchTVMetadata(mediaFile: PlannedMediaFile): Promise<void> {
+  private async fetchTVMetadata(mediaFile: PlannedMediaFile, memory: SelectionMemory): Promise<void> {
     const parsed = mediaFile.parsedInfo;
     // The Python searched first and then gave up; checking first saves a request.
     if (parsed.season == null || parsed.episode == null) return;
@@ -468,10 +555,12 @@ export class RenameService {
     if (shows.length === 1 || !this.selectionCallback) {
       selected = shows[0];
     } else {
-      const index = await this.select(shows, mediaFileName(mediaFile));
+      const index = await this.select(shows, mediaFileName(mediaFile), memory);
       if (isValidIndex(index, shows.length)) {
         selected = shows[index];
         userSelected = true;
+      } else {
+        mediaFile.selectionSkipped = true;
       }
     }
     if (!selected) return;
@@ -493,12 +582,12 @@ export class RenameService {
    * 2. Incomplete tags: search MusicBrainz and use the result
    *    ("from_provider"), falling back to the partial tags ("unverified").
    */
-  private async fetchMusicMetadata(mediaFile: PlannedMediaFile): Promise<void> {
+  private async fetchMusicMetadata(mediaFile: PlannedMediaFile, memory: SelectionMemory): Promise<void> {
     const parsed = mediaFile.parsedMusicInfo;
     if (!parsed) return;
 
     if (!isMusicInfoComplete(parsed)) {
-      await this.fetchMusicMetadataFromProvider(mediaFile, parsed);
+      await this.fetchMusicMetadataFromProvider(mediaFile, parsed, memory);
       return;
     }
 
@@ -521,6 +610,7 @@ export class RenameService {
   private async fetchMusicMetadataFromProvider(
     mediaFile: PlannedMediaFile,
     parsed: ParsedMusicInfo,
+    memory: SelectionMemory,
   ): Promise<void> {
     if (!this.musicProvider) return;
     const title = parsed.title ?? "";
@@ -544,9 +634,21 @@ export class RenameService {
       return;
     }
 
-    const index = await this.select(tracks, mediaFileName(mediaFile));
+    // Tracks of one album each return a different list, but the question
+    // is the same ("which album?"): reuse the album chosen for this folder.
+    const dir = path.dirname(mediaFile.path);
+    const onChosenAlbum = memory.findOnChosenAlbum(dir, tracks, parsed.album);
+    if (onChosenAlbum >= 0) {
+      mediaFile.matchedMetadata = { ...tracks[onChosenAlbum]!, verificationStatus: "from_provider" };
+      return;
+    }
+
+    const index = await this.select(tracks, mediaFileName(mediaFile), memory);
     if (isValidIndex(index, tracks.length)) {
       mediaFile.matchedMetadata = { ...tracks[index]!, verificationStatus: "from_provider" };
+      memory.rememberAlbum(dir, tracks[index]!);
+    } else {
+      mediaFile.selectionSkipped = true;
     }
   }
 

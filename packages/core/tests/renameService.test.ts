@@ -732,3 +732,158 @@ describe("music matching helpers", () => {
     expect(verifyTrackMatch(tags, [{ ...track, title: "Déjà vu" }])).toBe(true);
   });
 });
+
+describe("selection memory within one fetch", () => {
+  const episodeFiles = ["Breaking.Bad.S01E01.mkv", "Breaking.Bad.S01E02.mkv", "Breaking.Bad.S01E03.mkv"];
+
+  it("asks which TV show once for every episode of the same show", async () => {
+    const files = await Promise.all(episodeFiles.map((name) => touch(dir, name)));
+    const tv = new FakeTVProvider(
+      { "Breaking Bad": [breakingBad, breakingBadRemake] },
+      { 1396: pilot(), 9999: pilot(breakingBadRemake) },
+    );
+    const cb = vi.fn(() => 1);
+    const ops = await service({ tvProvider: tv, selectionCallback: cb }).processFiles(files);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(tv.episodeCalls.map(([showId]) => showId)).toEqual([9999, 9999, 9999]);
+    for (const op of ops) {
+      expect(op.mediaFile.matchedMetadata).toMatchObject({ verificationStatus: "manual_selection" });
+    }
+  });
+
+  it("remembers a skip, so the same question is not asked again", async () => {
+    const files = await Promise.all(episodeFiles.map((name) => touch(dir, name)));
+    const tv = new FakeTVProvider({ "Breaking Bad": [breakingBad, breakingBadRemake] }, { 1396: pilot() });
+    const cb = vi.fn(() => undefined);
+    const ops = await service({ tvProvider: tv, selectionCallback: cb }).processFiles(files);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(tv.episodeCalls).toEqual([]);
+    expect(ops.map((op) => op.skipReason)).toEqual(["no_match", "no_match", "no_match"]);
+  });
+
+  it("asks once for two copies of the same movie", async () => {
+    const files = [
+      await touch(dir, "The.Matrix.1999.1080p.mkv"),
+      await touch(dir, "The.Matrix.1999.720p.mkv"),
+    ];
+    const cb = vi.fn(() => 1);
+    const ops = await service({
+      movieProvider: new FakeMovieProvider({ "The Matrix": [matrix, matrixReloaded] }),
+      selectionCallback: cb,
+    }).processFiles(files);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(ops.map((op) => (op.mediaFile.matchedMetadata as Movie).id)).toEqual([604, 604]);
+  });
+
+  it("asks again when the options differ", async () => {
+    const files = [await touch(dir, MATRIX_FILE), await touch(dir, "Inception.2010.mkv")];
+    const other = { ...matrix, id: 1, title: "Inception", year: 2010 };
+    const another = { ...matrix, id: 2, title: "Inception: The Cobol Job", year: 2010 };
+    const cb = vi.fn(() => 0);
+    await service({
+      movieProvider: new FakeMovieProvider({
+        "The Matrix": [matrix, matrixReloaded],
+        Inception: [other, another],
+      }),
+      selectionCallback: cb,
+    }).processFiles(files);
+    expect(cb).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not carry answers over to the next fetch", async () => {
+    const file = await touch(dir, MATRIX_FILE);
+    const cb = vi.fn(() => 0);
+    const svc = service({
+      movieProvider: new FakeMovieProvider({ "The Matrix": [matrix, matrixReloaded] }),
+      selectionCallback: cb,
+    });
+    await svc.processFiles([file]);
+    await svc.processFiles([file]);
+    expect(cb).toHaveBeenCalledTimes(2);
+  });
+
+  describe("music", () => {
+    const queen = bohemian.artist;
+    const opera = bohemian.album!;
+    const live = bohemianLive.album!;
+    // Two more songs, each found on the studio album and on the live album.
+    const love = { ...bohemian, id: "rec-3", title: "Love of My Life", album: opera, trackNumber: 9 };
+    const loveLive = { ...bohemianLive, id: "rec-4", title: "Love of My Life (Live)", album: live };
+    const best = { ...bohemian, id: "rec-5", title: "You're My Best Friend", album: opera, trackNumber: 4 };
+    const bestLive = { ...bohemianLive, id: "rec-6", title: "You're My Best Friend (Live)", album: live };
+
+    function musicService(cb: RenameServiceOptions["selectionCallback"], tags: Record<string, object>) {
+      const music = new FakeMusicProvider({
+        "Bohemian Rhapsody": [bohemianLive, bohemian],
+        "Love of My Life": [loveLive, love],
+        "You're My Best Friend": [bestLive, best],
+      });
+      return service({ musicProvider: music, musicParser: new FakeMusicParser(tags), selectionCallback: cb });
+    }
+
+    it("asks which album once for tracks in the same folder", async () => {
+      const files = [
+        await touch(dir, "album/a.mp3"),
+        await touch(dir, "album/b.mp3"),
+        await touch(dir, "album/c.mp3"),
+      ];
+      // The user picks the studio album (second option) for the first file.
+      const cb = vi.fn(() => 1);
+      const ops = await musicService(cb, {
+        "a.mp3": { title: "Bohemian Rhapsody", artist: queen.name },
+        "b.mp3": { title: "Love of My Life", artist: queen.name },
+        "c.mp3": { title: "You're My Best Friend", artist: queen.name },
+      }).processFiles(files);
+
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(ops.map((op) => (op.mediaFile.matchedMetadata as Track).id)).toEqual(["rec-1", "rec-3", "rec-5"]);
+      expect(ops.map((op) => (op.mediaFile.matchedMetadata as Track).album?.title)).toEqual([
+        opera.title,
+        opera.title,
+        opera.title,
+      ]);
+    });
+
+    it("asks again for a file in a different folder", async () => {
+      const files = [await touch(dir, "one/a.mp3"), await touch(dir, "two/b.mp3")];
+      const cb = vi.fn(() => 1);
+      await musicService(cb, {
+        "a.mp3": { title: "Bohemian Rhapsody", artist: queen.name },
+        "b.mp3": { title: "Love of My Life", artist: queen.name },
+      }).processFiles(files);
+      expect(cb).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks again when no option is on the chosen album", async () => {
+      const files = [await touch(dir, "album/a.mp3"), await touch(dir, "album/b.mp3")];
+      const cb = vi.fn(() => 1);
+      const music = new FakeMusicProvider({
+        "Bohemian Rhapsody": [bohemianLive, bohemian],
+        // Neither result is on "A Night at the Opera".
+        "Love of My Life": [loveLive, { ...loveLive, id: "rec-7", album: { ...live, id: "r-3", title: "Live Magic" } }],
+      });
+      await service({
+        musicProvider: music,
+        musicParser: new FakeMusicParser({
+          "a.mp3": { title: "Bohemian Rhapsody", artist: queen.name },
+          "b.mp3": { title: "Love of My Life", artist: queen.name },
+        }),
+        selectionCallback: cb,
+      }).processFiles(files);
+      expect(cb).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks again when the file's own tags name a different album", async () => {
+      const files = [await touch(dir, "album/a.mp3"), await touch(dir, "album/b.mp3")];
+      const cb = vi.fn(() => 1);
+      await musicService(cb, {
+        "a.mp3": { title: "Bohemian Rhapsody", artist: queen.name },
+        "b.mp3": { title: "Love of My Life", artist: queen.name, album: "Live Killers" },
+      }).processFiles(files);
+      expect(cb).toHaveBeenCalledTimes(2);
+    });
+  });
+});

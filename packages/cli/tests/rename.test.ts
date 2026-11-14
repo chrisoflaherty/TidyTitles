@@ -177,6 +177,23 @@ describe("rename", () => {
       expect(existsSync(file)).toBe(true);
     });
 
+    it("counts every non-interactive skip, though the same question is asked once", async () => {
+      await touch(sb.media, MATRIX_FILE);
+      await touch(sb.media, "The.Matrix.1999.720p.mkv");
+      const r = await rename([sb.media, "-n", "--json"], {}, movies(two));
+      const out = JSON.parse(r.stdout) as { skippedSelections: string[] };
+      expect(out.skippedSelections.sort()).toEqual(["The.Matrix.1999.720p.mkv", MATRIX_FILE].sort());
+    });
+
+    it("asks once for several files with the same matches", async () => {
+      await touch(sb.media, MATRIX_FILE);
+      await touch(sb.media, "The.Matrix.1999.720p.mkv");
+      const prompter = new FakePrompter([], [0]);
+      const r = await rename([sb.media, "-n"], { prompter, stdinIsTTY: true }, movies(two));
+      expect(r.code).toBe(0);
+      expect(prompter.calls.filter((c) => c.kind === "select")).toHaveLength(1);
+    });
+
     it("lists non-interactive skips in --json", async () => {
       await touch(sb.media, MATRIX_FILE);
       const r = await rename([sb.media, "-n", "--json"], {}, movies(two));

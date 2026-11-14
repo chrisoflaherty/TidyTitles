@@ -37,20 +37,17 @@ const SCAN_TEXT: Record<MediaTypeChoice, { scanning: string; notFound: string }>
   auto: { scanning: "Scanning for media files...", notFound: "No media files found." },
 };
 
-/** Builds the selection callback and records files skipped because nothing could be asked. */
-function createSelection(
-  ctx: CommandContext,
-  autoSelect: boolean,
-): { callback: SelectionCallback; skippedNonInteractive: string[] } {
+/**
+ * Builds the selection callback. Core asks each distinct question once per
+ * run and reuses the answer for later files with the same options.
+ */
+function createSelection(ctx: CommandContext, autoSelect: boolean): SelectionCallback {
   const { ui, signal } = ctx;
-  const skippedNonInteractive: string[] = [];
 
   const callback: SelectionCallback = async (options: SelectableOption[], filename: string) => {
     if (autoSelect) return 0;
-    if (!ctx.stdinIsTTY) {
-      skippedNonInteractive.push(filename);
-      return undefined;
-    }
+    // Nothing can be asked without a terminal: skip the file.
+    if (!ctx.stdinIsTTY) return undefined;
 
     const ec = ui.ec;
     ui.note();
@@ -75,7 +72,7 @@ function createSelection(
     });
   };
 
-  return { callback, skippedNonInteractive };
+  return callback;
 }
 
 function showPreview(ui: Ui, operations: PlannedOperation[], outputDir?: string): void {
@@ -157,13 +154,16 @@ export async function renameCommand(
   const target = requireExistingPath(rawPath);
 
   const config = ctx.config(options);
-  const selection = createSelection(ctx, options.autoSelect ?? false);
+  const autoSelect = options.autoSelect ?? false;
+  const selectionCallback = createSelection(ctx, autoSelect);
+  // Files skipped because they had several matches and nothing could be asked.
+  const skippedNonInteractive: string[] = [];
   // Throws MissingApiKeyError / ConfigError before any file is touched.
   const session = await createSession(config, {
     provider: options.provider,
     mediaType: options.type,
     dryRun,
-    selectionCallback: selection.callback,
+    selectionCallback,
     ...ctx.deps.session,
   });
 
@@ -183,7 +183,7 @@ export async function renameCommand(
     confirmed: null as boolean | null,
     operations: [] as Record<string, unknown>[],
     summary: summarizeOperations([]),
-    skippedSelections: selection.skippedNonInteractive,
+    skippedSelections: skippedNonInteractive,
     coverArt: [] as string[],
     historySaved: 0,
   };
@@ -213,11 +213,17 @@ export async function renameCommand(
   );
   progress.clear();
 
+  if (!autoSelect && !ctx.stdinIsTTY) {
+    for (const op of operations) {
+      if (op.mediaFile.selectionSkipped) skippedNonInteractive.push(base(op.source));
+    }
+  }
+
   if (!json) showPreview(ui, operations, options.output ? path.resolve(options.output) : undefined);
-  if (selection.skippedNonInteractive.length > 0) {
+  if (skippedNonInteractive.length > 0) {
     ui.note(
       ui.ec.yellow(
-        `${selection.skippedNonInteractive.length} file(s) had several matches and were skipped because stdin is not a terminal. Use --auto-select to take the first match.`,
+        `${skippedNonInteractive.length} file(s) had several matches and were skipped because stdin is not a terminal. Use --auto-select to take the first match.`,
       ),
     );
   }

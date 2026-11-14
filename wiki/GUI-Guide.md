@@ -90,6 +90,8 @@ Each match shows its title and year, and details such as the release date, netwo
 - **Skip This File** (or Esc) leaves the file unchanged; it is marked **No match**.
 - **Cancel All** stops the whole fetch.
 
+You are asked each question once per fetch. When later files produce the same list of matches (every episode of one show, or two copies of a movie), your answer, or your skip, is applied to them too. For music, once you pick a track, other files in the same folder take the match on the same album without asking. Click **Fetch Metadata** again to be asked afresh.
+
 ## 4. Review the new names
 
 After fetching, the **New name** column shows each file's new name, relative to its current folder. A name that includes folders (from a template with `/`, such as the music default) shows those folders, for example `Queen/A Night at the Opera (1975)/11 - Bohemian Rhapsody.mp3`. **Unchanged** means the file will keep its name. Hover over a name to see the full path.

@@ -120,6 +120,7 @@ Select Match
 
 It then asks `Select match (1-3) or skip:` with a list of the matches, for example `1. The Matrix (1999)`, followed by `Skip this file`. Move with the arrow keys and press Enter. For music the second column shows the artist and album instead of the year.
 
+- You are asked each question once per run. When later files produce the same list of matches (every episode of one show, or two copies of a movie), your answer, or your skip, is applied to them too. For music, once you pick a track, other files in the same folder take the match on the same album without asking.
 - `--auto-select` takes the first result without asking.
 - When standard input is not a terminal, nothing is asked: files with several results are skipped and reported ("*N* file(s) had several matches and were skipped because stdin is not a terminal. Use --auto-select to take the first match."), unless `--auto-select` is given.
 
