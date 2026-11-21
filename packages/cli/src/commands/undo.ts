@@ -16,7 +16,7 @@ import {
 import type { CommandContext, GlobalOptions } from "../context";
 import { EXIT_ERROR, EXIT_OK, UsageError } from "../errors";
 import { base, formatCount, formatHistoryTimestamp } from "../format";
-import { makeTable } from "../ui";
+import { makeTable, type Ui } from "../ui";
 
 export interface UndoCommandOptions extends GlobalOptions {
   yes?: boolean;
@@ -167,6 +167,8 @@ export async function undoCommand(ctx: CommandContext, options: UndoCommandOptio
       status: item.status,
       errors: item.errors,
       kept: item.kept,
+      tags: item.tags ?? null,
+      createdFiles: item.createdFiles ?? [],
     })),
   });
 
@@ -181,6 +183,7 @@ export async function undoCommand(ctx: CommandContext, options: UndoCommandOptio
         ui.print(c.yellow(`Left in place: ${base(kept.path)} (${KEPT_TEXT[kept.reason]})`));
       }
     }
+    showMetadataUndo(ui, undo);
     ui.print();
     ui.print(`${c.green("Undone:")} ${undo.undone}`);
     if (undo.missing) ui.print(`${c.yellow("Not found:")} ${undo.missing}`);
@@ -188,4 +191,32 @@ export async function undoCommand(ctx: CommandContext, options: UndoCommandOptio
     if (undo.failed) ui.print(`${c.red("Failed:")} ${undo.failed}`);
   }
   return undo.failed > 0 ? EXIT_ERROR : EXIT_OK;
+}
+
+/** Tags put back and NFO files removed (or left) by the undo. */
+function showMetadataUndo(ui: Ui, undo: UndoResult): void {
+  const c = ui.c;
+  for (const item of undo.items) {
+    if (item.tags?.status === "not_restored") {
+      ui.print(
+        c.yellow(
+          item.tags.reason === "changed"
+            ? `Tags left as they are: ${base(item.operation.destination)} (changed after the rename)`
+            : `Tags not put back: ${base(item.operation.destination)}${item.tags.message ? ` (${item.tags.message})` : ""}`,
+        ),
+      );
+    }
+    for (const file of item.createdFiles ?? []) {
+      if (file.status === "kept") {
+        const why = file.reason === "in_use" ? "other episodes in its folder use it" : "changed after the rename";
+        ui.print(c.yellow(`Left in place: ${base(file.path)} (${why})`));
+      } else if (file.status === "failed") {
+        ui.print(c.red(`Could not remove ${base(file.path)}: ${file.message ?? "unknown error"}`));
+      }
+    }
+  }
+  const restored = undo.items.filter((i) => i.tags?.status === "restored").length;
+  const removed = undo.items.flatMap((i) => i.createdFiles ?? []).filter((f) => f.status === "removed").length;
+  if (restored) ui.print(`${c.green("Tags put back:")} ${restored}`);
+  if (removed) ui.print(`${c.green("NFO files removed:")} ${removed}`);
 }

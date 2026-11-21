@@ -17,6 +17,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { TransferRecord } from "./transfer";
+import type { MetadataUndoRecord, MetadataWriteResults } from "./metadataWrite";
 
 /** Type of media file. */
 export type MediaType = "movie" | "tv_episode" | "music" | "unknown";
@@ -218,6 +219,10 @@ export interface RenameOperation {
   associatedFiles: AssociatedFileRename[];
   /** Set by `FileRenamer.execute` once the file was transferred (see transfer.ts). */
   transfer?: TransferRecord;
+  /** Set by `RenameSession.execute` when `[write_metadata]` is on: tags and NFO files written (metadataWrite.ts). */
+  metadataWrites?: MetadataWriteResults;
+  /** What undo needs to restore tags and remove created NFO files (saved in the history). */
+  metadataUndo?: MetadataUndoRecord;
 }
 
 // ---------------------------------------------------------------------------

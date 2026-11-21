@@ -23,6 +23,7 @@ import type { Ui } from "../ui";
 import { makeTable } from "../ui";
 import { requireExistingPath } from "./shared";
 import { CliCorrections, SEARCH_CHOICE } from "./correct";
+import { showMetadataResults } from "./metadataReport";
 
 export interface RenameOptions extends GlobalOptions {
   type: MediaTypeChoice;
@@ -40,6 +41,10 @@ export interface RenameOptions extends GlobalOptions {
   order?: EpisodeOrder;
   /** --language: overrides `[metadata] language` (already normalized). */
   language?: string;
+  /** --write-tags / --no-write-tags: overrides `[write_metadata] music_tags`. */
+  writeTags?: boolean;
+  /** --write-nfo / --no-write-nfo: overrides `[write_metadata] nfo`. */
+  writeNfo?: boolean;
 }
 
 const TRANSFER_TEXT: Record<TransferMode, string> = {
@@ -219,6 +224,10 @@ export async function renameCommand(
     selectionCallback,
     ...(options.order ? { episodeOrder: options.order } : {}),
     ...(options.language ? { language: options.language } : {}),
+    writeMetadata: {
+      ...(options.writeTags !== undefined ? { musicTags: options.writeTags } : {}),
+      ...(options.writeNfo !== undefined ? { nfo: options.writeNfo } : {}),
+    },
     ...ctx.deps.session,
   });
   if (ctx.stdinIsTTY && !autoSelect) corrections = new CliCorrections(ctx, session);
@@ -251,6 +260,7 @@ export async function renameCommand(
     historySaved: 0,
     transfer: session.transferMode,
     outputFolders: hasOutputFolders(session.output),
+    writeMetadata: { ...session.writeMetadata },
   };
   const finish = (ops: PlannedOperation[], code: number): number => {
     if (json) {
@@ -312,7 +322,10 @@ export async function renameCommand(
   }
 
   if (dryRun) {
+    // Say which tags and NFO files the rename would write; nothing is touched.
+    await session.writeMetadataFor(operations, { preview: true });
     if (!json) {
+      showMetadataResults(ui, operations, true);
       ui.print();
       ui.print(c.yellow("Dry run - no files were renamed."));
     }
@@ -339,7 +352,10 @@ export async function renameCommand(
     return session.saveHistory(operations);
   });
 
-  if (!json) showResults(ui, operations);
+  if (!json) {
+    showResults(ui, operations);
+    showMetadataResults(ui, operations, false);
+  }
   if (signal?.aborted) throw new CancelledError();
 
   const completed = operations.some((op) => op.status === "completed");

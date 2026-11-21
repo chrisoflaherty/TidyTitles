@@ -70,6 +70,8 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo. Lookups run concurrently (`concurrency.ts`); questions to the selection callback and progress stay one at a time, in file order
 - `session.ts` - Wiring shared by both front ends: providers from settings, `RenameSession`, history, undo
 - `scan.ts` - Media file discovery
+- `tags/` - Hand-written tag writers (no dependency): `id3.ts` (MP3), `flac.ts`, `mp4.ts` (M4A), `ogg.ts` (Vorbis, Opus), `vorbisComment.ts`; each parses only the tag region, replaces only the changed fields, and refuses layouts it does not handle (`TagLayoutError`). `rewrite.ts` writes a temporary clone, reads it back, and renames it over the original
+- `musicTags.ts`, `nfo.ts`, `metadataWrite.ts` - `[write_metadata]`: tags from a MusicBrainz match into music files, NFO files for movies, episodes, and `tvshow.nfo`; run by `RenameSession.execute`, results on `RenameOperation.metadataWrites`, undo records on `metadataUndo` (history `tags`, `created_files`)
 - `matchCorrection.ts` - `PlanCorrector` (from `RenameSession.corrector`): search with the user's words, choose or clear a match, apply a TV show to files with the same parsed title, set a typed name (`customName.ts` checks it). Every change re-plans the whole list with `generatePreview`; corrected files are planned after untouched ones
 
 **`packages/cli` (`@tidytitles/cli`)**: commander-based CLI. `src/program.ts` builds the program with injectable dependencies; `src/commands/` holds `rename`, `preview`, `undo`, `config`. Builds two outputs: `dist/index.js` (npm bin) and `dist/tidytitles.mjs` (self-contained bundle shipped inside the desktop app).
@@ -111,6 +113,13 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `[output]` has a folder per kind (`movie`, `tv`, `music`; empty renames in place) and `transfer_mode` (`move`, `copy`, `hardlink`). `RenameSession` resolves folders per file by the matched kind; `outputDir` (CLI `--output`) overrides all three and is created when missing; configured folders never are. Folders are checked at `plan` and again at `execute`, so a missing or unwritable one throws `OutputFolderError` (typed `reason`) before any file moves.
 - Copies are written to a hidden `.…tidytitles-tmp` name and hard-linked into place (no clobber); cross-volume moves use the same copy. A hard link across volumes or on a volume without links is skipped with `skipReason` `cross_device_link` / `link_unsupported`, never copied.
 - `FileRenamer.execute` records `transfer: { mode, fingerprint }` on each operation and associated file; history stores `transfer` (copies and links only) and `fingerprint` (dev, ino, size, mtime_ns). Undo moves a file back only if dev+ino match, deletes a copy only if unchanged and the original exists, a link only if the original is still the same inode; otherwise the file is `kept` with a typed `UndoKeptReason`. `undoHistoryEntry` undoes any entry; legacy entries without fingerprints skip files a later entry touched.
+
+## Writing Tags and NFO Files
+
+- `[write_metadata] music_tags` / `nfo`, both off by default (CLI `--write-tags`, `--write-nfo`; desktop Settings → Files). `RenameSession.execute` writes them after the rename (`writeMetadataFor`; with `preview: true` for the CLI's dry run).
+- Tags: only provider matches (`Track.id !== "local"`), only fields that differ, never blanked. Never through a hard link (`hard_link`) or into a moved file with other links (`shared_data`); copies get them. After a write, the operation's transfer fingerprint is the rewritten file's. Undo restores the saved raw entries (byte-exact where the format allows) before moving the file back; a file changed since keeps its tags.
+- NFO: never replaces an existing file unless the conflict strategy is overwrite, never an associated NFO, never `tvshow.nfo`. Undo removes unchanged created files; `tvshow.nfo` only when no video is left in its folder.
+- Tests that prove the audio is untouched use the tiny fixtures in `packages/core/tests/fixtures/audio` (made with ffmpeg); ffmpeg-decoded comparisons run only where ffmpeg is installed.
 
 ## Template Placeholders
 

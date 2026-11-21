@@ -8,7 +8,7 @@
  *   const session = await createSession(config, { selectionCallback });
  *   const files = await session.collectFiles([folder], { recursive: true });
  *   const ops = await session.plan(files, { progressCallback });
- *   await session.execute(ops, progressCallback);
+ *   await session.execute(ops, progressCallback);   // also writes tags and NFO files when [write_metadata] is on
  *   if (session.coverArtEnabled) await session.downloadCoverArt(ops);
  *   await session.saveHistory(ops);
  *   // later
@@ -32,6 +32,15 @@ import type { EpisodeOrder } from "./episodeOrder";
 import { ConfigError, HistoryChangedError, RenameError } from "./errors";
 import { PlanCorrector } from "./matchCorrection";
 import type { MediaType, RenameOperation } from "./models";
+import {
+  restoreTagsForUndo,
+  undoCreatedFiles,
+  writeMetadataForOperations,
+  type CreatedFileRecord,
+  type CreatedFileUndoOutcome,
+  type TagUndoOutcome,
+  type WriteMetadataSettings,
+} from "./metadataWrite";
 import type { MusicParser } from "./musicParser";
 import type { FilenameParser } from "./parser";
 import type { FetchFn, MovieProvider, MusicProvider, TVProvider } from "./providers/base";
@@ -40,6 +49,7 @@ import { MusicBrainzClient } from "./providers/musicbrainz";
 import { TMDBClient } from "./providers/tmdb";
 import { TVDBClient } from "./providers/tvdb";
 import type { ResponseCache } from "./providers/util";
+import type { RewriteHooks } from "./tags/index";
 import {
   NullMovieProvider,
   NullMusicProvider,
@@ -462,6 +472,10 @@ export interface UndoItemResult {
   errors: string[];
   /** Files left in place on purpose, with the reason. */
   kept: UndoKeptFile[];
+  /** Tags written by the rename: put back, or why not. Absent when none were written. */
+  tags?: TagUndoOutcome;
+  /** NFO files the rename created: removed, or why not. Absent when none were created. */
+  createdFiles?: CreatedFileUndoOutcome[];
 }
 
 export interface UndoResult {
@@ -492,6 +506,8 @@ export interface UndoOptions {
    * `undoTransferredFile`). Set by `undoHistoryEntry`.
    */
   touchedLater?: ReadonlySet<string>;
+  /** Tests: fail in the middle of restoring tags. */
+  tagHooks?: RewriteHooks;
 }
 
 interface UndoItemInternal extends UndoItemResult {
@@ -548,15 +564,37 @@ async function undoItems(
     for (const assoc of [...op.associatedFiles].reverse()) {
       if (!(await undoOne(assoc))) remainingAssoc.unshift(assoc);
     }
-    const mainDone = await undoOne(op);
+    // Tags written by the rename go back before the file does (moves only).
+    const tagUndo = await restoreTagsForUndo(op, options.tagHooks);
+    let mainRecord: HistoryOperation = op;
+    if (tagUndo.outcome && tagUndo.outcome.status === "restored" && tagUndo.fingerprint) {
+      mainRecord = { ...op, fingerprint: tagUndo.fingerprint };
+      delete mainRecord.tags;
+    } else if (tagUndo.outcome?.reason === "failed") {
+      errors.push(`${path.basename(op.destination)}: tags not restored: ${tagUndo.outcome.message ?? "unknown error"}`);
+    }
+    const mainDone = tagUndo.outcome?.reason === "failed" ? false : await undoOne(mainRecord);
 
     const status: UndoItemStatus =
       errors.length > 0 ? "failed" : kept.length > 0 ? "kept" : moved ? "undone" : "missing";
     const item: UndoItemInternal = { operation: op, status, errors, kept, moved };
+    if (tagUndo.outcome) item.tags = tagUndo.outcome;
     if (!mainDone || remainingAssoc.length > 0) {
-      item.remaining = { ...op, associatedFiles: remainingAssoc };
+      const remaining: HistoryOperation = { ...mainRecord, associatedFiles: remainingAssoc };
+      // Created files are handled once, below; never retried.
+      delete remaining.createdFiles;
+      item.remaining = remaining;
     }
     results.push(item);
+  }
+
+  // NFO files the renames created: after every file of the entry is back,
+  // so a tvshow.nfo whose folder is now empty of videos can go too.
+  for (const [i, op] of ordered.entries()) {
+    const created: CreatedFileRecord[] = op.createdFiles ?? [];
+    if (created.length === 0) continue;
+    const episodesFirst = [...created.filter((c) => c.kind !== "tvshow"), ...created.filter((c) => c.kind === "tvshow")];
+    results[i]!.createdFiles = await undoCreatedFiles(episodesFirst);
   }
   return results;
 }
@@ -564,7 +602,14 @@ async function undoItems(
 function toUndoResult(items: UndoItemInternal[]): UndoResult {
   return {
     historyFound: true,
-    items: items.map(({ operation, status, errors, kept }) => ({ operation, status, errors, kept })),
+    items: items.map(({ operation, status, errors, kept, tags, createdFiles }) => ({
+      operation,
+      status,
+      errors,
+      kept,
+      ...(tags ? { tags } : {}),
+      ...(createdFiles ? { createdFiles } : {}),
+    })),
     undone: items.filter((i) => i.status === "undone").length,
     missing: items.filter((i) => i.status === "missing").length,
     kept: items.filter((i) => i.status === "kept").length,
@@ -753,6 +798,8 @@ export interface SessionOptions {
   episodeOrder?: EpisodeOrder;
   /** Use this metadata language instead of `[metadata] language` (CLI `--language`). */
   language?: string;
+  /** Override `[write_metadata]` for this run (CLI `--write-tags`, `--write-nfo`). */
+  writeMetadata?: Partial<WriteMetadataSettings>;
 }
 
 /** Settings with a session's per-run overrides applied. */
@@ -792,6 +839,8 @@ export class RenameSession {
   readonly coverArt: CoverArtDownloader;
   /** Where renamed files go: the `[output]` folders, or `outputDir` for all. */
   readonly output: OutputPlan;
+  /** What `execute` writes after renaming: `[write_metadata]` with the session's overrides. */
+  readonly writeMetadata: WriteMetadataSettings;
 
   /** @throws MissingApiKeyError when `requireApiKeys` is on and keys are missing. */
   constructor(settings: Settings, options: SessionOptions = {}) {
@@ -803,6 +852,7 @@ export class RenameSession {
     this.forceType = forceTypeForChoice(this.mediaType);
     this.dryRun = options.dryRun ?? false;
     this.output = outputPlanFromSettings(settings.output, options.outputDir);
+    this.writeMetadata = { ...settings.writeMetadata, ...options.writeMetadata };
 
     if (options.requireApiKeys ?? true) {
       const missing = checkApiKeys(settings, {
@@ -935,7 +985,27 @@ export class RenameSession {
   ): Promise<T[]> {
     if (!this.dryRun) await checkOutputFolders(this.output, operations);
     applyTransferChecks(operations as unknown as PlannedOperation[], this.transferMode);
-    return this.service.executeRename(operations, progressCallback);
+    const done = await this.service.executeRename(operations, progressCallback);
+    await this.writeMetadataFor(done, { progressCallback });
+    return done;
+  }
+
+  /**
+   * Write tags and NFO files for completed operations (`[write_metadata]`);
+   * `execute` calls this. In a dry run (or with `preview`), nothing is
+   * written: pending operations report what would be (`metadataWrites`).
+   */
+  async writeMetadataFor(
+    operations: readonly RenameOperation[],
+    options: { progressCallback?: ProgressCallback; preview?: boolean } = {},
+  ): Promise<void> {
+    await writeMetadataForOperations(operations, {
+      settings: this.writeMetadata,
+      dryRun: this.dryRun || (options.preview ?? false),
+      transferMode: this.transferMode,
+      overwrite: resolveConflictStrategy(this.settings) === "overwrite",
+      ...(options.progressCallback ? { progressCallback: options.progressCallback } : {}),
+    });
   }
 
   /** Download cover art next to completed operations. Returns [] in a dry run. */

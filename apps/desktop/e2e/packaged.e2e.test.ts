@@ -4,15 +4,53 @@
  * (smol-toml) and validated (zod), templates render, and music-metadata
  * reads ID3 tags from a real file. No network: the only file is music and
  * the provider is TMDB, so the music lookup uses a null provider.
+ *
+ * The tag writer is checked inside both shipped bundles: core (from source)
+ * renames a FLAC file with `[write_metadata] music_tags` and records it, and
+ * the packaged app's Undo, then the packaged CLI bundle's `undo`, must put
+ * the file back byte for byte (which rewrites its tags).
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { _electron, type ElectronApplication } from "playwright-core";
 import { afterAll, describe, expect, it } from "vitest";
+import {
+  ConfigService,
+  RenameSession,
+  createArtist,
+  createRenameOperation,
+  createTrack,
+  parseSettings,
+} from "@tidytitles/core";
 import type { TidyTitlesApi } from "../src/shared/ipc";
+
+const FLAC = path.resolve(import.meta.dirname, "../../../packages/core/tests/fixtures/audio/tagged.flac");
+
+/** Rename `source` with tag writing on (core from source) and record it in `configDir`'s history. */
+async function taggedRename(configDir: string, source: string): Promise<void> {
+  const config = new ConfigService({ configDir, cacheDir: path.join(configDir, "cache"), env: {} });
+  const settings = parseSettings(await readFile(config.configFile, "utf8"));
+  settings.writeMetadata.musicTags = true;
+  const session = new RenameSession(settings, { config, requireApiKeys: false, cache: false });
+  const ops = [
+    createRenameOperation({
+      source,
+      destination: path.join(path.dirname(source), "Renamed.flac"),
+      mediaFile: {
+        path: source,
+        parsedInfo: { title: "x", mediaType: "music", rawFilename: path.basename(source) },
+        matchedMetadata: createTrack({ id: "rec-1", title: "Packaged Title", artist: createArtist({ id: "a", name: "Packaged Artist" }) }),
+      },
+    }),
+  ];
+  await session.execute(ops);
+  await session.saveHistory(ops);
+  if (ops[0]!.metadataWrites?.tags?.status !== "written") throw new Error("tags were not written");
+}
 
 declare global {
   interface Window {
@@ -104,5 +142,30 @@ describe.skipIf(!existsSync(EXECUTABLE))("packaged app", () => {
     expect(updates.capability).toEqual({ kind: "off", reason: "disabled" });
     const updatesItem = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("checkForUpdates")?.label);
     expect(updatesItem).toBe("Check for Updates…");
+
+    // Tag writer in the main bundle: Undo restores the tags core wrote.
+    const music = path.join(tmp, "music");
+    await mkdir(music, { recursive: true });
+    const song = path.join(music, "song.flac");
+    await copyFile(FLAC, song);
+    await taggedRename(configDir, song);
+    const undone = await page.evaluate(() => window.tidytitles.undo());
+    expect(undone).toMatchObject({ kind: "done", undone: 1 });
+    expect(undone.kind === "done" && undone.items[0]!.tags).toEqual({ status: "restored" });
+    expect((await readFile(song)).equals(await readFile(FLAC))).toBe(true);
+    await app.close();
+    app = undefined;
+
+    // Tag writer in the packaged CLI bundle, run with the app's own executable.
+    const cli =
+      process.platform === "darwin"
+        ? path.resolve(EXECUTABLE, "../../Resources/cli/tidytitles.mjs")
+        : path.resolve(path.dirname(EXECUTABLE), "resources", "cli", "tidytitles.mjs");
+    await taggedRename(configDir, song);
+    execFileSync(EXECUTABLE, [cli, "undo", "-y", "--config-dir", configDir], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      stdio: "pipe",
+    });
+    expect((await readFile(song)).equals(await readFile(FLAC))).toBe(true);
   }, 60_000);
 });

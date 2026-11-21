@@ -9,6 +9,8 @@ TidyTitles keeps its settings in a TOML file, `config.toml`, and the record of r
 - [Conflict resolution](#conflict-resolution)
 - [Associated files](#associated-files)
 - [Cover art](#cover-art)
+- [Writing tags into music files](#writing-tags-into-music-files)
+- [NFO files](#nfo-files)
 - [Environment variables](#environment-variables)
 - [Using a different settings folder](#using-a-different-settings-folder)
 - [Rename history](#rename-history)
@@ -103,9 +105,13 @@ episode_order = "aired"
 
 [metadata]
 language = "en-US"
+
+[write_metadata]
+music_tags = false
+nfo = false
 ```
 
-`[output]` and `[history]` are TidyTitles additions; the old Python app ignores them.
+`[output]`, `[history]`, and `[write_metadata]` are TidyTitles additions; the old Python app ignores them.
 
 Every key is optional; a missing key takes its default. Booleans also accept `1`/`0` and strings such as `"yes"`/`"no"`. Unknown sections and keys are ignored when reading.
 
@@ -207,6 +213,15 @@ Whatever the order, a file with an episode number but no season (`[Group] Show -
 
 The CLI can override both for one run with `--order` and `--language`.
 
+### Write metadata
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `write_metadata.music_tags` | `false` | After renaming, write a MusicBrainz match's tags into the music file. See [Writing tags into music files](#writing-tags-into-music-files). |
+| `write_metadata.nfo` | `false` | After renaming, write NFO files for Kodi, Jellyfin, and Emby. See [NFO files](#nfo-files). |
+
+Both are off unless you turn them on: in the app, **Settings** → **Files** → **Write metadata**; in the CLI, `--write-tags` and `--write-nfo` (and `--no-write-tags`, `--no-write-nfo`) override them for one run.
+
 ## Output folders and transfer modes
 
 In the desktop app these are **Settings** → **Output**, plus the **Transfer** menu and **Output** button in the main window. In the CLI, `--output` and `--transfer` override them for one run.
@@ -283,6 +298,32 @@ When cover art is on (the **Download cover art** checkbox, `--cover-art`, or `co
 
 If the file is already there and `cover_art.overwrite` is `false`, nothing is downloaded. Files in one folder therefore share one poster or cover. The extension is changed to match the image (`.jpg`, `.png`, or `.webp`). Failed downloads are skipped without an error. Cover art is not downloaded in a dry run.
 
+## Writing tags into music files
+
+With `write_metadata.music_tags` on, a renamed music file whose match came from MusicBrainz gets the match's **title, artist, album, album artist, track number, disc number, year, and genre** written into it, as far as the match has them.
+
+- **Only what is better.** A field is written only when the match has a value and the file's value differs. Nothing is ever blanked: a field the match does not have keeps the file's value (a track number without a total keeps the file's total). Case counts for names ("queen" becomes "Queen"); a genre that differs only in case is left alone. A track total is written only for single-disc releases, because MusicBrainz counts the tracks of every disc together. A match built from the file's own tags (shown as **Verified** or **Unverified**) is not written: it holds nothing new.
+- **Formats:** MP3 (ID3v2.3 and ID3v2.4; a file without a tag gets ID3v2.3), FLAC, M4A (MP4 audio), Ogg Vorbis, and Opus. Other music files (WAV, AIFF, WMA, AAC, APE) are renamed as usual and reported as **tags not written** (`unsupported_format`). A supported file laid out in a way TidyTitles does not write (for example ID3v2.2, an unsynchronised or extended ID3 header, a fragmented MP4, or an Ogg file with several streams) is renamed and reported with `unsupported_layout`.
+- **Everything else stays.** Only the entries of those fields change. Embedded artwork, other tags (comments, lyrics, ReplayGain, sort names, MusicBrainz IDs), and the audio itself are copied byte for byte. Padding in the tag absorbs the change where it can, so the audio stays where it was.
+- **Written safely.** The new file is written to a hidden temporary file next to the original, read back, and put in place in one step. If anything fails, or another program changes the file meanwhile, the original is untouched and the file is reported with a reason (`write_failed`, `changed_during_write`, `verify_failed`). The file keeps its permissions; its modification time becomes the time of the change, so media servers notice.
+- **Transfer modes.** With **move**, tags go into the moved file. With **copy**, they go into the copy only; the original is never touched. With **hard link**, tags are **not** written (`hard_link`): both names share the same data, so the original would change too. A moved file that has other hard links (for example, one a download client is seeding) is also left alone (`shared_data`).
+- **Undo** puts the old tags back exactly as they were (and the old modification time), then moves the file back. If the file was changed after the rename (for example, edited in a tag editor), undo moves it back without touching its tags. Undoing a copy deletes the copy.
+- **Dry run** (`--dry-run`) reads the files and lists the tags that would change, without writing anything.
+
+## NFO files
+
+With `write_metadata.nfo` on, TidyTitles writes XML `.nfo` files from the metadata it found, after each successful rename. **Kodi, Jellyfin, and Emby read them; Plex does not** (not without a third-party agent).
+
+- **Movie:** `<movie>` (title, original title, year, release date, plot, genres, TMDB ID as `<uniqueid>`) in `Movie Name (Year).nfo`, next to the video and named after it.
+- **Episode:** `<episodedetails>` (title, show title, season, episode, air date, plot) next to the episode, named after it. A file that holds several episodes gets one `<episodedetails>` per episode, one after the other, the layout Kodi up to version 21 and Jellyfin read. Kodi 22 expects a separate NFO per episode for such files instead, and Emby reads only the first; those are not written.
+- **Show:** `tvshow.nfo` (title, original title, year, genres, network as `<studio>`, status, TMDB or TVDB ID) in the show's folder. The show's folder is the episode's folder, or the one above it when that is a season folder (`Season 1`, `S01`, `Specials`), and only when its name contains the show's title, as with a template like `{title}/Season {season}/...`. Episodes in a shared folder (the default flat template) get no `tvshow.nfo` (reported as "no show folder"). It is created by the first episode of a rename that finds none, and never replaced.
+
+Each file is UTF-8 with an XML declaration and a `<!-- Written by TidyTitles -->` comment. Text is escaped, and characters XML does not allow are dropped, so the file is valid whatever the titles contain.
+
+- **Existing files are kept.** If a file of that name is already there, it is left alone and reported, unless conflict resolution is **Replace the existing file** (`overwrite`). An NFO that moved with the video as an associated file is never replaced, whatever the setting. NFO files go next to the renamed video, so into the output folder when there is one, in every transfer mode.
+- **Undo** removes the NFO files the rename created, if they are unchanged since. A replaced file, or one you edited afterward, is left in place. `tvshow.nfo` is removed only when no video is left in the show's folder (or two folders below it) after the undo, because other episodes use it.
+- **Dry run** lists the files that would be written.
+
 ## Environment variables
 
 Every setting can also come from an environment variable named `FILE_RENAMER_` plus the setting's name, with `__` (two underscores) between a section and a key. Names are not case-sensitive.
@@ -301,6 +342,8 @@ Every setting can also come from an environment variable named `FILE_RENAMER_` p
 | `FILE_RENAMER_HISTORY__MAX_ENTRIES` | `history.max_entries` |
 | `FILE_RENAMER_TV__EPISODE_ORDER` | `tv.episode_order` |
 | `FILE_RENAMER_METADATA__LANGUAGE` | `metadata.language` |
+| `FILE_RENAMER_WRITE_METADATA__MUSIC_TAGS` | `write_metadata.music_tags` |
+| `FILE_RENAMER_WRITE_METADATA__NFO` | `write_metadata.nfo` |
 
 The `[behavior]` and `[providers]` settings use flat names without a section: `FILE_RENAMER_CONFLICT_RESOLUTION`, `FILE_RENAMER_DRY_RUN`, `FILE_RENAMER_MOVIE_PROVIDER`, `FILE_RENAMER_TV_PROVIDER`, `FILE_RENAMER_MUSIC_PROVIDER`. A whole section can also be given as JSON, for example `FILE_RENAMER_API='{"tmdb_api_key": "..."}'`; the `__` variables win over the JSON.
 
@@ -362,6 +405,7 @@ For testing, or to keep separate setups, point TidyTitles at another folder. It 
 - `timestamp` is local time without a time zone (here November 14, 2026, 9:05 PM).
 - Paths are absolute.
 - Entries written by this version also have a `fingerprint` on each file (`dev`, `ino`, `size`, `mtime_ns`: the file right after it was renamed), and `"transfer": "copy"` or `"hardlink"` for copies and links. Undo uses the fingerprint to tell its own files from other files put at the same path later. Older entries have no fingerprint and still load and undo.
+- With [write metadata](#write-metadata) on, an operation can also have `tags` (the format, the size of the tag area, the original entries of each field that was rewritten in base64, the modification time before, and the `fingerprint` of the file after its tags were written) and `created_files` (the NFO files the rename created, each with `path`, `kind`, and `fingerprint`). Older versions ignore both and still undo the rename itself.
 - Undo (`tidytitles undo`, or **Undo** in the app) reverts the first entry and removes it, or, if some files could not be moved back, keeps just those files in it. `tidytitles undo --entry N` and **History** in the app undo an older entry.
 - Undo moves a file back only if it is still the same file (same drive and file ID). It deletes a copy or link only if the copy or link is unchanged and the original still exists, and it never touches the original. Anything else is left in place and reported as **Left in place**, with the reason.
 - While the history is being written, a lock file (`history.json.lock`) keeps the CLI and the app from overwriting each other's entries. A lock older than 30 seconds is treated as left over from a crash.

@@ -1653,3 +1653,14 @@ progress.update-progress {
 .match-field select {
   height: 28px;
 }
+
+/* Tags and NFO files in the rename and undo results (MetadataReport.tsx) */
+.metadata-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.metadata-list {
+  overflow-wrap: anywhere;
+}

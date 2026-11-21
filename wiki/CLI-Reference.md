@@ -69,6 +69,8 @@ tidytitles rename [options] <path>
 | `-c, --cover-art` | Download cover art (posters/album covers) after renaming |
 | `--order <order>` | Episode order: `aired`, `dvd`, or `absolute` (default: `tv.episode_order` in config.toml) |
 | `--language <code>` | Metadata language, such as `en-US`, `de-DE`, `pt-BR`, or `ja` (default: `metadata.language`) |
+| `--write-tags` / `--no-write-tags` | Write a MusicBrainz match's tags into renamed music files, or not, in this run (default: `write_metadata.music_tags`, normally off) |
+| `--write-nfo` / `--no-write-nfo` | Write NFO files for Kodi, Jellyfin, and Emby, or not, in this run (default: `write_metadata.nfo`, normally off) |
 | `--json` | Print the result as JSON |
 | `-h, --help` | Show this message and exit |
 
@@ -186,9 +188,31 @@ tidytitles rename ~/Downloads --type movie --output /Volumes/Media/Movies
 tidytitles rename ~/Downloads -t movie -o /Volumes/Media/Movies --transfer copy
 ```
 
+### `--write-tags` and `--write-nfo`
+
+`--write-tags` writes the match's title, artist, album, album artist, track and disc numbers, year, and genre into renamed MP3, FLAC, M4A, Ogg Vorbis, and Opus files, only the fields that differ, after the rename. `--write-nfo` writes an `.nfo` file next to each renamed movie and episode and `tvshow.nfo` in a show's folder. Without either option the `[write_metadata]` settings decide; `--no-write-tags` and `--no-write-nfo` turn them off for one run. See [Writing tags into music files](Configuration.md#writing-tags-into-music-files) and [NFO files](Configuration.md#nfo-files).
+
+After the results, the CLI lists what it wrote and what it left alone:
+
+```
+Tags written: 1 file(s)
+  01 - One More Time.flac: title "Wrong Title" → "One More Time", artist "Somebody" → "Daft Punk", year "2001"
+Tags not written: 1 file(s)
+  intro.wav: tags of this format can't be written
+NFO files written: 1
+  /Users/me/Movies/Inception (2010).nfo
+```
+
+Hard links never get tags (`hard_link`); copies get them and the originals are never touched. `undo` puts the old tags back and removes the NFO files it created if they are unchanged.
+
+```bash
+tidytitles rename ~/Music/Inbox -t music --write-tags --dry-run    # list the tags that would change
+tidytitles rename /media/movies -t movie --write-nfo -y
+```
+
 ### `--dry-run`
 
-Looks everything up and shows the preview, then prints `Dry run - no files were renamed.` Nothing is renamed, no history is saved, and no cover art is downloaded. A dry run still needs API keys, and it still exits 1 if a lookup failed.
+Looks everything up and shows the preview, then prints `Dry run - no files were renamed.` Nothing is renamed, no history is saved, and no cover art is downloaded. With `--write-tags` or `--write-nfo` (or the settings), it also lists the tags and NFO files that would be written; nothing is written. A dry run still needs API keys, and it still exits 1 if a lookup failed.
 
 ### Examples
 
@@ -241,7 +265,9 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
         "verificationStatus": "unverified"
       },
       "correction": null,
-      "associatedFiles": []
+      "associatedFiles": [],
+      "tags": null,
+      "nfo": null
     }
   ],
   "summary": { "total": 1, "completed": 1, "failed": 0, "skipped": 0, "pending": 0, "associatedFiles": 0, "totalFiles": 1 },
@@ -249,7 +275,8 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
   "coverArt": [],
   "historySaved": 1,
   "transfer": "move",
-  "outputFolders": false
+  "outputFolders": false,
+  "writeMetadata": { "musicTags": false, "nfo": false }
 }
 ```
 
@@ -267,6 +294,9 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
 | `historySaved` | Number of renames recorded for `undo`. |
 | `transfer` | `move`, `copy`, or `hardlink`. |
 | `outputFolders` | Whether any output folder (`--output` or `[output]`) was in effect. |
+| `writeMetadata` | `{ musicTags, nfo }`: whether tags and NFO files were written in this run. |
+| `operations[].tags` | `null` unless tags were considered for this file. Otherwise `{ status, reason, changes, format, error }`: `status` is `written`, `would_write` (dry run), `unchanged`, `not_written`, or `failed`; `reason` is `match_from_tags`, `unsupported_format`, `unsupported_layout`, `hard_link`, `shared_data`, `read_failed`, `write_failed`, `changed_during_write`, `verify_failed`, or `null`; `changes` is `[{ field, from, to }]` with `field` one of `title`, `artist`, `album`, `albumArtist`, `track`, `disc`, `year`, `genre` (`from` is `null` when the file had no value); `format` is `mp3`, `flac`, `mp4`, `ogg_vorbis`, or `ogg_opus`. |
+| `operations[].nfo` | `null` unless NFO files were considered. Otherwise `[{ kind, path, status, reason, replaced, error }]`: `kind` is `movie`, `episode`, or `tvshow`; `status` is `written`, `would_write`, `not_written`, or `failed`; `reason` is `exists`, `associated_file`, `no_show_folder` (then `path` is `null`), `write_failed`, or `null`; `replaced` is `true` when an existing file was overwritten (conflict resolution `overwrite`). |
 
 API keys never appear in JSON output.
 
@@ -316,7 +346,7 @@ tidytitles undo [options]
 | `-y, --yes` | Skip confirmation prompt |
 | `-l, --list` | List the rename history (most recent first) instead of undoing |
 | `-e, --entry <number>` | Undo this entry of `--list` instead of the most recent (1 is the most recent) |
-| `--json` | Print the result as JSON: `{ command, historyFound, timestamp, confirmed, items: [{ source, destination, status, errors, kept }], undone, missing, kept, failed }`; with `--list`: `{ command, history: [{ entry, timestamp, operations, files, transfer, samples }] }` |
+| `--json` | Print the result as JSON: `{ command, historyFound, timestamp, confirmed, items: [{ source, destination, status, errors, kept, tags, createdFiles }], undone, missing, kept, failed }` (`tags` is `null` or `{ status: "restored" \| "not_restored", reason }`; `createdFiles` lists NFO files as `{ path, kind, status, reason }`); with `--list`: `{ command, history: [{ entry, timestamp, operations, files, transfer, samples }] }` |
 | `-h, --help` | Show this message and exit |
 
 ```
@@ -332,6 +362,7 @@ Undone: 1
 
 - It reverts the most recent entry in the history, whether the CLI, the desktop app, or the Python app made it. Associated files are moved back too. The history keeps the last 200 renames (`[history] max_entries`), so you can run `undo` repeatedly to go further back, or pick one with `--entry`.
 - Copies and hard links are undone by deleting them, only if they are unchanged since the rename; the originals are never touched.
+- Tags the rename wrote into music files are put back first (exactly as they were, with the old modification time), and NFO files it created are removed if unchanged; `tvshow.nfo` only when no video is left in its folder. The output adds `Tags put back` and `NFO files removed`, and lists files left as they are. A music file changed after the rename is moved back with its tags untouched.
 - Each file ends up **undone**, **not found** (nothing at the renamed path any more; counted as `Not found`), **left in place** (it is not the file the rename produced: replaced or changed since, a copy whose original is gone, or, in entries from older versions without fingerprints, a file a later rename touched; printed as `Left in place: name (reason)`), or **failed** (for example, its original name is now taken; undo never overwrites).
 - When everything worked, the entry is removed from the history. When some files failed, the entry keeps only those files, so you can fix the cause and run `undo` again. When nothing could be moved at all, the entry is left as it was.
 - If another rename is recorded between the listing and your answer, undo stops without moving anything and asks you to review and try again.
@@ -408,6 +439,10 @@ Output:
 
 History:
   Entries kept: 200
+
+Write Metadata:
+  Music tags: off
+  NFO files:  off
 ```
 
 `Preset` names the [naming preset](Templates.md#naming-presets) whose three templates equal yours, or `Custom` (in JSON, `templatePreset` is the preset id or `null`). The values shown are the effective ones: defaults, then `FILE_RENAMER_*` environment variables, then `config.toml` on top. `--json` prints every setting, including cover art and providers:
@@ -424,7 +459,8 @@ History:
   "behavior": { "dryRun": false, "overwrite": false, "previewBeforeRename": true, "conflictResolution": "skip" },
   "providers": { "movie": "tmdb", "tv": "tvdb", "music": "musicbrainz" },
   "output": { "movie": "", "tv": "", "music": "", "transferMode": "move" },
-  "history": { "maxEntries": 200 }
+  "history": { "maxEntries": 200 },
+  "writeMetadata": { "musicTags": false, "nfo": false }
 }
 ```
 

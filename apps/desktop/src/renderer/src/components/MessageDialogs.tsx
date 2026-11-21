@@ -4,6 +4,7 @@ import type { RenameOutcome, UndoOutcome } from "../../../shared/ipc";
 import { formatCount, plural } from "../format";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
+import { MetadataResultList, MetadataUndoList } from "./MetadataReport";
 
 export function ConfirmDialog({
   title,
@@ -102,6 +103,7 @@ export function RenameResultDialog({
           ))}
         </ul>
       )}
+      {outcome.metadata && <MetadataResultList report={outcome.metadata} />}
       {outcome.historySaved > 0 && <p className="muted small">You can undo this with Undo Last Rename.</p>}
     </Dialog>
   );
@@ -146,6 +148,7 @@ export function UndoResultDialog({
               ))}
             </ul>
           )}
+          <MetadataUndoList items={outcome.items} />
           {outcome.failed > 0 && <p className="muted small">The files that could not be restored stay in the history; you can try Undo again.</p>}
         </>
       )}

@@ -62,6 +62,7 @@ import type {
 } from "../shared/ipc";
 import { EVENTS } from "../shared/ipc";
 import { episodeOrderNotes, metadataLanguageChoices } from "./metadataOptions";
+import { metadataReport } from "./metadataReport";
 import { previewTemplates } from "./templatePreview";
 import {
   describeLookupError,
@@ -141,6 +142,7 @@ export function toEditableSettings(settings: Settings): EditableSettings {
     history: { ...settings.history },
     tv: { ...settings.tv },
     metadata: { ...settings.metadata },
+    writeMetadata: { ...settings.writeMetadata },
   };
 }
 
@@ -212,6 +214,7 @@ export class AppController {
       configFile: this.config.configFile,
       platform: this.platform,
       output: { movie: this.settings.output.movie, tv: this.settings.output.tv, music: this.settings.output.music },
+      writeMetadata: { ...this.settings.writeMetadata },
     };
   }
 
@@ -557,6 +560,7 @@ export class AppController {
         transferMode: session.transferMode,
         failures,
         historySaved,
+        ...metadataReport(session, operations),
       };
     } catch (error) {
       const message = errorMessage(error);
@@ -650,6 +654,10 @@ export class AppController {
           status: item.status,
           errors: item.errors,
           kept: item.kept.map((k) => ({ name: path.basename(k.path), reason: k.reason })),
+          ...(item.tags ? { tags: item.tags } : {}),
+          ...(item.createdFiles
+            ? { createdFiles: item.createdFiles.map(({ path: p, ...rest }) => ({ ...rest, name: path.basename(p) })) }
+            : {}),
         })),
       };
     } catch (error) {
@@ -869,6 +877,7 @@ export class AppController {
         history: { maxEntries: edited.history.maxEntries },
         tv: { ...edited.tv },
         metadata: { ...edited.metadata },
+        writeMetadata: { ...edited.writeMetadata },
       };
       const coverArtDefaultChanged = next.coverArt.enabled !== this.settings.coverArt.enabled;
       const transferDefaultChanged = next.output.transferMode !== this.settings.output.transferMode;

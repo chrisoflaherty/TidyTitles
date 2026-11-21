@@ -97,6 +97,10 @@ episode_order = "aired"
 
 [metadata]
 language = "en-US"
+
+[write_metadata]
+music_tags = false
+nfo = false
 `;
 
 describe("directory resolution", () => {
@@ -203,6 +207,7 @@ describe("settings", () => {
       history: { maxEntries: 200 },
       tv: { episodeOrder: "aired" },
       metadata: { language: "en-US" },
+      writeMetadata: { musicTags: false, nfo: false },
     });
   });
 

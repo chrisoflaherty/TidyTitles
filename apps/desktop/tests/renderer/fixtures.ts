@@ -60,6 +60,7 @@ export function appState(over: Partial<AppState> = {}): AppState {
     configFile: "/config/config.toml",
     platform: "darwin",
     output: { movie: "", tv: "", music: "" },
+    writeMetadata: { musicTags: false, nfo: false },
     ...over,
   };
 }
@@ -77,6 +78,7 @@ export function settingsPayload(): SettingsPayload {
       history: { maxEntries: 200 },
       tv: { episodeOrder: "aired" },
       metadata: { language: "en-US" },
+      writeMetadata: { musicTags: false, nfo: false },
     },
     configFile: "/config/config.toml",
     fields: { title: "Title", year: "Year" },

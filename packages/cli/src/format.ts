@@ -3,6 +3,8 @@
 import path from "node:path";
 import { episodeNumbers } from "@tidytitles/core";
 import type {
+  NfoWriteResult,
+  TagWriteResult,
   LookupErrorInfo,
   MatchedMetadata,
   PlannedOperation,
@@ -170,6 +172,29 @@ export function operationToJson(op: PlannedOperation): Record<string, unknown> {
       destination: a.destination,
       fileType: a.fileType,
     })),
+    tags: op.metadataWrites?.tags ? tagsToJson(op.metadataWrites.tags) : null,
+    nfo: op.metadataWrites?.nfo ? op.metadataWrites.nfo.map(nfoToJson) : null,
+  };
+}
+
+function tagsToJson(tags: TagWriteResult): Record<string, unknown> {
+  return {
+    status: tags.status,
+    reason: tags.reason ?? null,
+    changes: tags.changes.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to })),
+    format: tags.format ?? null,
+    error: tags.message ?? null,
+  };
+}
+
+function nfoToJson(nfo: NfoWriteResult): Record<string, unknown> {
+  return {
+    kind: nfo.kind,
+    path: nfo.path ?? null,
+    status: nfo.status,
+    reason: nfo.reason ?? null,
+    replaced: nfo.replaced ?? false,
+    error: nfo.message ?? null,
   };
 }
 

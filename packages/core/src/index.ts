@@ -35,6 +35,10 @@ export * from "./output";
 export * from "./associatedFiles";
 export * from "./conflictResolution";
 export * from "./coverArt";
+export * from "./musicTags";
+export * from "./nfo";
+export * from "./metadataWrite";
+export { TAG_WRITE_EXTENSIONS, canWriteTags, readTags, TAG_FIELDS } from "./tags/index";
 export * from "./config";
 
 export * from "./scan";

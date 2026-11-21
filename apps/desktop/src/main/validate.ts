@@ -162,6 +162,16 @@ export function parseEditableSettings(value: unknown): EditableSettings {
     ...parseOutputAndHistory(r),
     tv: { episodeOrder: oneOf(tv.episodeOrder, EPISODE_ORDER_CHOICES, "tv.episodeOrder") },
     metadata: { language },
+    writeMetadata: parseWriteMetadata(r.writeMetadata),
+  };
+}
+
+/** `[write_metadata]` from the settings dialog. */
+function parseWriteMetadata(value: unknown): EditableSettings["writeMetadata"] {
+  const w = record(value, "writeMetadata");
+  return {
+    musicTags: bool(w.musicTags, "writeMetadata.musicTags"),
+    nfo: bool(w.nfo, "writeMetadata.nfo"),
   };
 }
 

@@ -6,6 +6,7 @@ import { FileTable } from "./components/FileTable";
 import { HistoryDialog } from "./components/HistoryDialog";
 import { Icon } from "./components/Icon";
 import { ConfirmDialog, ErrorDialog, RenameResultDialog, UndoResultDialog } from "./components/MessageDialogs";
+import { MetadataConfirmNote } from "./components/MetadataReport";
 import { ChangeMatchDialog } from "./components/ChangeMatchDialog";
 import { EditNameDialog } from "./components/EditNameDialog";
 import type { RowAction } from "./corrections";
@@ -416,6 +417,7 @@ export function App() {
           )}
           {skipped > 0 && <p className="muted">{plural(skipped, "skipped file")} will stay as they are.</p>}
           {app.options.coverArt && <p className="muted">Cover art will be downloaded afterward.</p>}
+          <MetadataConfirmNote ready={ready} settings={app.writeMetadata} transfer={transfer} />
           <p className="muted small">You can undo this afterward.</p>
         </ConfirmDialog>
       )}
