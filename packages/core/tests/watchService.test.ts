@@ -156,7 +156,7 @@ describe("automatic mode", () => {
     await writeFile(path.join(inbox, "The.Matrix.mkv"), "m");
     await run(s, SETTLE + 8_000);
     expect(await names()).toEqual(["The.Matrix.mkv"]);
-    expect(ofType("review")).toEqual([{ type: "review", path: path.join(inbox, "The.Matrix.mkv"), reason: "several_matches", message: "No metadata match found" }]);
+    expect(ofType("review")).toEqual([{ type: "review", path: path.join(inbox, "The.Matrix.mkv"), reason: "several_matches" }]);
     expect(ofType("renamed")).toEqual([]);
     expect(await config.loadHistory()).toEqual([]);
   });

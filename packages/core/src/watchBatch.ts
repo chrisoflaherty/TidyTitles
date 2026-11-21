@@ -92,6 +92,9 @@ const SKIP_REVIEW: Partial<Record<SkipReason, WatchReviewReason>> = {
   link_unsupported: "transfer_unavailable",
 };
 
+/** Reasons whose plan message says more than the reason itself. */
+const WITH_MESSAGE = new Set<WatchReviewReason>(["lookup_failed", "template_error", "not_renamable", "rename_failed"]);
+
 /** Lookup statuses that mean "exactly one candidate". */
 const UNAMBIGUOUS = new Set(["auto_matched", "verified", "from_provider"]);
 
@@ -197,7 +200,8 @@ export async function processWatchBatch(
     }
     const blocker = automaticBlocker(op);
     if (blocker) {
-      outcomes.push({ path: op.source, result: "review", reason: blocker, operation: op, ...(op.errorMessage ? { message: op.errorMessage } : {}) });
+      const message = WITH_MESSAGE.has(blocker) ? op.errorMessage : undefined;
+      outcomes.push({ path: op.source, result: "review", reason: blocker, operation: op, ...(message ? { message } : {}) });
       continue;
     }
     if (samePath(op.source, op.destination)) {
