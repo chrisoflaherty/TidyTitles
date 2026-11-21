@@ -81,6 +81,15 @@ tv = "tvdb"
 music = "musicbrainz"
 `;
 
+/** What `save()` writes for defaults: the Python layout plus the TypeScript-only tables. */
+const DEFAULT_TOML = `${PYTHON_DEFAULT_TOML}
+[tv]
+episode_order = "aired"
+
+[metadata]
+language = "en-US"
+`;
+
 describe("directory resolution", () => {
   it("matches platformdirs on macOS", () => {
     const ctx = { platform: "darwin" as const, env: {}, homedir: "/Users/test" };
@@ -181,11 +190,39 @@ describe("settings", () => {
       movieProvider: "tmdb",
       tvProvider: "tvdb",
       musicProvider: "musicbrainz",
+      tv: { episodeOrder: "aired" },
+      metadata: { language: "en-US" },
     });
   });
 
-  it("serializes byte-for-byte like the Python for default settings", () => {
-    expect(settingsToToml(createDefaultSettings())).toBe(PYTHON_DEFAULT_TOML);
+  it("serializes like the Python for default settings, then adds [tv] and [metadata]", () => {
+    expect(settingsToToml(createDefaultSettings())).toBe(DEFAULT_TOML);
+  });
+
+  it("loads a file without [tv] or [metadata] with their defaults", () => {
+    const settings = parseSettings(PYTHON_DEFAULT_TOML);
+    expect(settings.tv).toEqual({ episodeOrder: "aired" });
+    expect(settings.metadata).toEqual({ language: "en-US" });
+  });
+
+  it("reads [tv] episode_order and [metadata] language, and writes them back", () => {
+    const text = `${PYTHON_DEFAULT_TOML}\n[tv]\nepisode_order = "dvd"\n\n[metadata]\nlanguage = "de-DE"\n`;
+    const settings = parseSettings(text);
+    expect(settings.tv.episodeOrder).toBe("dvd");
+    expect(settings.metadata.language).toBe("de-DE");
+    expect(parseSettings(settingsToToml(settings))).toEqual(settings);
+  });
+
+  it("rejects an unknown episode order or language code, naming the key", () => {
+    expect(() => parseSettings('[tv]\nepisode_order = "production"\n')).toThrow(/tv\.episode_order/);
+    expect(() => parseSettings('[metadata]\nlanguage = "German"\n')).toThrow(/metadata\.language/);
+  });
+
+  it("takes [tv] and [metadata] from the environment; the file wins", () => {
+    const env = { FILE_RENAMER_TV__EPISODE_ORDER: "absolute", FILE_RENAMER_METADATA__LANGUAGE: "ja-JP" };
+    expect(parseSettings(undefined, env).tv.episodeOrder).toBe("absolute");
+    expect(parseSettings(undefined, env).metadata.language).toBe("ja-JP");
+    expect(parseSettings('[metadata]\nlanguage = "fr-FR"\n', env).metadata.language).toBe("fr-FR");
   });
 
   it("escapes quotes and backslashes so the TOML stays valid", () => {
@@ -295,7 +332,7 @@ overwrite = true
   it("saves defaults when nothing was loaded", async () => {
     const s = service();
     await s.save();
-    expect(await readFile(s.configFile, "utf8")).toBe(PYTHON_DEFAULT_TOML);
+    expect(await readFile(s.configFile, "utf8")).toBe(DEFAULT_TOML);
   });
 
   it("does not preserve unknown keys on save (as in the Python)", async () => {

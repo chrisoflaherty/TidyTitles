@@ -12,6 +12,10 @@ export * from "./errors";
 export * from "./parser";
 export * from "./musicParser";
 export * from "./template";
+export * from "./templateEpisodes";
+export * from "./episodeOrder";
+export * from "./languages";
+export * from "./episodeLookup";
 
 export * from "./providers/base";
 export * from "./providers/cache";

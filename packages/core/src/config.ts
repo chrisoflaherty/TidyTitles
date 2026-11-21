@@ -43,6 +43,12 @@
  * movie = "tmdb"
  * tv = "tvdb"
  * music = "musicbrainz"
+ *
+ * [tv]
+ * episode_order = "aired"     # "aired", "dvd", or "absolute"
+ *
+ * [metadata]
+ * language = "en-US"          # TMDB language code; TVDB names are translated to match
  * ```
  *
  * Every key is optional when reading; missing keys take the defaults above.
@@ -102,7 +108,9 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
+import { DEFAULT_EPISODE_ORDER, EPISODE_ORDERS, type EpisodeOrder } from "./episodeOrder";
 import { ConfigError } from "./errors";
+import { DEFAULT_METADATA_LANGUAGE, isMetadataLanguageCode } from "./languages";
 import type { RenameOperation } from "./models";
 
 export const APP_NAME = "file-renamer";
@@ -147,6 +155,18 @@ export interface CoverArtSettings {
   size: string;
 }
 
+/** `[tv]`: TV lookups. */
+export interface TVSettings {
+  /** Numbering of season and episode numbers: "aired" (default), "dvd", or "absolute". */
+  episodeOrder: EpisodeOrder;
+}
+
+/** `[metadata]`: metadata lookups for movies and TV. */
+export interface MetadataSettings {
+  /** Language for titles: a TMDB code such as "en-US" (default) or "de-DE". */
+  language: string;
+}
+
 export interface Settings {
   templates: TemplateSettings;
   api: APISettings;
@@ -160,6 +180,8 @@ export interface Settings {
   movieProvider: string;
   tvProvider: string;
   musicProvider: string;
+  tv: TVSettings;
+  metadata: MetadataSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +235,18 @@ const coverArtSchema = z.object({
   size: str("w500"),
 });
 
+const tvSchema = z.object({
+  episode_order: z.enum(EPISODE_ORDERS as [EpisodeOrder, ...EpisodeOrder[]]).default(DEFAULT_EPISODE_ORDER),
+});
+
+const metadataSchema = z.object({
+  language: z
+    .string()
+    .trim()
+    .refine(isMetadataLanguageCode, 'must be a language code such as "en-US" or "de"')
+    .default(DEFAULT_METADATA_LANGUAGE),
+});
+
 const settingsSchema = z.object({
   templates: templateSchema.prefault({}),
   api: apiSchema.prefault({}),
@@ -225,12 +259,14 @@ const settingsSchema = z.object({
   movie_provider: str("tmdb"),
   tv_provider: str("tvdb"),
   music_provider: str("musicbrainz"),
+  tv: tvSchema.prefault({}),
+  metadata: metadataSchema.prefault({}),
 });
 
 type RawSettings = z.output<typeof settingsSchema>;
 
 /** Nested (model) fields, which accept JSON and `__` variables from the environment. */
-const NESTED_FIELDS = new Set(["templates", "api", "associated_files", "cover_art"]);
+const NESTED_FIELDS = new Set(["templates", "api", "associated_files", "cover_art", "tv", "metadata"]);
 const SCALAR_FIELDS = new Set([
   "dry_run",
   "overwrite",
@@ -275,6 +311,8 @@ function fromRaw(raw: RawSettings): Settings {
     movieProvider: raw.movie_provider,
     tvProvider: raw.tv_provider,
     musicProvider: raw.music_provider,
+    tv: { episodeOrder: raw.tv.episode_order },
+    metadata: { language: raw.metadata.language },
   };
 }
 
@@ -302,7 +340,7 @@ function deepMerge(base: Dict, override: Dict): Dict {
 /** Map the config.toml structure onto the flat settings fields (Python `load`). */
 function configDataFromToml(rawConfig: Dict): Dict {
   const data: Dict = {};
-  for (const section of ["templates", "api", "associated_files", "cover_art"]) {
+  for (const section of ["templates", "api", "associated_files", "cover_art", "tv", "metadata"]) {
     if (section in rawConfig) data[section] = rawConfig[section];
   }
   const behavior = rawConfig.behavior;
@@ -468,6 +506,12 @@ export function settingsToToml(settings: Settings): string {
     `movie = ${tomlString(s.movieProvider)}`,
     `tv = ${tomlString(s.tvProvider)}`,
     `music = ${tomlString(s.musicProvider)}`,
+    "",
+    "[tv]",
+    `episode_order = ${tomlString(s.tv.episodeOrder)}`,
+    "",
+    "[metadata]",
+    `language = ${tomlString(s.metadata.language)}`,
   ];
   return lines.join("\n") + "\n";
 }

@@ -28,6 +28,7 @@ import {
 } from "./config";
 import { isConflictStrategy, type ConflictStrategy } from "./conflictResolution";
 import { CoverArtDownloader } from "./coverArt";
+import type { EpisodeOrder } from "./episodeOrder";
 import { ConfigError, HistoryChangedError, RenameError } from "./errors";
 import type { MediaType, RenameOperation } from "./models";
 import type { MusicParser } from "./musicParser";
@@ -231,7 +232,13 @@ export function buildProviders(
 
   const clients: ProviderSet["clients"] = {};
   if (wantTmdb) {
-    clients.tmdb = new TMDBClient({ apiKey: settings.api.tmdbApiKey.trim(), cache, ...fetchOpt });
+    clients.tmdb = new TMDBClient({
+      apiKey: settings.api.tmdbApiKey.trim(),
+      cache,
+      language: settings.metadata.language,
+      episodeOrder: settings.tv.episodeOrder,
+      ...fetchOpt,
+    });
   }
   if (wantTvdb) {
     const pin = settings.api.tvdbPin.trim();
@@ -239,6 +246,8 @@ export function buildProviders(
       apiKey: settings.api.tvdbApiKey.trim(),
       ...(pin ? { pin } : {}),
       cache,
+      language: settings.metadata.language,
+      episodeOrder: settings.tv.episodeOrder,
       ...fetchOpt,
     });
   }
@@ -590,6 +599,26 @@ export interface SessionOptions {
   providers?: Partial<Pick<ProviderSet, "movieProvider" | "tvProvider" | "musicProvider">>;
   parser?: FilenameParser;
   musicParser?: MusicParser;
+  /** Use this episode order instead of `[tv] episode_order` (CLI `--order`). */
+  episodeOrder?: EpisodeOrder;
+  /** Use this metadata language instead of `[metadata] language` (CLI `--language`). */
+  language?: string;
+}
+
+/** Settings with a session's per-run overrides applied. */
+export function applySessionOverrides(
+  settings: Settings,
+  options: Pick<SessionOptions, "episodeOrder" | "language">,
+): Settings {
+  if (options.episodeOrder === undefined && options.language === undefined) return settings;
+  return {
+    ...settings,
+    tv: { ...settings.tv, ...(options.episodeOrder !== undefined ? { episodeOrder: options.episodeOrder } : {}) },
+    metadata: {
+      ...settings.metadata,
+      ...(options.language !== undefined ? { language: options.language } : {}),
+    },
+  };
 }
 
 export interface PlanOptions {
@@ -614,6 +643,7 @@ export class RenameSession {
 
   /** @throws MissingApiKeyError when `requireApiKeys` is on and keys are missing. */
   constructor(settings: Settings, options: SessionOptions = {}) {
+    settings = applySessionOverrides(settings, options);
     this.settings = settings;
     this.config = options.config;
     this.provider = options.provider ?? "auto";
