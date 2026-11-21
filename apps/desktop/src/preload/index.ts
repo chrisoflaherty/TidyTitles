@@ -63,6 +63,14 @@ const api: TidyTitlesApi = {
   onSelectionClosed: (listener) => subscribe(EVENTS.selectionClosed, listener),
   onMenuCommand: (listener) => subscribe(EVENTS.menuCommand, listener),
   onPathsOpened: (listener) => subscribe(EVENTS.pathsOpened, () => listener()),
+  getWatchState: () => ipcRenderer.invoke(IPC.getWatchState),
+  onWatchState: (listener) => subscribe(EVENTS.watchState, listener),
+  takeWatchArrivals: (accept) => ipcRenderer.invoke(IPC.takeWatchArrivals, accept),
+  setWatchPaused: (paused) => ipcRenderer.invoke(IPC.setWatchPaused, paused),
+  processExistingWatchFiles: () => ipcRenderer.invoke(IPC.processExistingWatchFiles),
+  retryWatchNow: () => ipcRenderer.invoke(IPC.retryWatchNow),
+  getWatchActivity: () => ipcRenderer.invoke(IPC.getWatchActivity),
+  chooseWatchFolder: (current) => ipcRenderer.invoke(IPC.chooseWatchFolder, current),
 };
 
 contextBridge.exposeInMainWorld("tidytitles", api);

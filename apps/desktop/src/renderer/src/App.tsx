@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, type DragEvent } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type DragEvent } from "react";
 import type { MenuCommand, RunOptions } from "../../shared/ipc";
 import { getApi } from "./api";
 import { EmptyState } from "./components/EmptyState";
@@ -18,6 +18,9 @@ import { UpdateIndicator } from "./components/UpdateIndicator";
 import { outputFolderFor, TRANSFER_LABELS } from "./destination";
 import { formatTimestamp, plural } from "./format";
 import { availability, initialUiState, reducer } from "./state";
+import { WatchActivityDialog } from "./components/WatchActivityDialog";
+import { WatchIndicator } from "./components/WatchIndicator";
+import { useWatchState } from "./watch";
 
 function hasFiles(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -222,6 +225,25 @@ export function App() {
     return off;
   }, [api, loaded]);
 
+  // --- watch folders ----------------------------------------------------------
+
+  const watch = useWatchState(api);
+  const [seenActivity, setSeenActivity] = useState(0);
+  // Files that finished arriving follow the drop rules too: taken only when a
+  // drop would be accepted; otherwise they wait in main.
+  const watchWaiting = watch?.waiting ?? 0;
+  const appBusy = ui.app?.busy ?? null;
+  useEffect(() => {
+    if (watchWaiting > 0 && canDrop()) void api.takeWatchArrivals(true);
+  }, [api, watchWaiting, appBusy, ui.modal, ui.selection]);
+  const openWatchActivity = useCallback(() => {
+    const { modal, selection } = uiRef.current;
+    if (!modal && !selection) dispatch({ type: "openModal", modal: { kind: "watchActivity" } });
+  }, []);
+  useEffect(() => {
+    if (ui.modal?.kind === "watchActivity") setSeenActivity(watch?.activityCount ?? 0);
+  }, [ui.modal, watch?.activityCount]);
+
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     dispatch({ type: "dragEnd" });
@@ -300,6 +322,13 @@ export function App() {
         progress={ui.progress}
         onCancelFetch={cancelFetch}
         updates={
+          <>
+          <WatchIndicator
+            state={watch}
+            unseen={Math.max(0, (watch?.activityCount ?? 0) - seenActivity)}
+            onTogglePause={() => void api.setWatchPaused(!(watch?.paused ?? false))}
+            onShowActivity={openWatchActivity}
+          />
           <UpdateIndicator
             state={ui.updates}
             busy={app.busy !== null}
@@ -310,6 +339,7 @@ export function App() {
             onShowDetails={showUpdateDetails}
             onDismiss={() => dispatch({ type: "dismissUpdateNote" })}
           />
+          </>
         }
       />
 
@@ -468,6 +498,13 @@ export function App() {
           if (!file) return null;
           return <EditNameDialog key={fileId} fileId={fileId} fileName={file.name} onClose={() => dispatch({ type: "closeModal" })} />;
         })()}
+      {ui.modal?.kind === "watchActivity" && (
+        <WatchActivityDialog
+          state={watch}
+          onClose={() => dispatch({ type: "closeModal" })}
+          onOpenSettings={() => dispatch({ type: "openModal", modal: { kind: "settings", tab: "watch" } })}
+        />
+      )}
       {ui.modal?.kind === "error" && (
         <ErrorDialog title={ui.modal.title} message={ui.modal.message} onClose={() => dispatch({ type: "closeModal" })} />
       )}

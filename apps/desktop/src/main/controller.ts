@@ -78,6 +78,13 @@ import type {
   MatchSearchOutcome,
   SetFileNameOutcome,
 } from "../shared/ipc";
+import {
+  processWatchBatch,
+  watchSessionSettings,
+  type ReadyFile,
+  type WatchBatchResult,
+  type WatchMode,
+} from "@tidytitles/core";
 
 export type Emit = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => void;
 
@@ -141,6 +148,7 @@ export function toEditableSettings(settings: Settings): EditableSettings {
     history: { ...settings.history },
     tv: { ...settings.tv },
     metadata: { ...settings.metadata },
+    watch: { ...settings.watch, folders: [...settings.watch.folders] },
   };
 }
 
@@ -869,6 +877,7 @@ export class AppController {
         history: { maxEntries: edited.history.maxEntries },
         tv: { ...edited.tv },
         metadata: { ...edited.metadata },
+        watch: { ...edited.watch, folders: [...edited.watch.folders] },
       };
       const coverArtDefaultChanged = next.coverArt.enabled !== this.settings.coverArt.enabled;
       const transferDefaultChanged = next.output.transferMode !== this.settings.output.transferMode;
@@ -887,6 +896,59 @@ export class AppController {
       return { ok: true };
     } catch (error) {
       return { ok: false, errors: [`Could not save settings: ${errorMessage(error)}`] };
+    } finally {
+      this.busy = null;
+      this.emitState();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Watch folders (driven by watchManager.ts)
+  // -------------------------------------------------------------------------
+
+  /** The settings as last loaded or saved. */
+  get currentSettings(): Settings {
+    return this.settings;
+  }
+
+  /** The config service (history, config file). */
+  get configService(): ConfigService {
+    return this.config;
+  }
+
+  /** The paths in the file list (by their real path, as `addPaths` compares them). */
+  listedPaths(): Set<string> {
+    return new Set(this.files.map((f) => realKey(f.path)));
+  }
+
+  /**
+   * Look up files from a watch folder and, in automatic mode, rename the
+   * unambiguous ones (`processWatchBatch`). The app is busy ("watching")
+   * meanwhile. Resolves to null, touching nothing, when the app is busy or
+   * the settings cannot be read.
+   */
+  async runWatchBatch(files: readonly ReadyFile[], mode: WatchMode): Promise<WatchBatchResult | null> {
+    if (this.busy) return null;
+    this.busy = "watching";
+    this.setStatus("Looking up new files from the watch folders…");
+    this.emitState();
+    try {
+      await this.reloadSettings();
+      if (this.configError) return null;
+      const session = new RenameSession(watchSessionSettings(this.settings, mode), {
+        config: this.config,
+        requireApiKeys: false,
+        ...this.sessionOverrides,
+      });
+      const result = await processWatchBatch(session, files, {
+        mode,
+        settleMs: this.settings.watch.settleSeconds * 1_000,
+      });
+      if (result.historySaved > 0) await this.refreshLastRename();
+      const renamed = result.outcomes.filter((o) => o.result === "renamed").length;
+      if (renamed > 0) this.setStatus(`Renamed ${plural(renamed, "new file")} from the watch folders`, "success");
+      else this.setStatus("Ready");
+      return result;
     } finally {
       this.busy = null;
       this.emitState();

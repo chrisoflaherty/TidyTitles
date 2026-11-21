@@ -15,6 +15,7 @@ import type {
   SettingsPayload,
   TidyTitlesApi,
   UpdateState,
+  WatchViewState,
 } from "../../src/shared/ipc";
 import { EVENTS } from "../../src/shared/ipc";
 
@@ -77,6 +78,7 @@ export function settingsPayload(): SettingsPayload {
       history: { maxEntries: 200 },
       tv: { episodeOrder: "aired" },
       metadata: { language: "en-US" },
+      watch: { enabled: false, folders: [], recursive: true, mode: "review", settleSeconds: 10 },
     },
     configFile: "/config/config.toml",
     fields: { title: "Title", year: "Year" },
@@ -186,6 +188,14 @@ export function createFakeApi(state: AppState = appState(), updates: UpdateState
     onSelectionClosed: on(EVENTS.selectionClosed),
     onMenuCommand: on(EVENTS.menuCommand),
     onPathsOpened: on(EVENTS.pathsOpened),
+    getWatchState: vi.fn<TidyTitlesApi["getWatchState"]>(async () => watchViewState()),
+    onWatchState: on(EVENTS.watchState),
+    takeWatchArrivals: vi.fn<TidyTitlesApi["takeWatchArrivals"]>(async () => ({ kind: "nothing" })),
+    setWatchPaused: vi.fn<TidyTitlesApi["setWatchPaused"]>(async () => undefined),
+    processExistingWatchFiles: vi.fn<TidyTitlesApi["processExistingWatchFiles"]>(async () => 0),
+    retryWatchNow: vi.fn<TidyTitlesApi["retryWatchNow"]>(async () => undefined),
+    getWatchActivity: vi.fn<TidyTitlesApi["getWatchActivity"]>(async () => []),
+    chooseWatchFolder: vi.fn<TidyTitlesApi["chooseWatchFolder"]>(async () => null),
   } satisfies TidyTitlesApi;
 
   const emit = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => {
@@ -193,4 +203,24 @@ export function createFakeApi(state: AppState = appState(), updates: UpdateState
   };
   Object.defineProperty(window, "tidytitles", { value: api, configurable: true });
   return { api, emit };
+}
+
+/** A watch state (watching off unless overridden). */
+export function watchViewState(over: Partial<WatchViewState> = {}): WatchViewState {
+  return {
+    enabled: false,
+    paused: false,
+    mode: "review",
+    folders: [],
+    arriving: 0,
+    temporary: 0,
+    waiting: 0,
+    retrying: 0,
+    retryAt: null,
+    existing: 0,
+    totals: { renamed: 0, review: 0, skipped: 0 },
+    activityCount: 0,
+    latest: null,
+    ...over,
+  };
 }

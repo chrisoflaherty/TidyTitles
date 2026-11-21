@@ -12,6 +12,9 @@ import {
   HISTORY_LIMIT_RANGE,
   TRANSFER_MODE_CHOICES,
   TV_PROVIDER_CHOICES,
+  MAX_WATCH_FOLDERS,
+  SETTLE_SECONDS_RANGE,
+  WATCH_MODE_CHOICES,
   type ChooseMatchOptions,
   type EditableSettings,
   type RunOptions,
@@ -162,7 +165,44 @@ export function parseEditableSettings(value: unknown): EditableSettings {
     ...parseOutputAndHistory(r),
     tv: { episodeOrder: oneOf(tv.episodeOrder, EPISODE_ORDER_CHOICES, "tv.episodeOrder") },
     metadata: { language },
+    watch: parseWatchSettings(r.watch),
   };
+}
+
+/** `[watch]` from the settings dialog: absolute folders, a known mode, a settle period in range. */
+export function parseWatchSettings(value: unknown): EditableSettings["watch"] {
+  const w = record(value, "watch");
+  if (!Array.isArray(w.folders)) throw new IpcValidationError("watch.folders must be an array");
+  if (w.folders.length > MAX_WATCH_FOLDERS) throw new IpcValidationError(`watch.folders has more than ${MAX_WATCH_FOLDERS} folders`);
+  const folders: string[] = [];
+  w.folders.forEach((f, i) => {
+    const folder = str(f, `watch.folders[${i}]`).trim();
+    if (!path.isAbsolute(folder)) throw new IpcValidationError(`watch.folders[${i}] must be an absolute path`);
+    if (!folders.includes(folder)) folders.push(folder);
+  });
+  const settle = w.settleSeconds;
+  if (
+    typeof settle !== "number" ||
+    !Number.isSafeInteger(settle) ||
+    settle < SETTLE_SECONDS_RANGE.min ||
+    settle > SETTLE_SECONDS_RANGE.max
+  ) {
+    throw new IpcValidationError(
+      `watch.settleSeconds must be a whole number from ${SETTLE_SECONDS_RANGE.min} to ${SETTLE_SECONDS_RANGE.max}`,
+    );
+  }
+  return {
+    enabled: bool(w.enabled, "watch.enabled"),
+    folders,
+    recursive: bool(w.recursive, "watch.recursive"),
+    mode: oneOf(w.mode, WATCH_MODE_CHOICES, "watch.mode"),
+    settleSeconds: settle,
+  };
+}
+
+/** "Pause watching" / "Resume watching". */
+export function parsePaused(value: unknown): boolean {
+  return bool(value, "paused");
 }
 
 /** `[output]` and `[history]` from the settings dialog. */

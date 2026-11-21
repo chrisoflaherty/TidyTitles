@@ -6,6 +6,7 @@ import {
   isSafeExternalUrl,
   parseDialogKind,
   parseEditableSettings,
+  parsePaused,
   parseFileIds,
   parsePaths,
   parseRunOptions,
@@ -28,6 +29,7 @@ const validSettings = () => ({
   history: { maxEntries: 200 },
   tv: { episodeOrder: "aired" },
   metadata: { language: "en-US" },
+  watch: { enabled: true, folders: ["/srv/in"], recursive: true, mode: "review", settleSeconds: 10 },
 });
 
 describe("IPC validation", () => {
@@ -121,5 +123,20 @@ describe("IPC validation", () => {
     expect(isSafeExternalUrl("javascript:alert(1)")).toBe(false);
     expect(isSafeExternalUrl("https://user:pw@example.com")).toBe(false);
     expect(isSafeExternalUrl(42)).toBe(false);
+  });
+
+  it("checks the watch settings", () => {
+    const withWatch = (watch: Record<string, unknown>) => ({ ...validSettings(), watch: { ...validSettings().watch, ...watch } });
+    expect(parseEditableSettings(withWatch({ folders: [" /a ", "/a", "/b"] })).watch.folders).toEqual(["/a", "/b"]);
+    expect(() => parseEditableSettings(withWatch({ folders: ["relative/path"] }))).toThrow(/absolute/);
+    expect(() => parseEditableSettings(withWatch({ folders: "/a" }))).toThrow(/array/);
+    expect(() => parseEditableSettings(withWatch({ folders: Array.from({ length: 51 }, (_, i) => `/f${i}`) }))).toThrow(/more than 50/);
+    expect(() => parseEditableSettings(withWatch({ mode: "yolo" }))).toThrow(/watch\.mode/);
+    expect(() => parseEditableSettings(withWatch({ settleSeconds: 1 }))).toThrow(/settleSeconds/);
+    expect(() => parseEditableSettings(withWatch({ settleSeconds: 2.5 }))).toThrow(/settleSeconds/);
+    expect(() => parseEditableSettings(withWatch({ enabled: "yes" }))).toThrow(/watch\.enabled/);
+    expect(() => parseEditableSettings({ ...validSettings(), watch: undefined })).toThrow();
+    expect(parsePaused(true)).toBe(true);
+    expect(() => parsePaused("no")).toThrow();
   });
 });

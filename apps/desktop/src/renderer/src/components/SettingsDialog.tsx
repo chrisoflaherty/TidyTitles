@@ -16,13 +16,15 @@ import { MetadataSettings } from "./MetadataSettings";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { PlaceholderTable, PresetPicker } from "./TemplatePresets";
 import { OutputSettings } from "./OutputSettings";
+import { WatchSettings } from "./WatchSettings";
 
-type TabId = "templates" | "api" | "files" | "output" | "coverArt" | "providers" | "updates";
+type TabId = "templates" | "api" | "files" | "output" | "watch" | "coverArt" | "providers" | "updates";
 const TABS: { id: TabId; label: string }[] = [
   { id: "templates", label: "Templates" },
   { id: "api", label: "API Keys" },
   { id: "files", label: "Files" },
   { id: "output", label: "Output" },
+  { id: "watch", label: "Watch" },
   { id: "coverArt", label: "Cover Art" },
   { id: "providers", label: "Providers" },
   { id: "updates", label: "Updates" },
@@ -194,7 +196,7 @@ export function SettingsDialog({
   initialTab,
 }: {
   /** The tab shown first (default: Templates). */
-  initialTab?: "output";
+  initialTab?: "output" | "watch";
   onClose: () => void;
   onSaved: () => void;
   /** Update state; the "Check for updates automatically" setting is saved with the rest. */
@@ -481,6 +483,7 @@ export function SettingsDialog({
             )}
 
             {tab === "output" && <OutputSettings draft={draft} update={update} />}
+            {tab === "watch" && <WatchSettings draft={draft} update={update} />}
 
             {tab === "coverArt" && (
               <Section title="Cover art" description="Posters (movies and TV) and album covers (music) are saved next to the renamed files.">
