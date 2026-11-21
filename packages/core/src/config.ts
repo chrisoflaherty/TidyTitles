@@ -58,6 +58,13 @@
  *
  * [metadata]
  * language = "en-US"          # TMDB language code; TVDB names are translated to match
+ *
+ * [watch]                     # see watchConfig.ts
+ * enabled = false
+ * folders = []
+ * recursive = true
+ * mode = "review"             # "review" or "automatic"
+ * settle_seconds = 10
  * ```
  *
  * `[output]` and `[history]` are TidyTitles additions (the Python app
@@ -129,6 +136,7 @@ import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 import { DEFAULT_EPISODE_ORDER, EPISODE_ORDERS, type EpisodeOrder } from "./episodeOrder";
 import { ConfigError } from "./errors";
+import { watchFromRaw, watchSchema, watchToTomlLines, type WatchSettings } from "./watchConfig";
 import { DEFAULT_METADATA_LANGUAGE, isMetadataLanguageCode } from "./languages";
 import type { RenameOperation } from "./models";
 import { TRANSFER_MODES, type FileFingerprint, type TransferMode } from "./transfer";
@@ -235,6 +243,8 @@ export interface Settings {
   history: HistorySettings;
   tv: TVSettings;
   metadata: MetadataSettings;
+  /** `[watch]`: watch folders (see watchConfig.ts). */
+  watch: WatchSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +346,7 @@ const settingsSchema = z.object({
   history: historySchema.prefault({}),
   tv: tvSchema.prefault({}),
   metadata: metadataSchema.prefault({}),
+  watch: watchSchema.prefault({}),
 });
 
 type RawSettings = z.output<typeof settingsSchema>;
@@ -350,6 +361,7 @@ const NESTED_FIELDS = new Set([
   "history",
   "tv",
   "metadata",
+  "watch",
 ]);
 const SCALAR_FIELDS = new Set([
   "dry_run",
@@ -404,6 +416,7 @@ function fromRaw(raw: RawSettings): Settings {
     history: { maxEntries: raw.history.max_entries },
     tv: { episodeOrder: raw.tv.episode_order },
     metadata: { language: raw.metadata.language },
+    watch: watchFromRaw(raw.watch),
   };
 }
 
@@ -431,7 +444,7 @@ function deepMerge(base: Dict, override: Dict): Dict {
 /** Map the config.toml structure onto the flat settings fields (Python `load`). */
 function configDataFromToml(rawConfig: Dict): Dict {
   const data: Dict = {};
-  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history", "tv", "metadata"]) {
+  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history", "tv", "metadata", "watch"]) {
     if (section in rawConfig) data[section] = rawConfig[section];
   }
   const behavior = rawConfig.behavior;
@@ -612,6 +625,8 @@ export function settingsToToml(settings: Settings): string {
     "",
     "[metadata]",
     `language = ${tomlString(s.metadata.language)}`,
+    "",
+    ...watchToTomlLines(s.watch, tomlString),
   ];
   return lines.join("\n") + "\n";
 }

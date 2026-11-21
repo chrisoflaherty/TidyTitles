@@ -97,6 +97,13 @@ episode_order = "aired"
 
 [metadata]
 language = "en-US"
+
+[watch]
+enabled = false
+folders = []
+recursive = true
+mode = "review"
+settle_seconds = 10
 `;
 
 describe("directory resolution", () => {
@@ -203,6 +210,7 @@ describe("settings", () => {
       history: { maxEntries: 200 },
       tv: { episodeOrder: "aired" },
       metadata: { language: "en-US" },
+      watch: { enabled: false, folders: [], recursive: true, mode: "review", settleSeconds: 10 },
     });
   });
 
