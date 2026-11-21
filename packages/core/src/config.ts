@@ -58,6 +58,10 @@
  *
  * [metadata]
  * language = "en-US"          # TMDB language code; TVDB names are translated to match
+ *
+ * [write_metadata]
+ * music_tags = false          # write the match's tags into renamed music files
+ * nfo = false                 # write NFO files for Kodi, Jellyfin, and Emby
  * ```
  *
  * `[output]` and `[history]` are TidyTitles additions (the Python app
@@ -101,6 +105,11 @@
  *   transferred) and, for copies and hard links, `transfer` ("copy" or
  *   "hardlink"; absent means moved). Undo uses them to tell its own files
  *   from files put at the same path later. Older entries have neither.
+ * - With `[write_metadata]` on, an operation may also carry `tags` (the
+ *   original entries of the tag fields that were rewritten, to put them
+ *   back on undo; its `fingerprint` is the file after the tag write) and
+ *   `created_files` (NFO files the rename created: `path`, `kind`,
+ *   `fingerprint`). Older versions ignore both.
  * - The file is written with 2-space indentation and non-ASCII characters
  *   escaped as \uXXXX (Python's `json.dump(..., indent=2)`), so it is pure
  *   ASCII and reads back correctly in Python regardless of the locale encoding.
@@ -131,6 +140,9 @@ import { DEFAULT_EPISODE_ORDER, EPISODE_ORDERS, type EpisodeOrder } from "./epis
 import { ConfigError } from "./errors";
 import { DEFAULT_METADATA_LANGUAGE, isMetadataLanguageCode } from "./languages";
 import type { RenameOperation } from "./models";
+import { DEFAULT_WRITE_METADATA, type CreatedFileRecord, type WriteMetadataSettings } from "./metadataWrite";
+import type { TagRestoreRecord } from "./musicTags";
+import { TAG_FIELDS, type TagField, type TagFormat } from "./tags/index";
 import { TRANSFER_MODES, type FileFingerprint, type TransferMode } from "./transfer";
 
 export const APP_NAME = "file-renamer";
@@ -235,6 +247,8 @@ export interface Settings {
   history: HistorySettings;
   tv: TVSettings;
   metadata: MetadataSettings;
+  /** `[write_metadata]`: tags into music files, NFO files for media servers. */
+  writeMetadata: WriteMetadataSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +334,11 @@ const metadataSchema = z.object({
     .default(DEFAULT_METADATA_LANGUAGE),
 });
 
+const writeMetadataSchema = z.object({
+  music_tags: bool(DEFAULT_WRITE_METADATA.musicTags),
+  nfo: bool(DEFAULT_WRITE_METADATA.nfo),
+});
+
 const settingsSchema = z.object({
   templates: templateSchema.prefault({}),
   api: apiSchema.prefault({}),
@@ -336,6 +355,7 @@ const settingsSchema = z.object({
   history: historySchema.prefault({}),
   tv: tvSchema.prefault({}),
   metadata: metadataSchema.prefault({}),
+  write_metadata: writeMetadataSchema.prefault({}),
 });
 
 type RawSettings = z.output<typeof settingsSchema>;
@@ -350,6 +370,7 @@ const NESTED_FIELDS = new Set([
   "history",
   "tv",
   "metadata",
+  "write_metadata",
 ]);
 const SCALAR_FIELDS = new Set([
   "dry_run",
@@ -404,6 +425,7 @@ function fromRaw(raw: RawSettings): Settings {
     history: { maxEntries: raw.history.max_entries },
     tv: { episodeOrder: raw.tv.episode_order },
     metadata: { language: raw.metadata.language },
+    writeMetadata: { musicTags: raw.write_metadata.music_tags, nfo: raw.write_metadata.nfo },
   };
 }
 
@@ -431,7 +453,7 @@ function deepMerge(base: Dict, override: Dict): Dict {
 /** Map the config.toml structure onto the flat settings fields (Python `load`). */
 function configDataFromToml(rawConfig: Dict): Dict {
   const data: Dict = {};
-  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history", "tv", "metadata"]) {
+  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history", "tv", "metadata", "write_metadata"]) {
     if (section in rawConfig) data[section] = rawConfig[section];
   }
   const behavior = rawConfig.behavior;
@@ -612,6 +634,10 @@ export function settingsToToml(settings: Settings): string {
     "",
     "[metadata]",
     `language = ${tomlString(s.metadata.language)}`,
+    "",
+    "[write_metadata]",
+    `music_tags = ${s.writeMetadata.musicTags}`,
+    `nfo = ${s.writeMetadata.nfo}`,
   ];
   return lines.join("\n") + "\n";
 }
@@ -713,6 +739,10 @@ export interface HistoryOperation {
   transfer?: Exclude<TransferMode, "move">;
   /** The file right after the transfer; absent in entries from older versions. */
   fingerprint?: FileFingerprint;
+  /** Tags written into the file, to put back on undo (see metadataWrite.ts). */
+  tags?: TagRestoreRecord;
+  /** NFO files the rename created, for undo to remove. */
+  createdFiles?: CreatedFileRecord[];
 }
 
 /** `transfer` and `fingerprint` of a history record, present only when known. */
@@ -720,6 +750,80 @@ function transferFields(record: RenameOperation["transfer"]): Pick<HistoryOperat
   const out: Pick<HistoryOperation, "transfer" | "fingerprint"> = {};
   if (record && record.mode !== "move") out.transfer = record.mode;
   if (record?.fingerprint) out.fingerprint = { ...record.fingerprint };
+  return out;
+}
+
+function fingerprintFromDisk(f: unknown): FileFingerprint | undefined {
+  if (!isDict(f) || ![f.dev, f.ino, f.size, f.mtime_ns].every((v) => typeof v === "string" && /^\d+$/.test(v))) {
+    return undefined;
+  }
+  return { dev: f.dev as string, ino: f.ino as string, size: f.size as string, mtimeNs: f.mtime_ns as string };
+}
+
+function fingerprintToDisk(f: FileFingerprint): Dict {
+  return { dev: f.dev, ino: f.ino, size: f.size, mtime_ns: f.mtimeNs };
+}
+
+const TAG_FORMATS: readonly TagFormat[] = ["mp3", "flac", "mp4", "ogg_vorbis", "ogg_opus"];
+const NFO_KINDS = ["movie", "episode", "tvshow"] as const;
+const snakeField = (f: TagField) => f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+/** `tags` and `created_files` of a history operation; malformed records are dropped. */
+function metadataFromDisk(raw: Dict): Pick<HistoryOperation, "tags" | "createdFiles"> {
+  const out: Pick<HistoryOperation, "tags" | "createdFiles"> = {};
+  const t = raw.tags;
+  if (isDict(t) && TAG_FORMATS.includes(t.format as TagFormat) && typeof t.region_size === "number" && isDict(t.fields)) {
+    const fingerprint = fingerprintFromDisk(t.fingerprint);
+    const fields: TagRestoreRecord["fields"] = {};
+    let valid = fingerprint !== undefined;
+    for (const field of TAG_FIELDS) {
+      const entries = (t.fields as Dict)[snakeField(field)];
+      if (entries === undefined) continue;
+      if (!Array.isArray(entries) || !entries.every((e) => typeof e === "string")) valid = false;
+      else fields[field] = [...(entries as string[])];
+    }
+    if (valid && fingerprint) {
+      out.tags = {
+        format: t.format as TagFormat,
+        regionSize: t.region_size,
+        fields,
+        fingerprint,
+        ...(typeof t.mtime_ns === "string" && /^\d+$/.test(t.mtime_ns) ? { mtimeNs: t.mtime_ns } : {}),
+      };
+    }
+  }
+  if (Array.isArray(raw.created_files)) {
+    const files: CreatedFileRecord[] = [];
+    for (const c of raw.created_files) {
+      if (!isDict(c) || typeof c.path !== "string" || !NFO_KINDS.includes(c.kind as (typeof NFO_KINDS)[number])) continue;
+      const fingerprint = fingerprintFromDisk(c.fingerprint);
+      files.push({ path: c.path, kind: c.kind as CreatedFileRecord["kind"], ...(fingerprint ? { fingerprint } : {}) });
+    }
+    if (files.length > 0) out.createdFiles = files;
+  }
+  return out;
+}
+
+function metadataToDisk(op: Pick<HistoryOperation, "tags" | "createdFiles">): Dict {
+  const out: Dict = {};
+  if (op.tags) {
+    const fields: Dict = {};
+    for (const [field, entries] of Object.entries(op.tags.fields) as [TagField, string[]][]) fields[snakeField(field)] = entries;
+    out.tags = {
+      format: op.tags.format,
+      region_size: op.tags.regionSize,
+      fields,
+      ...(op.tags.mtimeNs ? { mtime_ns: op.tags.mtimeNs } : {}),
+      fingerprint: fingerprintToDisk(op.tags.fingerprint),
+    };
+  }
+  if (op.createdFiles && op.createdFiles.length > 0) {
+    out.created_files = op.createdFiles.map((c) => ({
+      path: c.path,
+      kind: c.kind,
+      ...(c.fingerprint ? { fingerprint: fingerprintToDisk(c.fingerprint) } : {}),
+    }));
+  }
   return out;
 }
 
@@ -766,6 +870,8 @@ export function toHistoryOperation(op: RenameOperation): HistoryOperation {
       ...transferFields(a.transfer),
     })),
     ...transferFields(op.transfer),
+    ...(op.metadataUndo?.tags ? { tags: op.metadataUndo.tags } : {}),
+    ...(op.metadataUndo?.createdFiles?.length ? { createdFiles: op.metadataUndo.createdFiles.map((c) => ({ ...c })) } : {}),
   };
 }
 
@@ -780,6 +886,7 @@ function operationFromDisk(raw: unknown): HistoryOperation {
       return { source: String(d.source ?? ""), destination: String(d.destination ?? ""), ...transferFromDisk(d) };
     }),
     ...transferFromDisk(r),
+    ...metadataFromDisk(r),
   };
 }
 
@@ -793,6 +900,7 @@ function operationToDisk(op: HistoryOperation): Dict {
       ...transferToDisk(a),
     })),
     ...transferToDisk(op),
+    ...metadataToDisk(op),
   };
 }
 
