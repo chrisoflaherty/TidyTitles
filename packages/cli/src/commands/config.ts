@@ -1,7 +1,7 @@
 /** `config show | set-key | set-template | init`. */
 
 import { existsSync } from "node:fs";
-import { TemplateEngine, getApiKeyStatus } from "@tidytitles/core";
+import { TemplateEngine, getApiKeyStatus, metadataLanguageName } from "@tidytitles/core";
 import type { CommandContext, GlobalOptions } from "../context";
 import { EXIT_ERROR, EXIT_OK } from "../errors";
 
@@ -36,6 +36,8 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
         conflictResolution: s.conflictResolution,
       },
       providers: { movie: s.movieProvider, tv: s.tvProvider, music: s.musicProvider },
+      tv: { episodeOrder: s.tv.episodeOrder },
+      metadata: { language: s.metadata.language },
     });
     return EXIT_OK;
   }
@@ -68,6 +70,13 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
   ui.print(c.bold("Behavior:"));
   ui.print(`  Conflict resolution: ${s.conflictResolution}`);
   ui.print(`  Preview before rename: ${pyBool(s.previewBeforeRename)}`);
+  ui.print();
+  ui.print(c.bold("Metadata:"));
+  ui.print(`  Episode order: ${s.tv.episodeOrder}`);
+  const languageName = metadataLanguageName(s.metadata.language);
+  ui.print(
+    `  Language:      ${s.metadata.language}${languageName === s.metadata.language ? "" : ` (${languageName})`}`,
+  );
   return EXIT_OK;
 }
 

@@ -1,6 +1,7 @@
 /** Formatting helpers shared by the commands (always en-US, never the runtime locale). */
 
 import path from "node:path";
+import { episodeNumbers } from "@tidytitles/core";
 import type {
   LookupErrorInfo,
   MatchedMetadata,
@@ -118,7 +119,11 @@ export function matchToJson(metadata: MatchedMetadata | undefined): Record<strin
         },
         season: metadata.season,
         episode: metadata.episode,
+        episodes: episodeNumbers(metadata),
+        absoluteNumber: metadata.absoluteNumber ?? null,
+        airDate: metadata.airDate ?? null,
         title: metadata.title,
+        episodeTitles: metadata.parts ? metadata.parts.map((part) => part.title) : [metadata.title],
         verificationStatus: metadata.verificationStatus ?? null,
       };
     case "track":

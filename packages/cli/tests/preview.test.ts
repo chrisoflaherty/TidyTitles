@@ -69,8 +69,23 @@ describe("preview", () => {
           year: null,
           season: 1,
           episode: 1,
+          episodes: [1],
+          airDate: null,
         },
       ],
+    });
+  });
+
+  it("--json lists every episode of a multi-episode file and the air date of a daily show", async () => {
+    await touch(sb.media, "Lost.S01E01-E02.Pilot.mkv");
+    await touch(sb.media, "The.Daily.Show.2024.03.15.mkv");
+    const r = await runIn(["preview", sb.media, "--json"]);
+    const files = JSON.parse(r.stdout).files as Array<Record<string, unknown>>;
+    expect(files.find((f) => f.title === "Lost")).toMatchObject({ season: 1, episode: 1, episodes: [1, 2] });
+    expect(files.find((f) => f.title === "The Daily Show")).toMatchObject({
+      season: null,
+      episodes: [],
+      airDate: "2024-03-15",
     });
   });
 });

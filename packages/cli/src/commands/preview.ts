@@ -38,6 +38,8 @@ export async function previewCommand(
       year: parsed.year ?? null,
       season: parsed.season ?? null,
       episode: parsed.episode ?? null,
+      episodes: parsed.episodes ?? (parsed.episode != null ? [parsed.episode] : []),
+      airDate: parsed.airDate ?? null,
     };
   });
 
