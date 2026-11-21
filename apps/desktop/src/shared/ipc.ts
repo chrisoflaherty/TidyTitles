@@ -28,6 +28,10 @@ import type {
   SelectableOption,
   Settings,
   UndoItemStatus,
+  CreatedFileUndoOutcome,
+  NfoWriteResult,
+  TagUndoOutcome,
+  TagWriteResult,
 } from "@tidytitles/core";
 
 /** Request/response channels (renderer -> main, `ipcRenderer.invoke`). */
@@ -161,6 +165,8 @@ export interface AppState {
   platform: Platform;
   /** Where renamed files go, per media kind. */
   output: OutputFolders;
+  /** `[write_metadata]`: what a rename also writes (for the rename confirmation). */
+  writeMetadata: Settings["writeMetadata"];
 }
 
 // ---------------------------------------------------------------------------
@@ -305,10 +311,27 @@ export type RenameOutcome =
       transferMode: TransferMode;
       failures: RenameFailure[];
       historySaved: number;
+      /** Tags and NFO files written (`[write_metadata]`); absent when both are off. */
+      metadata?: RenameMetadataReport;
     }
   | { kind: "error"; message: string }
   | { kind: "busy" }
   | { kind: "nothing" };
+
+/** What one renamed file got besides its new name. */
+export interface MetadataFileReport {
+  /** The file's new name. */
+  name: string;
+  tags?: TagWriteResult;
+  nfo?: NfoWriteResult[];
+}
+
+/** Tags and NFO files a rename wrote, per file (only files with something to report). */
+export interface RenameMetadataReport {
+  musicTags: boolean;
+  nfo: boolean;
+  files: MetadataFileReport[];
+}
 
 export interface UndoItemView {
   name: string;
@@ -316,6 +339,10 @@ export interface UndoItemView {
   errors: string[];
   /** Files left in place on purpose (file name and why). */
   kept: { name: string; reason: UndoKeptReason }[];
+  /** Tags the rename wrote: put back, or why not. */
+  tags?: TagUndoOutcome;
+  /** NFO files the rename created (file name, what undo did). */
+  createdFiles?: (Omit<CreatedFileUndoOutcome, "path"> & { name: string })[];
 }
 
 export type UndoOutcome =
@@ -364,6 +391,8 @@ export interface EditableSettings {
   tv: Settings["tv"];
   /** `[metadata]`: the metadata language code. */
   metadata: Settings["metadata"];
+  /** `[write_metadata]`: tags into music files, NFO files. */
+  writeMetadata: Settings["writeMetadata"];
 }
 
 /** A metadata language the settings offer: its code (stored) and English name. */

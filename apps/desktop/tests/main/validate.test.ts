@@ -28,6 +28,7 @@ const validSettings = () => ({
   history: { maxEntries: 200 },
   tv: { episodeOrder: "aired" },
   metadata: { language: "en-US" },
+  writeMetadata: { musicTags: false, nfo: false },
 });
 
 describe("IPC validation", () => {
@@ -80,6 +81,13 @@ describe("IPC validation", () => {
       /language code/,
     );
     expect(() => parseEditableSettings({ ...validSettings(), tv: undefined })).toThrow();
+    expect(() => parseEditableSettings({ ...validSettings(), writeMetadata: { musicTags: "yes", nfo: false } })).toThrow(
+      /writeMetadata\.musicTags/,
+    );
+    expect(() => parseEditableSettings({ ...validSettings(), writeMetadata: undefined })).toThrow();
+    expect(
+      parseEditableSettings({ ...validSettings(), writeMetadata: { musicTags: true, nfo: false, extra: 1 } }).writeMetadata,
+    ).toEqual({ musicTags: true, nfo: false });
     expect(parseEditableSettings({ ...validSettings(), metadata: { language: "pt-BR" } }).metadata.language).toBe(
       "pt-BR",
     );

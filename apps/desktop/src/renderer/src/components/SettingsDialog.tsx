@@ -16,6 +16,7 @@ import { MetadataSettings } from "./MetadataSettings";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { PlaceholderTable, PresetPicker } from "./TemplatePresets";
 import { OutputSettings } from "./OutputSettings";
+import { WriteMetadataSettings } from "./WriteMetadataSettings";
 
 type TabId = "templates" | "api" | "files" | "output" | "coverArt" | "providers" | "updates";
 const TABS: { id: TabId; label: string }[] = [
@@ -477,6 +478,7 @@ export function SettingsDialog({
                     ))}
                   </div>
                 </Section>
+                <WriteMetadataSettings draft={draft} update={update} />
               </>
             )}
 
