@@ -1,7 +1,7 @@
 /**
  * Conflict resolution strategies for file renaming.
  *
- * Port of `file_renamer/core/conflict_resolution.py`.
+ * Ported from the original Python app's `core/conflict_resolution.py`.
  */
 
 import { existsSync } from "node:fs";

@@ -1,9 +1,9 @@
 /**
  * Configuration management service.
  *
- * Port of `file_renamer/services/config_service.py`. Reads and writes the same
- * `config.toml` and `history.json`, in the same directory, as the Python app,
- * so users can switch between the two.
+ * Ported from the original Python app's `services/config_service.py`. Reads and writes the same
+ * `config.toml` and `history.json`, in the same directory, as the Python app
+ * did, so installs that began with it carry over.
  *
  * ## config.toml (snake_case on disk)
  *

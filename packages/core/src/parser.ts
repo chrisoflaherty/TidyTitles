@@ -1,7 +1,7 @@
 /**
  * Filename parsing to extract media information.
  *
- * Port of `file_renamer/core/parser.py`. The Python app delegates to the
+ * Ported from the original Python app's `core/parser.py`. The Python app delegates to the
  * `guessit` library; there is no JavaScript guessit, so `GuessItParser` here
  * is a hand-written, guessit-compatible parser. Its rules were derived from
  * guessit 3.8.0 output and are checked against it by

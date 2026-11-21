@@ -1,7 +1,7 @@
 /**
  * Cover art download service.
  *
- * Port of `file_renamer/services/cover_art.py`. HTTP goes through an injected
+ * Ported from the original Python app's `services/cover_art.py`. HTTP goes through an injected
  * `fetch` so tests can mock it.
  */
 

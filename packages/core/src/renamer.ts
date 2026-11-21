@@ -1,7 +1,7 @@
 /**
  * File renaming operations.
  *
- * Port of `file_renamer/core/renamer.py`. All operations that touch the
+ * Ported from the original Python app's `core/renamer.py`. All operations that touch the
  * filesystem are async (`node:fs/promises`) so they never block an Electron
  * main process; only existence checks are synchronous.
  */

@@ -1,7 +1,7 @@
 /**
  * Music file tag parsing with filename fallback.
  *
- * Port of `file_renamer/core/music_parser.py`. The Python app reads tags with
+ * Ported from the original Python app's `core/music_parser.py`. The Python app reads tags with
  * mutagen; this port uses `music-metadata`, which is async, so `parse`
  * returns a Promise. Tags are only read, never written.
  */

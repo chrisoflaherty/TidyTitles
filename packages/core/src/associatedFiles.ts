@@ -1,7 +1,7 @@
 /**
  * Associated file detection and handling.
  *
- * Port of `file_renamer/core/associated_files.py`.
+ * Ported from the original Python app's `core/associated_files.py`.
  */
 
 import { existsSync } from "node:fs";

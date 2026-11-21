@@ -1,7 +1,7 @@
 /**
  * Template engine for generating filenames.
  *
- * Port of `file_renamer/core/template.py`. Behavior matches the Python
+ * Ported from the original Python app's `core/template.py`. Behavior matches the Python
  * engine, including Python's `str.title()` and `str.zfill()` semantics.
  */
 

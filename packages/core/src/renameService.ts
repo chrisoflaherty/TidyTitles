@@ -1,7 +1,7 @@
 /**
  * Main service orchestrating the rename workflow.
  *
- * Port of `file_renamer/services/rename_service.py`:
+ * Ported from the original Python app's `services/rename_service.py`:
  *
  *   parseFiles -> fetchMetadata -> generatePreview -> executeRename
  *
