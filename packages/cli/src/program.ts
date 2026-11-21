@@ -46,6 +46,8 @@ const RENAME_HELP = `
 Matches:
   When a search finds several results, you choose one from a list or skip
   the file. --auto-select takes the first result without asking.
+  On a terminal, "Search with different words..." searches again with your
+  words; files with no match are offered the same search after the lookup.
   When stdin is not a terminal, nothing is asked: files with several results
   are skipped (and reported) unless --auto-select is given.
 
@@ -66,7 +68,7 @@ Output:
   Results go to stdout, progress and prompts to stderr (progress only on a
   terminal). --json prints one JSON object: { command, path, dryRun, files,
   confirmed, operations: [{ source, destination, status, skipReason, error,
-  lookupError, mediaType, match, associatedFiles }], summary,
+  lookupError, mediaType, match, correction, associatedFiles }], summary,
   skippedSelections, coverArt, historySaved, transfer, outputFolders }.
 
 Examples:

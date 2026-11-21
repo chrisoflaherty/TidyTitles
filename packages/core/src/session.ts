@@ -29,6 +29,7 @@ import {
 import { isConflictStrategy, type ConflictStrategy } from "./conflictResolution";
 import { CoverArtDownloader } from "./coverArt";
 import { ConfigError, HistoryChangedError, RenameError } from "./errors";
+import { PlanCorrector } from "./matchCorrection";
 import type { MediaType, RenameOperation } from "./models";
 import type { MusicParser } from "./musicParser";
 import type { FilenameParser } from "./parser";
@@ -868,6 +869,27 @@ export class RenameSession {
       await checkOutputFolders(this.output, operations, { dryRun: true });
     }
     return applyTransferChecks(operations, this.transferMode);
+  }
+
+  /**
+   * A corrector for operations this session planned (see `PlanCorrector`):
+   * search again, choose or clear a match, edit a new name. Pass the
+   * `destinationDir` the operations were planned with; without one, files go
+   * to the output folder for their matched kind, as in `plan`, so a file
+   * whose match changes kind moves to that kind's folder. Hard links that
+   * cannot work are marked after every change.
+   */
+  corrector(
+    operations: readonly PlannedOperation[],
+    options: { destinationDir?: string } = {},
+  ): PlanCorrector {
+    return new PlanCorrector(this.service, operations, {
+      forceType: this.forceType,
+      destinationDir:
+        options.destinationDir ??
+        ((mediaFile) => outputDirFor(this.output, outputKindFor(mediaFile.matchedMetadata))),
+      afterPlan: (planned) => applyTransferChecks(planned, this.transferMode),
+    });
   }
 
   /**

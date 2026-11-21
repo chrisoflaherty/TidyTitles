@@ -26,6 +26,8 @@ export interface Prompter {
     choices: SelectChoice<T>[],
     options: { signal?: AbortSignal },
   ): Promise<T>;
+  /** Ask for a line of text (only called when stdin is a terminal). */
+  input(message: string, options: { default?: string; signal?: AbortSignal }): Promise<string>;
 }
 
 export interface RealPrompterOptions {
@@ -98,6 +100,13 @@ export function createRealPrompter(options: RealPrompterOptions): Prompter {
           { message, choices: choices.map((c) => ({ name: c.name, value: c.value })) },
           { input: stdin, output: stderr, signal },
         ),
+      );
+    },
+
+    async input(message, { default: def, signal }) {
+      const { input } = await import("@inquirer/prompts");
+      return wrap(() =>
+        input({ message, ...(def ? { default: def } : {}) }, { input: stdin, output: stderr, signal }),
       );
     },
   };

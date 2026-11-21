@@ -121,7 +121,7 @@ export const BB_FILE = "Breaking.Bad.S01E01.720p.HDTV.x264.mkv";
 // ---------------------------------------------------------------------------
 
 export interface PromptCall {
-  kind: "confirm" | "select";
+  kind: "confirm" | "select" | "input";
   message: string;
   choices?: SelectChoice<unknown>[];
 }
@@ -132,7 +132,16 @@ export class FakePrompter implements Prompter {
   constructor(
     public confirmAnswers: Array<boolean | (() => boolean | Promise<boolean>)> = [],
     public selectAnswers: Array<unknown | (() => unknown)> = [],
+    public inputAnswers: string[] = [],
   ) {}
+
+  async input(message: string, options: { default?: string } = {}): Promise<string> {
+    this.calls.push({ kind: "input", message });
+    const answer = this.inputAnswers.shift();
+    if (answer === undefined) throw new Error(`Unexpected input: ${message}`);
+    // An empty answer takes the default, as in the real prompt.
+    return answer === "" ? (options.default ?? "") : answer;
+  }
 
   async confirm(message: string): Promise<boolean> {
     this.calls.push({ kind: "confirm", message });

@@ -55,6 +55,9 @@ import {
 import { withTagDetails } from "./trackDetails";
 import { createMusicParser, isMusicFile, type MusicParser } from "./musicParser";
 import { createParser, type FilenameParser } from "./parser";
+import { applyCustomName } from "./customName";
+import { AssociatedFileFinder } from "./associatedFileFinder";
+import type { MatchCorrection } from "./matchCorrection";
 import type { MovieProvider, MusicProvider, TVProvider } from "./providers/base";
 import {
   BATCH_OVERWRITE_MESSAGE,
@@ -86,7 +89,14 @@ export type SelectionResult = number | undefined | null;
 export type SelectionCallback = (
   options: SelectableOption[],
   filename: string,
+  context: SelectionContext,
 ) => SelectionResult | Promise<SelectionResult>;
+
+/** More about the file a selection callback is asked about. */
+export interface SelectionContext {
+  /** The file's full path (`filename` is its base name). */
+  path: string;
+}
 
 /** Phase reported by `processFiles` progress. */
 export type ProcessPhase = "parse" | "fetch";
@@ -124,6 +134,12 @@ export interface PlannedMediaFile extends MediaFile {
    * question was reused.
    */
   selectionSkipped?: true;
+  /**
+   * Set when the user corrected the file after the lookup: chose or cleared
+   * its match, or typed its new name (see `matchCorrection.ts`). Never set
+   * by a lookup, so the next lookup drops it.
+   */
+  correction?: MatchCorrection;
 }
 
 /**
@@ -140,6 +156,8 @@ export interface PlannedMediaFile extends MediaFile {
  *   volume (set by `applyTransferChecks` and `executeRename`)
  * - "link_unsupported": hard-link mode, but the destination volume has no
  *   hard links (set by `executeRename`)
+ * - "match_cleared": the user cleared the file's match, so it is left alone
+ *   (set by `PlanCorrector`)
  */
 export type SkipReason =
   | "no_match"
@@ -150,7 +168,8 @@ export type SkipReason =
   | "same_path"
   | "would_overwrite"
   | "cross_device_link"
-  | "link_unsupported";
+  | "link_unsupported"
+  | "match_cleared";
 
 /**
  * The folder a file's new name goes into, chosen per file (for example by
@@ -393,6 +412,8 @@ interface FetchRun {
   decide<T>(index: number, step: () => Promise<T>): Promise<T>;
   /** Mark that file `index` will not decide, so later files need not wait for it. */
   pass(index: number): void;
+  /** The file whose `decide` step is running (steps run one at a time). */
+  deciding(): PlannedMediaFile | undefined;
   /** Album verification shared by the files of one album (see `albumGroupKey`). */
   albumChecks: Map<string, Promise<AlbumCheck>>;
   /** How many files with complete tags share each album key. */
@@ -661,6 +682,8 @@ export class RenameService {
       }
     }
 
+    let deciding: PlannedMediaFile | undefined;
+
     return {
       memory: new SelectionMemory(),
       signal,
@@ -670,12 +693,15 @@ export class RenameService {
         try {
           if (index > 0) await abortable(turnDone[index - 1]!, signal);
           signal.throwIfAborted();
+          deciding = mediaFiles[index];
           return await step();
         } finally {
+          deciding = undefined;
           release[index]!();
         }
       },
       pass: (index) => release[index]!(),
+      deciding: () => deciding,
       albumChecks: new Map(),
       albumSizes,
     };
@@ -699,7 +725,9 @@ export class RenameService {
     let answer: SelectionResult;
     run.progress.hold();
     try {
-      answer = await this.selectionCallback!(options, filename);
+      answer = await this.selectionCallback!(options, filename, {
+        path: run.deciding()?.path ?? filename,
+      });
     } catch (error) {
       throw new SelectionCallbackFailure(error);
     } finally {
@@ -965,6 +993,8 @@ export class RenameService {
   ): Promise<PlannedOperation[]> {
     const operations: PlannedOperation[] = [];
     const reserved = new Set<string>();
+    // Lists each folder once for the whole plan (same results as findAssociatedFiles).
+    const associatedFinder = new AssociatedFileFinder();
 
     const skipped = (
       mediaFile: PlannedMediaFile,
@@ -1045,6 +1075,11 @@ export class RenameService {
         continue;
       }
 
+      // A name the user typed replaces the template's file name (its folders stay).
+      if (mediaFile.correction?.customName !== undefined) {
+        newName = applyCustomName(newName, mediaFile.correction.customName, extension);
+      }
+
       const destDir =
         (typeof destinationDir === "function" ? destinationDir(mediaFile) : destinationDir) ??
         path.dirname(mediaFile.path);
@@ -1069,7 +1104,7 @@ export class RenameService {
           includeImages: settings.images,
         });
         if (extensions.size > 0) {
-          const found = await findAssociatedFiles(mediaFile.path, extensions);
+          const found = await associatedFinder.find(mediaFile.path, extensions);
           const newBaseName = pathStem(newPath);
           const originalStem = pathStem(mediaFile.path);
           for (const assoc of found) {

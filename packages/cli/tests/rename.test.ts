@@ -214,6 +214,7 @@ describe("rename", () => {
       expect(call.choices!.map((c) => c.name)).toEqual([
         "1. The Matrix (1999)",
         "2. The Matrix Reloaded (2003)",
+        "Search with different words...",
         "Skip this file",
       ]);
       expect(await readdir(sb.media)).toEqual(["The Matrix Reloaded (2003).mkv"]);
@@ -521,6 +522,7 @@ describe("rename", () => {
             provider: "tmdb",
             verificationStatus: "auto_matched",
           },
+          correction: null,
           associatedFiles: [
             {
               source: path.join(sb.media, MATRIX_FILE.replace(/\.mkv$/, ".en.srt")),

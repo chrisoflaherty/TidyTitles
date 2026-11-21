@@ -36,6 +36,8 @@ import { baseName } from "../format";
 import { operationStatus, type StatusView } from "../status";
 import { Icon, type IconName } from "./Icon";
 import { MiddleEllipsis } from "./MiddleEllipsis";
+import { canCorrect, hasCustomName, rowActions, type RowAction } from "../corrections";
+import { RowMenu } from "./RowMenu";
 
 const ASSOC_LABEL: Record<AssociatedFileType, string> = {
   subtitle: "Subtitle",
@@ -80,7 +82,16 @@ function DestinationName({ source, destination, outputFolder }: { source: string
 function newNameCell(op: PlannedOperation | undefined, plan: AppState["plan"], output: AppState["output"] | undefined) {
   if (!op || plan === "none") return <span className="muted">—</span>;
   if (op.destination === op.source) return <span className="muted" title="The name stays the same">Unchanged</span>;
-  return <DestinationName source={op.source} destination={op.destination} outputFolder={outputFolderFor(op, output)} />;
+  const name = <DestinationName source={op.source} destination={op.destination} outputFolder={outputFolderFor(op, output)} />;
+  if (!hasCustomName(op)) return name;
+  return (
+    <span className="name-with-tag">
+      {name}
+      <span className="edited-tag" title="You typed this name" data-testid="name-edited">
+        Edited
+      </span>
+    </span>
+  );
 }
 
 /** One file of the list. */
@@ -96,6 +107,8 @@ interface RowHandlers {
   click: (id: number) => void;
   focus: (id: number) => void;
   register: (id: number, el: HTMLTableRowElement | null) => void;
+  /** Open the row's actions menu at a viewport position. */
+  menu: (id: number, at: { x: number; y: number }) => void;
 }
 
 interface FileRowProps {
@@ -111,10 +124,12 @@ interface FileRowProps {
   /** aria-rowindex of the file's row (the header is row 1). */
   rowIndex: number;
   handlers: RowHandlers;
+  /** The row offers its actions (a plan is waiting and nothing else runs). */
+  actionable: boolean;
 }
 
 /** A file's row and its associated-file rows. Re-renders only when its own props change. */
-const FileRow = memo(function FileRow({ file, op, plan, output, transfer, selected, tabStop, rowIndex, handlers }: FileRowProps) {
+const FileRow = memo(function FileRow({ file, op, plan, output, transfer, selected, tabStop, rowIndex, handlers, actionable }: FileRowProps) {
   const status = operationStatus(op, plan);
   const original = op ? baseName(op.source) : file.name;
   const originalPath = op ? op.source : file.path;
@@ -130,6 +145,12 @@ const FileRow = memo(function FileRow({ file, op, plan, output, transfer, select
         tabIndex={tabStop ? 0 : -1}
         onClick={() => handlers.click(id)}
         onFocus={() => handlers.focus(id)}
+        onContextMenu={(event) => {
+          if (!actionable) return;
+          event.preventDefault();
+          handlers.click(id);
+          handlers.menu(id, { x: event.clientX, y: event.clientY });
+        }}
         data-testid="file-row"
       >
         <td className="cell-type">
@@ -145,6 +166,27 @@ const FileRow = memo(function FileRow({ file, op, plan, output, transfer, select
         <td>{newNameCell(op, plan, output)}</td>
         <td>
           <StatusBadge status={status} />
+        </td>
+        <td className="cell-actions">
+          {actionable && (
+            <button
+              type="button"
+              className="row-action"
+              aria-label={`Actions for ${original}`}
+              aria-haspopup="menu"
+              title="Change the match or the new name"
+              tabIndex={tabStop ? 0 : -1}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlers.click(id);
+                const rect = event.currentTarget.getBoundingClientRect();
+                handlers.menu(id, { x: rect.left, y: rect.bottom + 2 });
+              }}
+              data-testid="row-actions"
+            >
+              <Icon name="more" size={14} />
+            </button>
+          )}
         </td>
       </tr>
       {op && plan !== "none"
@@ -171,6 +213,7 @@ const FileRow = memo(function FileRow({ file, op, plan, output, transfer, select
                   {transfer === "copy" ? "Copied with the file" : transfer === "hardlink" ? "Linked with the file" : "Moves with the file"}
                 </span>
               </td>
+              <td />
             </tr>
           ))
         : null}
@@ -182,7 +225,7 @@ const FileRow = memo(function FileRow({ file, op, plan, output, transfer, select
 function Spacer({ height }: { height: number }) {
   return (
     <tr className="spacer-row" aria-hidden="true">
-      <td colSpan={5} style={{ height }} />
+      <td colSpan={6} style={{ height }} />
     </tr>
   );
 }
@@ -207,9 +250,11 @@ export interface FileTableProps {
   selectedFileId: number | null;
   onSelect: (id: number | null) => void;
   onRemove: (ids: number[]) => void;
+  /** A row action (change match, edit name, ...) was chosen. */
+  onAction?: (id: number, action: RowAction) => void;
 }
 
-export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect, onRemove }: FileTableProps) {
+export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect, onRemove, onAction }: FileTableProps) {
   const { files, operations, plan, busy } = app;
   const scrollRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLTableSectionElement>(null);
@@ -276,6 +321,13 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
   for (let i = start; i < end; i++) rendered.push(i);
   rendered.push(...pinned.filter((i) => i >= end));
 
+  // The open actions menu.
+  const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null);
+  const actionable = canCorrect(app) && onAction !== undefined;
+  useEffect(() => {
+    if (!actionable) setMenu(null);
+  }, [actionable]);
+
   // Latest values for the stable callbacks.
   const latest = useRef({ selectedFileId, onSelect });
   latest.current = { selectedFileId, onSelect };
@@ -290,6 +342,7 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
         if (el) rowRefs.current.set(id, el);
         else rowRefs.current.delete(id);
       },
+      menu: (id, at) => setMenu({ id, ...at }),
     }),
     [],
   );
@@ -409,6 +462,25 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
       case "Escape":
         onSelect(null);
         return;
+      case "Enter":
+      case "F2":
+      case "ContextMenu":
+      case "F10": {
+        // Keys on the row itself (not on its actions button).
+        const row = event.target as HTMLElement;
+        if (row.tagName !== "TR" || !actionable || selectedFileId === null) return;
+        if (event.key === "F10" && !event.shiftKey) return;
+        if (event.key === "Enter") onAction!(selectedFileId, "changeMatch");
+        else if (event.key === "F2") {
+          if (!rowActions(items[indexById.get(selectedFileId) ?? -1]?.op).find((a) => a.action === "editName")?.enabled) return;
+          onAction!(selectedFileId, "editName");
+        } else {
+          const button = row.querySelector(".row-action");
+          const rect = (button ?? row).getBoundingClientRect();
+          setMenu({ id: selectedFileId, x: rect.left, y: rect.bottom + 2 });
+        }
+        break;
+      }
       default:
         return;
     }
@@ -436,6 +508,7 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
         tabStop={item.file.id === tabStopId}
         rowIndex={layout.ariaRows[i]!}
         handlers={handlers}
+        actionable={actionable}
       />,
     );
     cursor = i + 1;
@@ -458,6 +531,7 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
           <col className="col-arrow" />
           <col className="col-name" />
           <col className="col-status" />
+          <col className="col-actions" />
         </colgroup>
         <thead ref={headRef}>
           <tr aria-rowindex={1}>
@@ -466,6 +540,7 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
             <th scope="col" aria-label="becomes" />
             <th scope="col">New name</th>
             <th scope="col">Status</th>
+            <th scope="col" aria-label="Actions" />
           </tr>
         </thead>
         <tbody
@@ -477,6 +552,27 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
           {body}
         </tbody>
       </table>
+      {menu && actionable && (() => {
+        const item = items[indexById.get(menu.id) ?? -1];
+        if (!item) return null;
+        const close = (refocus: boolean) => {
+          setMenu(null);
+          if (refocus) rowRefs.current.get(menu.id)?.focus();
+        };
+        return (
+          <RowMenu
+            items={rowActions(item.op)}
+            x={menu.x}
+            y={menu.y}
+            label={`Actions for ${item.file.name}`}
+            onClose={close}
+            onAction={(action) => {
+              close(true);
+              onAction!(menu.id, action);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 });

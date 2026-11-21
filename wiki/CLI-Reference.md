@@ -119,7 +119,7 @@ Select Match
 └───┴──────────────────────────┴─────────────┴───────┘
 ```
 
-It then asks `Select match (1-3) or skip:` with a list of the matches, for example `1. The Matrix (1999)`, followed by `Skip this file`. Move with the arrow keys and press Enter. For music the second column shows the artist and album instead of the year.
+It then asks `Select match (1-3) or skip:` with a list of the matches, for example `1. The Matrix (1999)`, followed by `Search with different words...` (see [Searching with different words](#searching-with-different-words)) and `Skip this file`. Move with the arrow keys and press Enter. For music the second column shows the artist and album instead of the year.
 
 - You are asked each question once per run. When later files produce the same list of matches (every episode of one show, or two copies of a movie), your answer, or your skip, is applied to them too. For music, once you pick a track, other files in the same folder take the match on the same album without asking.
 - `--auto-select` takes the first result without asking.
@@ -218,6 +218,7 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
         "discNumber": null,
         "verificationStatus": "unverified"
       },
+      "correction": null,
       "associatedFiles": []
     }
   ],
@@ -238,6 +239,7 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
 | `operations[].lookupError` | `{ kind, name, message }` when the lookup failed; `kind` is `authentication` (bad key), `rate_limit`, `provider`, or `other`. |
 | `operations[].mediaType` | `movie`, `tv_episode`, `music`, or `unknown`, as parsed from the name. |
 | `operations[].match` | The metadata used (`kind` is `movie`, `episode`, or `track`), with `verificationStatus`: `auto_matched`, `manual_selection`, `verified`, `unverified`, or `from_provider`. See [Review the new names](GUI-Guide.md#4-review-the-new-names). |
+| `operations[].correction` | `"chosen"` when you picked the match with [Search with different words](#searching-with-different-words), otherwise `null`. |
 | `skippedSelections` | Files skipped because they had several matches and stdin was not a terminal. |
 | `coverArt` | Paths of cover art saved or already present. |
 | `historySaved` | Number of renames recorded for `undo`. |
@@ -524,11 +526,26 @@ fi
 
 | Situation | On a terminal | When stdin is not a terminal |
 |-----------|---------------|------------------------------|
-| Several matches for a file | Pick from a list or skip | File skipped and reported, unless `--auto-select` |
+| Several matches for a file | Pick from a list, search with different words, or skip | File skipped and reported, unless `--auto-select` |
+| No match for a file | Offered a search with different words (after the lookup) | Nothing asked; the file is skipped |
 | `Proceed with rename?` / `Proceed with undo?` | Yes/no prompt (default no) | Reads one line from stdin: `y`/`yes` or `n`/`no`, blank means no. End of input aborts with exit 1. |
 | `Config file exists. Overwrite?` | Yes/no prompt (default no) | Same as above |
 
 So `echo y | tidytitles rename ~/Downloads` works, but `--yes` is clearer in scripts.
+
+### Searching with different words
+
+On a terminal, without `--auto-select`, the match prompt has a **Search with different words...** choice. It asks for new words, one field at a time, each prefilled with what TidyTitles searched for (press Enter to keep it):
+
+- movies: `Movie title:`, `Year (optional):`
+- TV: `Show title:`, `Year (optional):`, `Season:`, `Episode:` (correct the numbers here if the file name had them wrong)
+- music: `Track title:`, `Artist (optional):`, `Album (optional):`
+
+The results are listed with **Search again with different words...**, **Search as a TV episode...** (or **as a movie...**, for video files), and **Skip this file**. A result you pick is used for the file and marked `manual_selection`. When it is a TV show and other files in the batch have the same show title in their names, you are asked `Use <show> for the N other file(s) named "<title>" too?` (default yes); each file then gets its own season and episode, and files whose episode the show does not have keep their match.
+
+After the lookup, each file with no match is offered the same search: **Search with different words...**, **Skip this file**, or **Skip all files without a match**. Files you skipped in the match prompt are not asked again.
+
+The preview shown afterward includes these changes. Nothing is asked when stdin is not a terminal or with `--auto-select`.
 
 ## Ctrl+C
 

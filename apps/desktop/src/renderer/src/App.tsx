@@ -6,6 +6,9 @@ import { FileTable } from "./components/FileTable";
 import { HistoryDialog } from "./components/HistoryDialog";
 import { Icon } from "./components/Icon";
 import { ConfirmDialog, ErrorDialog, RenameResultDialog, UndoResultDialog } from "./components/MessageDialogs";
+import { ChangeMatchDialog } from "./components/ChangeMatchDialog";
+import { EditNameDialog } from "./components/EditNameDialog";
+import type { RowAction } from "./corrections";
 import { SelectionDialog } from "./components/SelectionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { StatusBar } from "./components/StatusBar";
@@ -88,6 +91,18 @@ export function App() {
   // Stable, so the (memoized) file list skips renders that only change the progress.
   const selectFile = useCallback((id: number | null) => dispatch({ type: "selectFile", id }), []);
   const removeFiles = useCallback((ids: number[]) => void api.removeFiles(ids), [api]);
+  // Row actions: correct a match or a new name.
+  const rowAction = useCallback(
+    (fileId: number, action: RowAction) => {
+      const { modal, selection } = uiRef.current;
+      if (modal || selection) return;
+      if (action === "changeMatch") dispatch({ type: "openModal", modal: { kind: "changeMatch", fileId } });
+      else if (action === "editName") dispatch({ type: "openModal", modal: { kind: "editName", fileId } });
+      else if (action === "resetName") void api.setFileName(fileId, null);
+      else void api.clearMatch(fileId);
+    },
+    [api],
+  );
 
   // --- updates --------------------------------------------------------------
 
@@ -267,6 +282,7 @@ export function App() {
             selectedFileId={ui.selectedFileId}
             onSelect={selectFile}
             onRemove={removeFiles}
+            onAction={rowAction}
           />
         )}
         {dragging && (
@@ -425,6 +441,33 @@ export function App() {
       {ui.modal?.kind === "undoResult" && (
         <UndoResultDialog outcome={ui.modal.outcome} onClose={() => dispatch({ type: "closeModal" })} />
       )}
+      {ui.modal?.kind === "changeMatch" &&
+        (() => {
+          const { fileId } = ui.modal;
+          const index = app.files.findIndex((f) => f.id === fileId);
+          const file = app.files[index];
+          if (!file) return null;
+          return (
+            <ChangeMatchDialog
+              key={fileId}
+              fileId={fileId}
+              fileName={file.name}
+              hasMatch={app.operations?.[index]?.mediaFile.matchedMetadata !== undefined}
+              onClose={() => dispatch({ type: "closeModal" })}
+              onClear={() => {
+                dispatch({ type: "closeModal" });
+                void api.clearMatch(fileId);
+              }}
+            />
+          );
+        })()}
+      {ui.modal?.kind === "editName" &&
+        (() => {
+          const { fileId } = ui.modal;
+          const file = app.files.find((f) => f.id === fileId);
+          if (!file) return null;
+          return <EditNameDialog key={fileId} fileId={fileId} fileName={file.name} onClose={() => dispatch({ type: "closeModal" })} />;
+        })()}
       {ui.modal?.kind === "error" && (
         <ErrorDialog title={ui.modal.title} message={ui.modal.message} onClose={() => dispatch({ type: "closeModal" })} />
       )}

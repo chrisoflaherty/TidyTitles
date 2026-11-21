@@ -102,6 +102,8 @@ Each match shows its title and year, and details such as the release date, netwo
 
 You are asked each question once per fetch. When later files produce the same list of matches (every episode of one show, or two copies of a movie), your answer, or your skip, is applied to them too. For music, once you pick a track, other files in the same folder take the match on the same album without asking. Click **Fetch Metadata** again to be asked afresh.
 
+If none of the matches is right, skip the file and fix it afterward with **Change Match…** (see [Fix a match or a name](#fix-a-match-or-a-name)).
+
 ## 4. Review the new names
 
 After fetching, the **New name** column shows each file's new name, relative to its current folder. A name that includes folders (from a template with `/`, such as the music default) shows those folders, for example `Queen/A Night at the Opera (1975)/11 - Bohemian Rhapsody.mp3`. **Unchanged** means the file will keep its name. Hover over a name to see the full path.
@@ -113,7 +115,7 @@ Rows are tinted: green for a confident match, amber for music whose tags could n
 | Status | Meaning |
 |--------|---------|
 | **Auto-matched** | Movie or TV: the search found exactly one result. |
-| **Selected** | Movie or TV: you picked this match from several. |
+| **Selected** | You picked this match: from several in the match dialog, or with **Change Match…**. |
 | **Verified** | Music: the file's tags were confirmed on MusicBrainz. |
 | **Unverified** | Music: the name comes from the file's own tags (or its filename), which MusicBrainz could not confirm or was not asked about. Check these. |
 | **From MusicBrainz** | Music: the file's tags were incomplete, so the details come from a MusicBrainz search. |
@@ -128,7 +130,21 @@ Rows are tinted: green for a confident match, amber for music whose tags could n
 | **Rate limited** | The service is limiting requests. Try again in a minute. |
 | **Template error** | The naming template could not be applied (for example `{episode\|pad:x}`). |
 | **Duplicate name** | Another file in the list would get the same name (and the conflict setting is not **Add a number**). |
+| **Left alone** | You cleared the file's match with **Clear Match**. |
 | **Not fetched** | Fetch Metadata has not run since the file was added or the options changed. |
+
+A name marked **Edited** next to it is one you typed (see below).
+
+### Fix a match or a name
+
+After a fetch, every row has a **…** button at its right end (the actions menu). It also opens with a right-click, the context menu key, or Shift+F10 on the selected row. These work for any file: matched, **No match**, skipped in the match dialog, or **Lookup failed**.
+
+- **Change Match…** (Enter on the selected row) opens a search that starts with what TidyTitles searched for: the title and year it read from the name, and for TV the season and episode numbers. Change the words and press Enter or **Search**. For a video file, **Search as** switches between **Movie** and **TV episode**; for TV, correct the **Season** and **Episode** if the name had them wrong (you can change them after searching, too). Music is searched by **Title**, **Artist**, and **Album**. Pick a result and click **Use This Match** (or press Enter, or double-click it). The new name is worked out again, and so are conflicts with the rest of the list.
+- **Also use this show for the other files named "…"**: when you pick a TV show and other files in the list have the same show title in their names, this box (checked by default) gives the show to all of them at once, each with its own season and episode. A season of 24 episodes matched to the wrong show needs one fix. Files whose episode the show does not have keep their match; the status bar says how many.
+- **Edit New Name…** (F2) lets you type the new name. The extension stays, and so do any folders the template creates (music); subtitles and other files that go with it get the same name. Names with `/ \ : * ? " < > |`, names made only of dots, and names Windows reserves (such as `CON`) are refused, and so is a name another file in the folder already has. **Use Template Name** goes back to the name from the template.
+- **Clear Match** leaves the file alone: it is marked **Left alone** and not renamed.
+
+A file you changed is planned after the files you did not touch: if both would get the same name, the file you changed is the one marked **Duplicate name** (or numbered, with **Add a number**), and the other keeps its name. Changes last until the next **Fetch Metadata**, which starts over from the file names.
 
 ## 5. Rename
 
@@ -268,7 +284,7 @@ If another dialog is open when you choose **Check for Updates…**, the result a
 | Undo Last Rename… | Cmd+Option+Z | Ctrl+Alt+Z |
 | Quit | Cmd+Q | Ctrl+Q |
 
-In the file list: Up and Down arrows, Page Up, Page Down, Home, and End move the selection; Delete or Backspace removes the selected file from the list; Esc clears the selection. In dialogs, Enter confirms and Esc cancels (in the match dialog, Esc skips the file).
+In the file list: Up and Down arrows, Page Up, Page Down, Home, and End move the selection; Delete or Backspace removes the selected file from the list; Esc clears the selection. After a fetch, Enter opens **Change Match…** for the selected file, F2 opens **Edit New Name…**, and Shift+F10 or the context menu key opens its actions menu (Tab from the row also reaches its **…** button). In dialogs, Enter confirms and Esc cancels (in the match dialog, Esc skips the file; in **Change Match**, Enter in a search field searches).
 
 View → Actual Size, Zoom In, and Zoom Out change the text size.
 
@@ -286,7 +302,7 @@ View → Actual Size, Zoom In, and Zoom Out change the text size.
 
 ## Tips
 
-- **A file matched the wrong title.** Fetch again and choose the right match when asked. If you were not asked (only one result was found), the filename probably misleads the search: rename the file by hand to something like `Title (Year).mkv` and fetch again. Setting **Type** to Movies or TV Shows also helps when Auto-detect guesses wrong.
+- **A file matched the wrong title.** Use **Change Match…** on its row and search with better words (see [Fix a match or a name](#fix-a-match-or-a-name)). For a TV show, the fix can go to every episode at once. Setting **Type** to Movies or TV Shows also helps when Auto-detect guesses wrong.
 - **Large collections.** API responses are cached for 24 hours, so fetching the same files again is fast. Movie and TV lookups run several at a time. MusicBrainz allows one request per second: tracks of one album with complete tags are checked together in about two requests, but music without complete tags needs a request per file, so large batches of it take a while.
 - **Trying things out safely.** Fetching never changes anything on disk. Only **Rename** does, and **Undo** reverts it.
 - **Using another settings folder** (for example to test): start the app with the `TIDYTITLES_CONFIG_DIR` environment variable set. See [Configuration](Configuration.md#using-a-different-settings-folder).

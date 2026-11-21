@@ -36,3 +36,5 @@ export * from "./config";
 export * from "./scan";
 export * from "./renameService";
 export * from "./session";
+export * from "./customName";
+export * from "./matchCorrection";

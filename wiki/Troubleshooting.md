@@ -166,6 +166,28 @@ Nothing was found for the parsed title, or you skipped the file when asked to ch
 
 Check what TidyTitles read from the filename with `tidytitles preview <file>`, then see [Parsing](#parsing-wrong-title-year-or-type).
 
+To fix it without renaming the file by hand, search with other words: in the app, **Change Match…** on the file's row ([GUI Guide](GUI-Guide.md#fix-a-match-or-a-name)); in the CLI on a terminal, answer **Search with different words...** when asked ([CLI Reference](CLI-Reference.md#searching-with-different-words)).
+
+### The wrong movie or show was picked
+
+Use **Change Match…** on the row (app) and pick the right result. For a TV show, leave **Also use this show for the other files named "…"** checked to fix every episode at once. In the CLI, choose **Search with different words...** in the match prompt.
+
+### "Searching for movies needs a TMDB API key" in Change Match
+
+The kind of search you chose has no service set up: movies need a TMDB key, TV a TVDB or TMDB key, and music the **Auto** or **MusicBrainz** provider. Add the key in **Settings** → **API Keys**, or change **Provider** and fetch again.
+
+### "… has no season N, episode N"
+
+The show you picked has no episode with those numbers in its default order. Check the **Season** and **Episode** fields in **Change Match** and try again.
+
+### My typed name was refused
+
+A typed name cannot contain `/ \ : * ? " < > |` or control characters, be only dots, be a name Windows reserves (`CON`, `NUL`, `COM1`, ...), end with a dot or space, or be longer than 255 bytes with its extension. It also cannot be the name of a file that already exists in that folder, whatever the conflict setting, so a typo never replaces a file.
+
+### My changed match or typed name is gone
+
+Corrections last until the next **Fetch Metadata**, which starts over from the file names. Changing **Type**, **Provider**, or Settings also drops the plan. Correct the file again after fetching.
+
 ### Files with several matches were skipped (CLI)
 
 When standard input is not a terminal (in a script, a cron job, or with input piped in), the CLI cannot ask you to choose, so files with several matches are skipped. Add `--auto-select` to take the first result, or run the command in a terminal.
@@ -194,7 +216,7 @@ With **Replace the existing file**, a file is still not overwritten if it is par
 
 ### "duplicate destination" / "Duplicate name"
 
-Two files in the batch would get the same new name (for example two copies of the same movie). The first one gets the name and the others are skipped. Choose **Add a number** (`auto_version`) to number the extras, or remove the duplicates from the list.
+Two files in the batch would get the same new name (for example two copies of the same movie). The first one gets the name and the others are skipped. Choose **Add a number** (`auto_version`) to number the extras, or remove the duplicates from the list. In the app you can also give the extra file another name with **Edit New Name…**, or another match with **Change Match…**. A file you corrected yields to files you did not touch.
 
 ### "Source file does not exist"
 

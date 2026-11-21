@@ -67,6 +67,7 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo. Lookups run concurrently (`concurrency.ts`); questions to the selection callback and progress stay one at a time, in file order
 - `session.ts` - Wiring shared by both front ends: providers from settings, `RenameSession`, history, undo
 - `scan.ts` - Media file discovery
+- `matchCorrection.ts` - `PlanCorrector` (from `RenameSession.corrector`): search with the user's words, choose or clear a match, apply a TV show to files with the same parsed title, set a typed name (`customName.ts` checks it). Every change re-plans the whole list with `generatePreview`; corrected files are planned after untouched ones
 
 **`packages/cli` (`@tidytitles/cli`)**: commander-based CLI. `src/program.ts` builds the program with injectable dependencies; `src/commands/` holds `rename`, `preview`, `undo`, `config`. Builds two outputs: `dist/index.js` (npm bin) and `dist/tidytitles.mjs` (self-contained bundle shipped inside the desktop app).
 
@@ -126,6 +127,13 @@ Full list with examples: `templateFields.ts` (kept equal to `TemplateEngine.VALI
 - On macOS the single-instance lock is requested at `ready`, so a second instance (`open -n`) can pass its `open-file` paths in `additionalData`.
 - Document types are declared in `mac.extendInfo` (never `fileAssociations`: the NSIS installer would make every listed extension default to TidyTitles). Folders are rank `Alternate`; video and audio files rank `None`, because Launch Services makes an `Alternate` app the default for a type nobody else claims (`.mkv` on a stock Mac). `tests/main/documentTypes.test.ts` keeps the extensions equal to core's.
 - Icon progress follows `AppState.busy` (fetching, renaming, undoing), so it clears however a task ends. Notifications only when the window is not focused. Windows sets the AppUserModelID to the app id.
+
+## Correcting Matches and Names
+
+- Only while the plan is "planned". Corrections live on `PlannedMediaFile.correction` and are never set by a lookup, so the next fetch drops them.
+- Desktop: the renderer sends a file id and a query; main keeps the latest search and the renderer picks by search id and index (never sends metadata). Main is busy (`"correcting"`) while a change re-plans.
+- CLI: "Search with different words..." in the selection callback (terminal only, not with `--auto-select`); a pick outside the original options and the no-match searches are applied after the lookup through `PlanCorrector`. The callback's third argument gives the file's path.
+- A typed name that already exists on disk is refused whatever the conflict strategy.
 
 ## Automatic Updates (desktop)
 

@@ -4,13 +4,14 @@
  */
 
 import path from "node:path";
-import { MEDIA_TYPE_CHOICES, PROVIDER_CHOICES } from "@tidytitles/core";
+import { MEDIA_TYPE_CHOICES, PROVIDER_CHOICES, type MatchQuery } from "@tidytitles/core";
 import {
   CONFLICT_CHOICES,
   COVER_SIZE_CHOICES,
   HISTORY_LIMIT_RANGE,
   TRANSFER_MODE_CHOICES,
   TV_PROVIDER_CHOICES,
+  type ChooseMatchOptions,
   type EditableSettings,
   type RunOptions,
   type TemplateSet,
@@ -199,6 +200,94 @@ export function parseOptionalFolder(value: unknown): string | undefined {
   const s = str(value, "folder");
   if (!path.isAbsolute(s)) throw new IpcValidationError("folder must be absolute");
   return s;
+}
+
+/** A file's id in the list. */
+export function parseFileId(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new IpcValidationError("fileId must be a non-negative integer");
+  }
+  return value;
+}
+
+const QUERY_KEYS: Record<MatchQuery["mediaType"], readonly string[]> = {
+  movie: ["mediaType", "title", "year"],
+  tv_episode: ["mediaType", "title", "year", "season", "episode"],
+  music: ["mediaType", "title", "artist", "album"],
+};
+
+function optionalInt(value: unknown, name: string, max: number): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > max) {
+    throw new IpcValidationError(`${name} must be an integer from 0 to ${max}`);
+  }
+  return value;
+}
+
+function optionalStr(value: unknown, name: string): string | undefined {
+  return value === undefined || value === null ? undefined : str(value, name, 500);
+}
+
+/** A search for a file's match ("Change Match" dialog). */
+export function parseMatchQuery(value: unknown): MatchQuery {
+  const r = record(value, "query");
+  const mediaType = oneOf(r.mediaType, ["movie", "tv_episode", "music"] as const, "query.mediaType");
+  for (const key of Object.keys(r)) {
+    if (!QUERY_KEYS[mediaType].includes(key)) throw new IpcValidationError(`unknown query field ${key}`);
+  }
+  const title = str(r.title, "query.title", 500);
+  const year = optionalInt(r.year, "query.year", 9999);
+  switch (mediaType) {
+    case "movie":
+      return { mediaType, title, ...(year !== undefined ? { year } : {}) };
+    case "tv_episode": {
+      const season = optionalInt(r.season, "query.season", 100_000);
+      const episode = optionalInt(r.episode, "query.episode", 100_000);
+      return {
+        mediaType,
+        title,
+        ...(year !== undefined ? { year } : {}),
+        ...(season !== undefined ? { season } : {}),
+        ...(episode !== undefined ? { episode } : {}),
+      };
+    }
+    case "music": {
+      const artist = optionalStr(r.artist, "query.artist");
+      const album = optionalStr(r.album, "query.album");
+      return { mediaType, title, ...(artist !== undefined ? { artist } : {}), ...(album !== undefined ? { album } : {}) };
+    }
+  }
+}
+
+export function parseMatchChoice(
+  searchId: unknown,
+  index: unknown,
+  options: unknown,
+): { searchId: string; index: number; options: ChooseMatchOptions } {
+  const id = str(searchId, "searchId", 64);
+  if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0) {
+    throw new IpcValidationError("index must be a non-negative integer");
+  }
+  const r = record(options, "options");
+  for (const key of Object.keys(r)) {
+    if (!["applyToSimilar", "season", "episode"].includes(key)) throw new IpcValidationError(`unknown option ${key}`);
+  }
+  const season = optionalInt(r.season, "options.season", 100_000);
+  const episode = optionalInt(r.episode, "options.episode", 100_000);
+  return {
+    searchId: id,
+    index,
+    options: {
+      applyToSimilar: bool(r.applyToSimilar, "options.applyToSimilar"),
+      ...(season !== undefined ? { season } : {}),
+      ...(episode !== undefined ? { episode } : {}),
+    },
+  };
+}
+
+/** A typed new name (checked again by core), or null for the template's name. */
+export function parseNewName(value: unknown): string | null {
+  return value === null ? null : str(value, "name", 1_024);
 }
 
 /** A bare filename: no directory parts (cover art is written next to the media). */
