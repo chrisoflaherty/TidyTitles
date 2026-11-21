@@ -6,6 +6,7 @@ Complete reference for the `tidytitles` command. To install it, see [The command
 - [rename](#rename)
 - [preview](#preview)
 - [undo](#undo)
+- [watch](#watch)
 - [config](#config)
 - [Exit codes](#exit-codes)
 - [Environment variables](#environment-variables)
@@ -357,6 +358,52 @@ Undo one with 'tidytitles undo --entry <#>'.
 - Exits 1 when any file could not be moved back.
 
 ---
+
+## watch
+
+```
+tidytitles watch [OPTIONS] [FOLDERS...]
+```
+
+Watches folders for new media files and looks each one up once it has finished arriving. It runs in the foreground, logs one line for everything it notices and does, and **never asks anything**. Stop it with Ctrl+C. Without FOLDERS it watches the `[watch] folders` from `config.toml`.
+
+| Option | Description |
+|--------|-------------|
+| `-t, --type TYPE` | `movie`, `tv`, `music`, or `auto` (default) |
+| `-r, --recursive` / `--no-recursive` | Include subfolders, or not (default: `[watch] recursive`, normally on) |
+| `--auto` | Automatic mode: rename files with exactly one match without asking |
+| `--existing` | Also process the files already in the folders |
+| `--settle SECONDS` | How long a file must stay unchanged first, 2 to 3600 (default: `[watch] settle_seconds`, normally 10) |
+| `-o, --output DIR` | Put renamed files here (overrides the `[output]` folders; created when missing) |
+| `--transfer MODE` | `move`, `copy`, or `hardlink` (default: `[output] transfer_mode`) |
+| `-p, --provider NAME` | As for `rename` |
+| `--order ORDER`, `--language CODE` | As for `rename` |
+| `--json` | One JSON object per line |
+
+**Review mode** (without `--auto`) renames nothing, because nobody is there to confirm. Each file is reported as `Ready for review: Name.2010.mkv → Name (2010).mkv`, or `Needs review: Name.mkv (several matches found; choose one)` with the reason. Rename them afterward with `tidytitles rename <folder>`, which shows the preview and asks as usual. `[watch] mode` is not used by this command: it renames automatically only with `--auto`.
+
+**Automatic mode** (`--auto`) renames a file only when its lookup found exactly one match, its new name is free (whatever `conflict_resolution` says), and it is still the file that finished arriving; everything else is reported as `Needs review` and left alone. The renames are saved to the history (undo with `tidytitles undo`). The exact rules, the list of temporary download names, and what happens to folders that go missing are in [Configuration → Watch folders](Configuration.md#watch-folders).
+
+Files already in the folders when it starts are counted and left alone (`--existing` processes them). A lookup service that is down makes the files wait, starting with 30 seconds and up to 30 minutes between tries; the log says when they are tried next. Settings are read again for each batch, so an API key you fix meanwhile is used.
+
+```
+$ tidytitles watch ~/Downloads --auto
+Automatic: files with exactly one match and a free new name are renamed; the rest are listed for review.
+Press Ctrl+C to stop.
+3:05:12 PM  Watching /Users/me/Downloads, 12 media file(s) already there left alone
+3:07:40 PM  New file: Inception.2010.1080p.mkv (waiting until it stops changing)
+3:07:40 PM  New file: The.Matrix.mkv (waiting until it stops changing)
+3:07:52 PM  Looking up 2 file(s)...
+3:07:52 PM  Needs review: The.Matrix.mkv (several matches found; choose one)
+3:07:52 PM  Renamed: Inception.2010.1080p.mkv → Inception (2010).mkv
+3:07:52 PM  Saved 1 rename(s) to the history (undo with 'tidytitles undo').
+```
+
+Log lines go to stdout; the opening notes and the summary after Ctrl+C go to stderr.
+
+**JSON** (`--json`): one object per line, `{ "event": ..., "time": ISO 8601, ... }`. Events: `started` (`folders`: `[{ folder, status, existing, polling }]`), `arriving` (`path`), `temporary` (`path`, `finalName`), `ready` (`paths`), `looking_up` (`count`), `renamed` (`path`, `destination`, `associatedFiles`, `transfer`), `review` (`path`, `reason`, `destination` when there is a planned name, `message` for some reasons), `unchanged`, `retry` (`paths`, `retryAt` in epoch milliseconds, `message`, `kind`), `changed`, `gone`, `unreadable`, `folder_missing`, `folder_restored` (`existing`), `folder_error` (`code`, `message`), `polling`, `history_saved` (`operations`), `cover_art` (`files`), `stopped`, and last `summary` (`renamed`, `review`, `unchanged`, `retrying`). `reason` is one of `review_mode`, `several_matches`, `no_match`, `lookup_failed`, `unverified`, `conflict`, `template_error`, `transfer_unavailable`, `rename_failed`, `not_renamable`.
+
+Exit codes: 0 when stopped with Ctrl+C (a rename in progress finishes and its history is saved first; a second Ctrl+C does not cut that short); 1 for a missing API key or an unreadable `config.toml`; 2 for a folder that does not exist or no folder at all.
 
 ## config
 

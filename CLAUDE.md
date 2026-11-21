@@ -70,12 +70,13 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo. Lookups run concurrently (`concurrency.ts`); questions to the selection callback and progress stay one at a time, in file order
 - `session.ts` - Wiring shared by both front ends: providers from settings, `RenameSession`, history, undo
 - `scan.ts` - Media file discovery
+- `watcher.ts`, `watchNames.ts`, `watchBatch.ts`, `watchService.ts`, `watchConfig.ts`, `watchEvents.ts` - Watch folders: `FolderWatcher` (rescans are the truth, `fs.watch` only a hint; settle period, temporary names; injected `WatchFileSystem` and `WatchClock`), `processWatchBatch` (plan, then in automatic mode `execute` only unambiguous files), `WatchQueue` (batches, retry backoff), `WatchService` (the CLI's pipeline), the `[watch]` table
 - `matchCorrection.ts` - `PlanCorrector` (from `RenameSession.corrector`): search with the user's words, choose or clear a match, apply a TV show to files with the same parsed title, set a typed name (`customName.ts` checks it). Every change re-plans the whole list with `generatePreview`; corrected files are planned after untouched ones
 
-**`packages/cli` (`@tidytitles/cli`)**: commander-based CLI. `src/program.ts` builds the program with injectable dependencies; `src/commands/` holds `rename`, `preview`, `undo`, `config`. Builds two outputs: `dist/index.js` (npm bin) and `dist/tidytitles.mjs` (self-contained bundle shipped inside the desktop app).
+**`packages/cli` (`@tidytitles/cli`)**: commander-based CLI. `src/program.ts` builds the program with injectable dependencies; `src/commands/` holds `rename`, `preview`, `undo`, `config`, `watch`. Builds two outputs: `dist/index.js` (npm bin) and `dist/tidytitles.mjs` (self-contained bundle shipped inside the desktop app).
 
 **`apps/desktop` (`@tidytitles/desktop`)**: Electron app built with electron-vite.
-- `src/main/` - `controller.ts` owns the session, planned operations, and cancellation (no Electron imports, unit-testable); `updater.ts` is the update state machine (no Electron imports; tested with a fake engine) and `updaterEngine.ts` wraps electron-updater; `preferences.ts` stores desktop-only settings (auto-update toggle) in `userData`; `taskFeedback.ts` decides the Dock/taskbar progress, the finish notification, and the attention request (no Electron imports); `openPaths.ts` parses and validates paths opened from the Dock, Finder, the command line, or a second instance; `app.ts` owns the window, menu, IPC, and security setup
+- `src/main/` - `controller.ts` owns the session, planned operations, and cancellation (no Electron imports, unit-testable); `updater.ts` is the update state machine (no Electron imports; tested with a fake engine) and `updaterEngine.ts` wraps electron-updater; `preferences.ts` stores desktop-only settings (auto-update toggle) in `userData`; `taskFeedback.ts` decides the Dock/taskbar progress, the finish notification, and the attention request (no Electron imports); `openPaths.ts` parses and validates paths opened from the Dock, Finder, the command line, or a second instance; `watchManager.ts` runs the watch folders while the app is open (no Electron imports); `app.ts` owns the window, menu, IPC, and security setup
 - `src/preload/` - Typed API exposed as `window.tidytitles` through `contextBridge`
 - `src/renderer/` - React 19 with a single reducer and plain CSS (`styles.css`)
 - `src/shared/ipc.ts` - IPC channel names and payload types
@@ -138,6 +139,14 @@ Full list with examples: `templateFields.ts` (kept equal to `TemplateEngine.VALI
 - Desktop: the renderer sends a file id and a query; main keeps the latest search and the renderer picks by search id and index (never sends metadata). Main is busy (`"correcting"`) while a change re-plans.
 - CLI: "Search with different words..." in the selection callback (terminal only, not with `--auto-select`); a pick outside the original options and the no-match searches are applied after the lookup through `PlanCorrector`. The callback's third argument gives the file's path.
 - A typed name that already exists on disk is refused whatever the conflict strategy.
+
+## Watch Folders
+
+- `[watch]` (`enabled`, `folders`, `recursive`, `mode` review/automatic, `settle_seconds`). The desktop app watches while it is open (no background service); `tidytitles watch` runs in the foreground, never prompts, renames only with `--auto`, ignores `enabled` and `mode`.
+- A file is handed on once size and mtime are unchanged for the settle period, it has no temporary download name or companion (`watchNames.ts`), and Finder is not copying it. Files present at start (or when a missing folder returns) are "existing" and left alone unless `processExisting`.
+- Automatic renames need exactly one candidate (`auto_matched`, `verified`, `from_provider`; the selection callback always skips), a pending plan, and no file at any new name; the session is planned with conflict strategy "skip" (`watchSessionSettings`). Everything goes through `RenameSession.plan`/`execute`/`saveHistory`.
+- No loops: handled files are remembered by identity (`dev:ino:size:mtimeNs`, also from history fingerprints); output folders inside a watched folder are not scanned.
+- Desktop: arrivals wait in `WatchQueue` until the renderer takes them with `takeWatchArrivals(canDrop())`. Review adds them to the list and fetches; automatic runs `AppController.runWatchBatch` (busy "watching") and adds the rest for review. Tests use `MemoryFs`/`FakeClock` (`packages/core/tests/watchFakes.ts`) or real files with a no-events file system; never real events.
 
 ## Automatic Updates (desktop)
 
