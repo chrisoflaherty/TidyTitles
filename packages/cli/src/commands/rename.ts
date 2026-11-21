@@ -5,7 +5,9 @@ import path from "node:path";
 import {
   createSession,
   hasOutputFolders,
+  episodeOrderCapability,
   summarizeOperations,
+  type EpisodeOrder,
   type MediaTypeChoice,
   type RenameSession,
   type TransferMode,
@@ -34,6 +36,10 @@ export interface RenameOptions extends GlobalOptions {
   /** Default: `[output] transfer_mode`. */
   transfer?: TransferMode;
   json?: boolean;
+  /** --order: overrides `[tv] episode_order`. */
+  order?: EpisodeOrder;
+  /** --language: overrides `[metadata] language` (already normalized). */
+  language?: string;
 }
 
 const TRANSFER_TEXT: Record<TransferMode, string> = {
@@ -171,6 +177,11 @@ function reportLookupFailures(ctx: CommandContext, operations: PlannedOperation[
   for (const [message, count] of byMessage) {
     ctx.ui.error(`Metadata lookup failed for ${count} file(s): ${message}`);
   }
+  if (failed.some((op) => op.lookupError!.kind === "order_unavailable")) {
+    ctx.ui.note(
+      `The TV service has no episodes in that order for these shows. Try --order aired, or TVDB (--provider tvdb), which has DVD and absolute orders for most shows.`,
+    );
+  }
   if (failed.some((op) => op.lookupError!.kind === "authentication")) {
     ctx.ui.note(
       `Check your API keys with '${ctx.programName} config show' and set one with '${ctx.programName} config set-key <tmdb|tvdb> YOUR_API_KEY'.`,
@@ -206,9 +217,18 @@ export async function renameCommand(
     outputDir: options.output ? path.resolve(options.output) : undefined,
     transferMode: options.transfer,
     selectionCallback,
+    ...(options.order ? { episodeOrder: options.order } : {}),
+    ...(options.language ? { language: options.language } : {}),
     ...ctx.deps.session,
   });
   if (ctx.stdinIsTTY && !autoSelect) corrections = new CliCorrections(ctx, session);
+
+  // Say up front when the TV service can deliver the order only for some shows.
+  const tvSource = session.providers.sources.tv;
+  if (tvSource && options.type !== "music" && options.type !== "movie") {
+    const note = episodeOrderCapability(tvSource, session.settings.tv.episodeOrder);
+    if (note.support === "partial" && note.note) ui.note(ui.ec.yellow(note.note));
+  }
 
   const text = SCAN_TEXT[options.type];
   if (!statSync(target).isFile()) ui.progress.update(text.scanning);

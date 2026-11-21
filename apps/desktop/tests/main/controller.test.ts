@@ -309,6 +309,30 @@ describe("AppController: settings", () => {
     expect(payload.loadError).toBeNull();
   });
 
+  it("offers the metadata languages and what each TV service can do with each order", async () => {
+    h = await createHarness(`${KEYS_TOML}\n[metadata]\nlanguage = "de-AT"\n`);
+    const payload = await h.controller.getSettingsPayload();
+    expect(payload.settings.tv).toEqual({ episodeOrder: "aired" });
+    expect(payload.settings.metadata).toEqual({ language: "de-AT" });
+    expect(payload.metadataLanguages[0]).toEqual({ code: "en-US", name: "English" });
+    // A code from config.toml that is not in the list is offered, so saving keeps it.
+    expect(payload.metadataLanguages.at(-1)).toEqual({ code: "de-AT", name: "de-AT" });
+    expect(payload.episodeOrderNotes.tmdb.dvd.partial).toBe(true);
+    expect(payload.episodeOrderNotes.tvdb.dvd.partial).toBe(false);
+  });
+
+  it("saves the episode order and metadata language", async () => {
+    h = await createHarness(KEYS_TOML);
+    const edited = toEditableSettings(await h.config.getSettings());
+    edited.tv.episodeOrder = "absolute";
+    edited.metadata.language = "ja-JP";
+    expect(await h.controller.saveSettings(edited)).toEqual({ ok: true });
+    const toml = await readFile(h.config.configFile, "utf8");
+    expect(toml).toContain('[tv]\nepisode_order = "absolute"');
+    expect(toml).toContain('[metadata]\nlanguage = "ja-JP"');
+    expect((await h.config.load()).metadata.language).toBe("ja-JP");
+  });
+
   it("rejects invalid templates without saving", async () => {
     h = await createHarness(KEYS_TOML);
     const edited = toEditableSettings(await h.config.getSettings());

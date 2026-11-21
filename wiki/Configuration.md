@@ -97,6 +97,12 @@ transfer_mode = "move"
 
 [history]
 max_entries = 200
+
+[tv]
+episode_order = "aired"
+
+[metadata]
+language = "en-US"
 ```
 
 `[output]` and `[history]` are TidyTitles additions; the old Python app ignores them.
@@ -181,6 +187,25 @@ See [Associated files](#associated-files) below.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `history.max_entries` | `200` | How many renames `history.json` keeps for undo, 1 to 10,000. |
+
+### TV and metadata
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `tv.episode_order` | `aired` | `aired`, `dvd`, or `absolute`: how the season and episode numbers in file names count, and how the new names count. See below. |
+| `metadata.language` | `en-US` | Language for movie, show, and episode titles, as a language code: `en-US`, `de-DE`, `pt-BR`, `ja-JP`, or just `de`. A title with no translation falls back to English, then to the original title. MusicBrainz is not affected. |
+
+Files without these tables (written by the Python app or an older TidyTitles) load with the defaults.
+
+**Episode orders:**
+
+- **Aired**: the broadcast order. Right for most shows.
+- **DVD**: the order of the DVD release, for shows whose discs reorder episodes (Firefly, Futurama). TVDB has it for most shows; TMDB only for shows with a DVD episode group. A show without one is left unmatched with **Order not available**.
+- **Absolute**: one running number for the whole show, as anime is often numbered. The episode number in the file is read as the absolute number, and new names put every episode in season 1 (`S01E1100`). Specials (season 0) keep their numbers. TMDB uses the show's Absolute episode group, or counts the aired episodes when it has none.
+
+Whatever the order, a file with an episode number but no season (`[Group] Show - 123`) is read as an absolute number and named in the chosen order, and a file named by date (`Show.2024.03.15`) is found by its air date and named with its aired season and episode.
+
+The CLI can override both for one run with `--order` and `--language`.
 
 ## Output folders and transfer modes
 
@@ -274,6 +299,8 @@ Every setting can also come from an environment variable named `FILE_RENAMER_` p
 | `FILE_RENAMER_TV_PROVIDER` | `providers.tv` |
 | `FILE_RENAMER_OUTPUT__MOVIE` | `output.movie` (also `__TV`, `__MUSIC`, `__TRANSFER_MODE`) |
 | `FILE_RENAMER_HISTORY__MAX_ENTRIES` | `history.max_entries` |
+| `FILE_RENAMER_TV__EPISODE_ORDER` | `tv.episode_order` |
+| `FILE_RENAMER_METADATA__LANGUAGE` | `metadata.language` |
 
 The `[behavior]` and `[providers]` settings use flat names without a section: `FILE_RENAMER_CONFLICT_RESOLUTION`, `FILE_RENAMER_DRY_RUN`, `FILE_RENAMER_MOVIE_PROVIDER`, `FILE_RENAMER_TV_PROVIDER`, `FILE_RENAMER_MUSIC_PROVIDER`. A whole section can also be given as JSON, for example `FILE_RENAMER_API='{"tmdb_api_key": "..."}'`; the `__` variables win over the JSON.
 

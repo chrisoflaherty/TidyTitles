@@ -135,8 +135,15 @@ describe("AppController: changing a match", () => {
   it("uses season and episode numbers corrected after the search", async () => {
     await plan("The.Office.S01E01.mkv");
     const id = idOf("The.Office.S01E01.mkv");
-    const found = results(await h.controller.searchMatches(id, { mediaType: "tv_episode", title: "The Office US" }));
-    expect(await h.controller.chooseMatch(found.searchId, 0, { applyToSimilar: false })).toEqual({ kind: "needsEpisode" });
+    const search = async () =>
+      results(await h.controller.searchMatches(id, { mediaType: "tv_episode", title: "The Office US" }));
+    // Without numbers, the ones in the file name (S01E01) are looked up.
+    expect(await h.controller.chooseMatch((await search()).searchId, 0, { applyToSimilar: false })).toMatchObject({
+      kind: "applied",
+    });
+    expect(path.basename(opOf("The.Office.S01E01.mkv").destination)).toBe("The Office (US) - S01E01 - Pilot.mkv");
+
+    const found = await search();
     expect(await h.controller.chooseMatch(found.searchId, 0, { applyToSimilar: false, season: 1, episode: 9 })).toEqual({
       kind: "episodeNotFound",
       season: 1,

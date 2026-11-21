@@ -15,6 +15,10 @@ export * from "./template";
 export * from "./templateFields";
 export * from "./presets";
 export { MULTI_VALUE_SEPARATOR } from "./releaseDetails";
+export * from "./templateEpisodes";
+export * from "./episodeOrder";
+export * from "./languages";
+export * from "./episodeLookup";
 
 export * from "./providers/base";
 export * from "./providers/cache";

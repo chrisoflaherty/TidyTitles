@@ -276,6 +276,21 @@ describe("choosing a match", () => {
     await expect(
       corrector.chooseMatch(0, { mediaType: "tv_episode", title: "Breaking Bad", season: 1, episode: 9 }, breakingBad),
     ).resolves.toEqual({ kind: "episode_not_found", season: 1, episode: 9 });
+    // Without numbers in the query, the file's own numbers are looked up.
+    await expect(corrector.chooseMatch(0, { mediaType: "tv_episode", title: "Breaking Bad" }, breakingBad)).resolves.toEqual({
+      kind: "episode_not_found",
+      season: 1,
+      episode: 9,
+    });
+    expect(corrector.operations).toEqual(before);
+  });
+
+  it("asks for numbers when neither the query nor the file name has any", async () => {
+    const file = await touch(dir, "Breaking.Bad.mkv");
+    const tv = new EpisodeTVProvider({}, { [breakingBad.id]: episodesOf(breakingBad, 3) });
+    const { ops, corrector } = await planned(service({ tvProvider: tv }), [file]);
+    const before = structuredClone(ops);
+
     await expect(corrector.chooseMatch(0, { mediaType: "tv_episode", title: "Breaking Bad" }, breakingBad)).resolves.toEqual({
       kind: "needs_episode",
     });

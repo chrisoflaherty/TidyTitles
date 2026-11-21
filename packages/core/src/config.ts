@@ -52,6 +52,12 @@
  *
  * [history]
  * max_entries = 200
+ *
+ * [tv]
+ * episode_order = "aired"     # "aired", "dvd", or "absolute"
+ *
+ * [metadata]
+ * language = "en-US"          # TMDB language code; TVDB names are translated to match
  * ```
  *
  * `[output]` and `[history]` are TidyTitles additions (the Python app
@@ -121,7 +127,9 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
+import { DEFAULT_EPISODE_ORDER, EPISODE_ORDERS, type EpisodeOrder } from "./episodeOrder";
 import { ConfigError } from "./errors";
+import { DEFAULT_METADATA_LANGUAGE, isMetadataLanguageCode } from "./languages";
 import type { RenameOperation } from "./models";
 import { TRANSFER_MODES, type FileFingerprint, type TransferMode } from "./transfer";
 
@@ -198,6 +206,18 @@ export interface HistorySettings {
   maxEntries: number;
 }
 
+/** `[tv]`: TV lookups. */
+export interface TVSettings {
+  /** Numbering of season and episode numbers: "aired" (default), "dvd", or "absolute". */
+  episodeOrder: EpisodeOrder;
+}
+
+/** `[metadata]`: metadata lookups for movies and TV. */
+export interface MetadataSettings {
+  /** Language for titles: a TMDB code such as "en-US" (default) or "de-DE". */
+  language: string;
+}
+
 export interface Settings {
   templates: TemplateSettings;
   api: APISettings;
@@ -213,6 +233,8 @@ export interface Settings {
   musicProvider: string;
   output: OutputSettings;
   history: HistorySettings;
+  tv: TVSettings;
+  metadata: MetadataSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +308,18 @@ const historySchema = z.object({
     .default(DEFAULT_HISTORY_LIMIT),
 });
 
+const tvSchema = z.object({
+  episode_order: z.enum(EPISODE_ORDERS as [EpisodeOrder, ...EpisodeOrder[]]).default(DEFAULT_EPISODE_ORDER),
+});
+
+const metadataSchema = z.object({
+  language: z
+    .string()
+    .trim()
+    .refine(isMetadataLanguageCode, 'must be a language code such as "en-US" or "de"')
+    .default(DEFAULT_METADATA_LANGUAGE),
+});
+
 const settingsSchema = z.object({
   templates: templateSchema.prefault({}),
   api: apiSchema.prefault({}),
@@ -300,12 +334,23 @@ const settingsSchema = z.object({
   music_provider: str("musicbrainz"),
   output: outputSchema.prefault({}),
   history: historySchema.prefault({}),
+  tv: tvSchema.prefault({}),
+  metadata: metadataSchema.prefault({}),
 });
 
 type RawSettings = z.output<typeof settingsSchema>;
 
 /** Nested (model) fields, which accept JSON and `__` variables from the environment. */
-const NESTED_FIELDS = new Set(["templates", "api", "associated_files", "cover_art", "output", "history"]);
+const NESTED_FIELDS = new Set([
+  "templates",
+  "api",
+  "associated_files",
+  "cover_art",
+  "output",
+  "history",
+  "tv",
+  "metadata",
+]);
 const SCALAR_FIELDS = new Set([
   "dry_run",
   "overwrite",
@@ -357,6 +402,8 @@ function fromRaw(raw: RawSettings): Settings {
       transferMode: raw.output.transfer_mode,
     },
     history: { maxEntries: raw.history.max_entries },
+    tv: { episodeOrder: raw.tv.episode_order },
+    metadata: { language: raw.metadata.language },
   };
 }
 
@@ -384,7 +431,7 @@ function deepMerge(base: Dict, override: Dict): Dict {
 /** Map the config.toml structure onto the flat settings fields (Python `load`). */
 function configDataFromToml(rawConfig: Dict): Dict {
   const data: Dict = {};
-  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history"]) {
+  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history", "tv", "metadata"]) {
     if (section in rawConfig) data[section] = rawConfig[section];
   }
   const behavior = rawConfig.behavior;
@@ -559,6 +606,12 @@ export function settingsToToml(settings: Settings): string {
     "",
     "[history]",
     `max_entries = ${s.history.maxEntries}`,
+    "",
+    "[tv]",
+    `episode_order = ${tomlString(s.tv.episodeOrder)}`,
+    "",
+    "[metadata]",
+    `language = ${tomlString(s.metadata.language)}`,
   ];
   return lines.join("\n") + "\n";
 }

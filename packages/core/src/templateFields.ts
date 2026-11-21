@@ -33,6 +33,7 @@ const EXAMPLES: Readonly<Record<string, readonly [FieldGroup, string]>> = {
   episode: ["movie_tv", "1"],
   episode2: ["movie_tv", "01"],
   episode_title: ["movie_tv", "Pilot"],
+  absolute: ["movie_tv", "1100"],
   air_date: ["movie_tv", "2008-01-20"],
   air_year: ["movie_tv", "2008"],
   tmdb_id: ["movie_tv", "603"],

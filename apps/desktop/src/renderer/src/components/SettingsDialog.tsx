@@ -12,6 +12,7 @@ import { getApi } from "../api";
 import { updateSummary } from "../updates";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
+import { MetadataSettings } from "./MetadataSettings";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { PlaceholderTable, PresetPicker } from "./TemplatePresets";
 import { OutputSettings } from "./OutputSettings";
@@ -578,6 +579,9 @@ export function SettingsDialog({
                 </div>
                 <p className="form-hint">If the preferred TV service has no API key, the other one is used.</p>
               </Section>
+            )}
+            {tab === "providers" && payload && (
+              <MetadataSettings draft={draft} payload={payload} update={update} />
             )}
           </div>
         </div>

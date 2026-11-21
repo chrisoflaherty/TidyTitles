@@ -156,12 +156,22 @@ The service is limiting requests. Wait a minute and try again. Responses are cac
 
 The service could not be reached or returned an error (no internet connection, a firewall, or the service is down). Only the affected files are skipped. Check your connection and fetch again. In the CLI, the message appears as `Error: Metadata lookup failed for N file(s): ...` and the command exits 1.
 
+### "Order not available" (app) or lookup error kind `order_unavailable` (CLI)
+
+The TV service has no episodes in the chosen episode order for this show: TMDB has DVD order only for shows with a DVD episode group, and TVDB lists no DVD or absolute order for some shows. Choose **Aired** in **Settings** → **Providers** (`--order aired` in the CLI), or use TVDB, which has DVD and absolute orders for most shows.
+
+### Titles are in English (or the original language) instead of the language I chose
+
+The service has no translation for that title, so TidyTitles used the English title, then the original one. Translations are added by the services' users; check the show on TVDB or TMDB. The language is set in **Settings** → **Providers** → **Metadata language**, or with `--language` in the CLI.
+
 ### "No match"
 
 Nothing was found for the parsed title, or you skipped the file when asked to choose. Also:
 
 - Movies are only looked up when a TMDB key is set and the provider is **Auto** or **TMDB**.
-- TV episodes need a season and episode number in the filename (`S01E01`, `1x01`, ...); without them, no lookup is made.
+- TV episodes need a season and episode number (`S01E01`, `1x01`, ...), an air date (`Show.2024.03.15`), or an episode number on its own (`[Group] Show - 123`, read as an absolute number); with none of these, no lookup is made.
+- A file with several episodes (`S01E01E02`) is matched only when every one of them is found. Check the numbers in the filename.
+- In **Absolute** order the episode number is read as the absolute number, so `S02E05` means episode 5 of the whole show. Use **Aired** order for files numbered by season.
 - With the **MusicBrainz** provider, movies and TV are not looked up at all.
 
 Check what TidyTitles read from the filename with `tidytitles preview <file>`, then see [Parsing](#parsing-wrong-title-year-or-type).

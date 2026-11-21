@@ -6,7 +6,15 @@
  */
 
 import { Argument, Command, CommanderError, InvalidArgumentError, Option } from "commander";
-import { ConfigError, MEDIA_TYPE_CHOICES, MissingApiKeyError, PROVIDER_CHOICES, TRANSFER_MODES } from "@tidytitles/core";
+import {
+  ConfigError,
+  EPISODE_ORDERS,
+  MEDIA_TYPE_CHOICES,
+  MissingApiKeyError,
+  PROVIDER_CHOICES,
+  TRANSFER_MODES,
+  normalizeMetadataLanguage,
+} from "@tidytitles/core";
 import pkg from "../package.json" with { type: "json" };
 import { configInitCommand, configSetKeyCommand, configSetTemplateCommand, configShowCommand } from "./commands/config";
 import { configPresetCommand, configPresetsCommand } from "./commands/presets";
@@ -51,6 +59,19 @@ Matches:
   When stdin is not a terminal, nothing is asked: files with several results
   are skipped (and reported) unless --auto-select is given.
 
+Episode order and language:
+  --order aired|dvd|absolute says how the season and episode numbers in the
+  file names count, and how the new names count (default: [tv] episode_order,
+  normally aired). TVDB has all three orders; TMDB has DVD order only for
+  shows with a DVD episode group (files of other shows are left unmatched),
+  and absolute order from an Absolute episode group or by counting the aired
+  episodes. Files without a season ("[Group] Show - 123") are always read as
+  absolute numbers; files named by date ("Show.2024.03.15") are found by
+  their air date.
+  --language CODE gets titles in that language, such as de-DE, pt-BR, or ja
+  (default: [metadata] language, normally en-US). A title with no
+  translation falls back to English, then to the original title.
+
 Confirmation:
   Without --yes (or --dry-run) you are asked "Proceed with rename?". When stdin
   is not a terminal, a y/n answer is read from stdin; end of input aborts
@@ -75,7 +96,15 @@ Examples:
   $ tidytitles rename ~/Downloads --type movie --dry-run
   $ tidytitles rename /media/shows -t tv -r -y --auto-select
   $ tidytitles rename /music -t music -p musicbrainz --json
-  $ tidytitles rename ~/Downloads -t movie -o /Volumes/Media/Movies --transfer copy`;
+  $ tidytitles rename ~/Downloads -t movie -o /Volumes/Media/Movies --transfer copy
+  $ tidytitles rename /media/anime -t tv --order absolute --language ja-JP`;
+
+/** `--language`: a language code such as "de-DE" or "de", normalized. */
+function parseLanguageOption(value: string): string {
+  const code = normalizeMetadataLanguage(value);
+  if (!code) throw new InvalidArgumentError('Use a language code such as "en-US", "de-DE", or "ja".');
+  return code;
+}
 
 /** Program name and options that matter before parsing (colors for error output). */
 function preScan(argv: readonly string[]): { color: boolean } {
@@ -168,6 +197,16 @@ export function createProgram(
         .default("auto"),
     )
     .option("-c, --cover-art", "Download cover art (posters/album covers) after renaming")
+    .addOption(
+      new Option("--order <order>", "Episode order of season/episode numbers (default: [tv] episode_order)").choices(
+        EPISODE_ORDERS,
+      ),
+    )
+    .addOption(
+      new Option("--language <code>", "Metadata language, e.g. en-US, de-DE, ja (default: [metadata] language)").argParser(
+        parseLanguageOption,
+      ),
+    )
     .option("--json", "Print the result as JSON")
     .addHelpText("after", RENAME_HELP)
     .action(
@@ -181,7 +220,7 @@ export function createProgram(
     .description("Preview how files in PATH parse, without looking up metadata or renaming.")
     .argument("<path>", "File or directory to process")
     .option("-r, --recursive", "Scan directories recursively")
-    .option("--json", "Print the result as JSON: { command, path, files: [{ path, filename, mediaType, title, year, season, episode }] }")
+    .option("--json", "Print the result as JSON: { command, path, files: [{ path, filename, mediaType, title, year, season, episode, episodes, airDate }] }")
     .action(run(async (p: string, _opts: unknown, cmd: Command) => previewCommand(ctx, p, globals(cmd))));
 
   program

@@ -61,6 +61,7 @@ import type {
   UndoOutcome,
 } from "../shared/ipc";
 import { EVENTS } from "../shared/ipc";
+import { episodeOrderNotes, metadataLanguageChoices } from "./metadataOptions";
 import { previewTemplates } from "./templatePreview";
 import {
   describeLookupError,
@@ -138,6 +139,8 @@ export function toEditableSettings(settings: Settings): EditableSettings {
     tvProvider: settings.tvProvider,
     output: { ...settings.output },
     history: { ...settings.history },
+    tv: { ...settings.tv },
+    metadata: { ...settings.metadata },
   };
 }
 
@@ -815,6 +818,8 @@ export class AppController {
       presets: NAMING_PRESETS.map((p) => ({ ...p, templates: { ...p.templates }, sources: [...p.sources] })),
       preview: previewTemplates(editable.templates),
       loadError: this.configError,
+      metadataLanguages: metadataLanguageChoices(this.settings.metadata.language),
+      episodeOrderNotes: episodeOrderNotes(),
     };
   }
 
@@ -862,6 +867,8 @@ export class AppController {
           transferMode: edited.output.transferMode,
         },
         history: { maxEntries: edited.history.maxEntries },
+        tv: { ...edited.tv },
+        metadata: { ...edited.metadata },
       };
       const coverArtDefaultChanged = next.coverArt.enabled !== this.settings.coverArt.enabled;
       const transferDefaultChanged = next.output.transferMode !== this.settings.output.transferMode;

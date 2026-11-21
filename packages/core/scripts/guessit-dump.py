@@ -42,6 +42,9 @@ for line in sys.stdin:
     result = guessit.guessit(name)
     other = result.get("other")
     other = other if isinstance(other, list) else [other] if other else []
+    # Every episode of a multi-episode file, and the air date of a daily show.
+    episodes = result.get("episode")
+    date = result.get("date")
     out = {
         "rawFilename": name,
         "title": result.get("title", ""),
@@ -58,6 +61,8 @@ for line in sys.stdin:
         "audioCodec": joined(result.get("audio_codec")),
         "audioChannels": joined(result.get("audio_channels")),
         "hdr": joined([str(o) for o in other if str(o) in HDR_OTHER] or None),
+        "episodes": episodes if isinstance(episodes, list) and len(episodes) > 1 else None,
+        "airDate": date.isoformat() if date is not None and result.get("type") == "episode" else None,
     }
     # guessit values are str subclasses or plain ints/lists; default=str keeps
     # anything unexpected visible instead of crashing.

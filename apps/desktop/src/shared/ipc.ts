@@ -360,7 +360,23 @@ export interface EditableSettings {
   tvProvider: string;
   output: Settings["output"];
   history: Settings["history"];
+  /** `[tv]`: the episode order. */
+  tv: Settings["tv"];
+  /** `[metadata]`: the metadata language code. */
+  metadata: Settings["metadata"];
 }
+
+/** A metadata language the settings offer: its code (stored) and English name. */
+export interface MetadataLanguageChoice {
+  code: string;
+  name: string;
+}
+
+/** For each TV provider and episode order, a note when the provider delivers it only in part. */
+export type EpisodeOrderNotes = Record<
+  (typeof TV_PROVIDER_CHOICES)[number],
+  Record<(typeof EPISODE_ORDER_CHOICES)[number], { partial: boolean; note?: string }>
+>;
 
 export interface SettingsPayload {
   settings: EditableSettings;
@@ -378,6 +394,10 @@ export interface SettingsPayload {
   preview: TemplatePreview;
   /** Set when config.toml could not be loaded; `settings` are then the defaults. */
   loadError: string | null;
+  /** Languages offered for `metadata.language`, English first. */
+  metadataLanguages: MetadataLanguageChoice[];
+  /** What each TV provider can do with each episode order. */
+  episodeOrderNotes: EpisodeOrderNotes;
 }
 
 export type SaveSettingsResult =
@@ -450,6 +470,7 @@ export const HISTORY_LIMIT_RANGE = { min: 1, max: 10_000 } as const;
 
 /** A history entry as the History dialog lists it. */
 export type HistoryEntryView = HistoryEntrySummary;
+export const EPISODE_ORDER_CHOICES = ["aired", "dvd", "absolute"] as const;
 
 // ---------------------------------------------------------------------------
 // The API exposed on `window.tidytitles`

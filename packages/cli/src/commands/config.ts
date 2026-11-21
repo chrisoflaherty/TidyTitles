@@ -1,7 +1,13 @@
 /** `config show | set-key | set-template | init`. */
 
 import { existsSync } from "node:fs";
-import { CUSTOM_PRESET_NAME, TemplateEngine, getApiKeyStatus, matchPreset } from "@tidytitles/core";
+import {
+  CUSTOM_PRESET_NAME,
+  TemplateEngine,
+  getApiKeyStatus,
+  matchPreset,
+  metadataLanguageName,
+} from "@tidytitles/core";
 import type { CommandContext, GlobalOptions } from "../context";
 import { EXIT_ERROR, EXIT_OK } from "../errors";
 import { formatCount } from "../format";
@@ -40,6 +46,8 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
       providers: { movie: s.movieProvider, tv: s.tvProvider, music: s.musicProvider },
       output: { ...s.output },
       history: { ...s.history },
+      tv: { episodeOrder: s.tv.episodeOrder },
+      metadata: { language: s.metadata.language },
     });
     return EXIT_OK;
   }
@@ -83,6 +91,13 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
   ui.print();
   ui.print(c.bold("History:"));
   ui.print(`  Entries kept: ${formatCount(s.history.maxEntries)}`);
+  ui.print();
+  ui.print(c.bold("Metadata:"));
+  ui.print(`  Episode order: ${s.tv.episodeOrder}`);
+  const languageName = metadataLanguageName(s.metadata.language);
+  ui.print(
+    `  Language:      ${s.metadata.language}${languageName === s.metadata.language ? "" : ` (${languageName})`}`,
+  );
   return EXIT_OK;
 }
 

@@ -33,6 +33,7 @@ import {
   type Movie,
   type Track,
 } from "./models";
+import { episodeTarget, lookupEpisode, type EpisodeTarget } from "./episodeLookup";
 import { isMusicFile } from "./musicParser";
 import {
   isNullProvider,
@@ -280,14 +281,21 @@ function showTitleKey(title: string): string {
     .trim();
 }
 
-/** The season and episode to look up for a file: the user's numbers, else the parsed ones. */
-function episodeNumbers(file: PlannedMediaFile): { season: number; episode: number } | undefined {
-  const query = file.correction?.query;
+/**
+ * What to look up for a file on a show. Season and episode numbers the user
+ * set win; otherwise it is what the file itself names, which may be several
+ * episodes, an air date, or an absolute number (see `episodeTarget`). Numbers
+ * that are just the file's own first episode keep all of its episodes.
+ */
+function tvTarget(file: PlannedMediaFile, query = file.correction?.query): EpisodeTarget | undefined {
+  const named = episodeTarget(file.parsedInfo);
   if (query?.mediaType === "tv_episode" && query.season !== undefined && query.episode !== undefined) {
-    return { season: query.season, episode: query.episode };
+    if (named?.kind === "numbered" && named.season === query.season && named.episodes[0] === query.episode) {
+      return named;
+    }
+    return { kind: "numbered", season: query.season, episodes: [query.episode] };
   }
-  const { season, episode } = file.parsedInfo;
-  return season != null && episode != null ? { season, episode } : undefined;
+  return named;
 }
 
 interface Snapshot {
@@ -372,7 +380,7 @@ export class PlanCorrector {
     this.ops.forEach((op, j) => {
       if (j === index) return;
       const other = op.mediaFile;
-      if (isMusicFile(other.path) || !episodeNumbers(other)) return;
+      if (isMusicFile(other.path) || !tvTarget(other)) return;
       if (showTitleKey(other.parsedInfo.title) !== key) return;
       if (year != null && other.parsedInfo.year != null && other.parsedInfo.year !== year) return;
       similar.push(j);
@@ -388,8 +396,9 @@ export class PlanCorrector {
 
   /**
    * Give the file at `index` a result of a search with `query`. A movie or
-   * recording is used as it is; for a TV show, the episode with the query's
-   * season and episode numbers is looked up. The match is marked
+   * recording is used as it is; for a TV show, the episode is looked up: the
+   * query's season and episode numbers, or without them what the file names
+   * (several episodes, an air date, an absolute number). The match is marked
    * "manual_selection", and a name typed earlier is dropped (it was for the
    * old match). Provider errors are thrown, with nothing changed.
    */
@@ -406,25 +415,22 @@ export class PlanCorrector {
     const updates: Array<{ index: number; metadata: MatchedMetadata; query: MatchQuery }> = [];
     const unmatched: number[] = [];
     if (option.kind === "show") {
-      const numbers =
-        q.mediaType === "tv_episode" && q.season !== undefined && q.episode !== undefined
-          ? { season: q.season, episode: q.episode }
-          : undefined;
-      if (!numbers) return { kind: "needs_episode" };
-      const episode = await abortable(
-        this.service.tvProvider.getEpisode(option.id, numbers.season, numbers.episode),
-        signal,
-      );
-      if (!episode) return { kind: "episode_not_found", ...numbers };
+      const target = tvTarget(file, q);
+      if (!target) return { kind: "needs_episode" };
+      const episode = await abortable(lookupEpisode(this.service.tvProvider, option.id, target), signal);
+      if (!episode) {
+        // A date or an absolute number this show does not have: ask for the numbers.
+        if (target.kind !== "numbered") return { kind: "needs_episode" };
+        return { kind: "episode_not_found", season: target.season, episode: target.episodes[0]! };
+      }
       updates.push({ index, metadata: { ...episode, verificationStatus: "manual_selection" }, query: q });
 
       if (applyToSimilar) {
         const others = this.similarFiles(index);
         const found = await abortable(
           mapConcurrent(others, this.service.fetchConcurrency, async (j) => {
-            const n = episodeNumbers(this.file(j))!;
             try {
-              return await this.service.tvProvider.getEpisode(option.id, n.season, n.episode);
+              return await lookupEpisode(this.service.tvProvider, option.id, tvTarget(this.file(j))!);
             } catch (error) {
               if (signal?.aborted) throw error;
               return undefined;

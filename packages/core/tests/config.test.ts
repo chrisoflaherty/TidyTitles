@@ -91,6 +91,12 @@ transfer_mode = "move"
 
 [history]
 max_entries = 200
+
+[tv]
+episode_order = "aired"
+
+[metadata]
+language = "en-US"
 `;
 
 describe("directory resolution", () => {
@@ -195,11 +201,39 @@ describe("settings", () => {
       musicProvider: "musicbrainz",
       output: { movie: "", tv: "", music: "", transferMode: "move" },
       history: { maxEntries: 200 },
+      tv: { episodeOrder: "aired" },
+      metadata: { language: "en-US" },
     });
   });
 
   it("serializes like the Python for default settings, plus the TidyTitles-only sections", () => {
     expect(settingsToToml(createDefaultSettings())).toBe(PYTHON_DEFAULT_TOML + TIDYTITLES_SECTIONS_TOML);
+  });
+
+  it("loads a file without [tv] or [metadata] with their defaults", () => {
+    const settings = parseSettings(PYTHON_DEFAULT_TOML);
+    expect(settings.tv).toEqual({ episodeOrder: "aired" });
+    expect(settings.metadata).toEqual({ language: "en-US" });
+  });
+
+  it("reads [tv] episode_order and [metadata] language, and writes them back", () => {
+    const text = `${PYTHON_DEFAULT_TOML}\n[tv]\nepisode_order = "dvd"\n\n[metadata]\nlanguage = "de-DE"\n`;
+    const settings = parseSettings(text);
+    expect(settings.tv.episodeOrder).toBe("dvd");
+    expect(settings.metadata.language).toBe("de-DE");
+    expect(parseSettings(settingsToToml(settings))).toEqual(settings);
+  });
+
+  it("rejects an unknown episode order or language code, naming the key", () => {
+    expect(() => parseSettings('[tv]\nepisode_order = "production"\n')).toThrow(/tv\.episode_order/);
+    expect(() => parseSettings('[metadata]\nlanguage = "German"\n')).toThrow(/metadata\.language/);
+  });
+
+  it("takes [tv] and [metadata] from the environment; the file wins", () => {
+    const env = { FILE_RENAMER_TV__EPISODE_ORDER: "absolute", FILE_RENAMER_METADATA__LANGUAGE: "ja-JP" };
+    expect(parseSettings(undefined, env).tv.episodeOrder).toBe("absolute");
+    expect(parseSettings(undefined, env).metadata.language).toBe("ja-JP");
+    expect(parseSettings('[metadata]\nlanguage = "fr-FR"\n', env).metadata.language).toBe("fr-FR");
   });
 
   it("escapes quotes and backslashes so the TOML stays valid", () => {

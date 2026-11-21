@@ -237,7 +237,10 @@ function tokenize(text: string, brackets: BracketGroup[]): Token[] {
 function splitMarkerSuffixes(tokens: Token[]): Token[] {
   const out: Token[] = [];
   for (const t of tokens) {
-    const m = /^(s\d{1,4}e\d{1,4}(?:-?e\d{1,4})*|\d{1,2}x\d{1,3})-(?!e?\d+(?:-|$))(.+)$/i.exec(t.text);
+    const m =
+      /^(s\d{1,4}e\d{1,4}(?:(?:-?e|[-+x]e?)\d{1,4}|-s\d{1,4}e\d{1,4})*|\d{1,2}x\d{1,3}(?:-\d{1,2}x\d{1,3}|[-x]\d{1,3})*)-(?!(?:s\d+)?e?\d+(?:x\d+)?(?:[-+xe]|$))(.+)$/i.exec(
+        t.text,
+      );
     if (m) {
       const cut = t.start + m[1]!.length;
       out.push({ ...t, text: m[1]!, end: cut });
@@ -268,6 +271,8 @@ interface Classified {
   kind: Kind;
   season?: number;
   episode?: number;
+  /** Every episode number of a multi-episode marker ("S01E01E02"); the first is `episode`. */
+  episodes?: number[];
   quality?: string;
   source?: string;
   codec?: string;
@@ -358,13 +363,60 @@ function classifyDashed(text: string, allLower: boolean, index: number): Classif
   return undefined;
 }
 
+/** Ranges longer than this are not expanded ("E01-E9999" is two episodes). */
+const MAX_EPISODE_RANGE = 1000;
+
+/**
+ * Add `next` to an episode list. A range ("E01-E03") adds every number
+ * after the previous one up to `next`, as guessit does; a descending range
+ * ("E05-E03") adds just `next`.
+ */
+function addEpisode(list: number[], next: number, range: boolean): void {
+  const previous = list[list.length - 1]!;
+  if (range && next > previous && next - previous <= MAX_EPISODE_RANGE) {
+    for (let n = previous + 1; n <= next; n++) list.push(n);
+  } else if (!list.includes(next)) {
+    list.push(next);
+  }
+}
+
+/**
+ * Episode numbers from the tail of a marker. Each part is a separator and a
+ * number; `isRange(separator)` says whether it continues a range.
+ */
+function episodeList(first: number, tail: string, part: RegExp, isRange: (sep: string) => boolean): number[] {
+  const list = [first];
+  for (const m of tail.matchAll(part)) addEpisode(list, Number(m[2]), isRange(m[1]!.toLowerCase()));
+  return list;
+}
+
+/** A single-token episode marker, with `episodes` set when it names more than one. */
+function episodeClass(season: number | undefined, episodes: number[]): Classified {
+  const c: Classified = { kind: "episode", episode: episodes[0]! };
+  if (season !== undefined) c.season = season;
+  if (episodes.length > 1) c.episodes = episodes;
+  return c;
+}
+
 function episodeMarker(text: string): Classified | undefined {
-  let m = /^s(\d{1,4})[ ._-]?e(\d{1,4})(?:(?:-?e|-)\d{1,4})*$/i.exec(text);
-  if (m) return { kind: "episode", season: Number(m[1]), episode: Number(m[2]) };
-  m = /^(\d{1,2})x(\d{1,3})(?:-\d{1,3})*$/i.exec(text);
-  if (m) return { kind: "episode", season: Number(m[1]), episode: Number(m[2]) };
-  m = /^(?:e|ep)(\d{1,4})$/i.exec(text);
-  if (m) return { kind: "episode", episode: Number(m[1]) };
+  // S01E01, S01E01E02, S01E01-E03, S01E01-03, S01E01+E02, S01E01xE02, S01E01-S01E03
+  let m = /^s(\d{1,4})[ ._-]?e(\d{1,4})((?:(?:-?e|[-+x]e?)\d{1,4}|-s\d{1,4}e\d{1,4})*)$/i.exec(text);
+  if (m) {
+    const episodes = episodeList(Number(m[2]), m[3]!, /(-s\d+e|-?e|[-+x]e?)(\d+)/gi, (sep) => sep.startsWith("-"));
+    return episodeClass(Number(m[1]), episodes);
+  }
+  // 1x01, 1x01-03 (a range), 1x01x02 and 1x01-1x02 (lists)
+  m = /^(\d{1,2})x(\d{1,3})((?:-\d{1,2}x\d{1,3}|[-x]\d{1,3})*)$/i.exec(text);
+  if (m) {
+    const episodes = episodeList(Number(m[2]), m[3]!, /(-\d+x|[-x])(\d+)/gi, (sep) => sep === "-");
+    return episodeClass(Number(m[1]), episodes);
+  }
+  // E01, Ep01, E01E02, E01-E02, Ep01-02
+  m = /^(?:e|ep)(\d{1,4})((?:-?e\d{1,4}|-\d{1,4})*)$/i.exec(text);
+  if (m) {
+    const episodes = episodeList(Number(m[1]), m[2]!, /(-?e|-)(\d+)/gi, (sep) => sep.startsWith("-"));
+    return episodeClass(undefined, episodes);
+  }
   m = /^s(\d{1,2})$/i.exec(text);
   if (m) return { kind: "season", season: Number(m[1]) };
   return undefined;
@@ -372,6 +424,33 @@ function episodeMarker(text: string): Classified | undefined {
 
 function isMonthDay(month: number, day: number): boolean {
   return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+}
+
+/** "YYYY-MM-DD" for a real calendar date, else undefined (no February 30). */
+function isoDate(year: string, month: string, day: string): string | undefined {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  if (!isMonthDay(m, d)) return undefined;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return undefined;
+  return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+/**
+ * Anime-style episode tokens after " - ": "12v2" is episode 12, "01-03" is
+ * episodes 1 to 3, and "01~03" is episodes 1 and 3 (as guessit reads them).
+ * Undefined for anything else (including plain numbers and descending ranges).
+ */
+function animeEpisodes(text: string): number[] | undefined {
+  if (/^\d{1,4}v\d$/i.test(text)) return [Number(/^\d+/.exec(text)![0])];
+  const m = /^(\d{1,4})([-~])(\d{1,4})$/.exec(text);
+  if (!m) return undefined;
+  const list = [Number(m[1])];
+  const last = Number(m[3]);
+  if (last <= list[0]!) return undefined;
+  addEpisode(list, last, m[2] === "-");
+  return list;
 }
 
 /** Split a 3- or 4-digit number into season and episode (guessit style). */
@@ -490,6 +569,7 @@ function parseGuessit(filename: string): ParsedInfo {
   // Pass 2: multi-token patterns.
   let dateStart = -1;
   let dateEnd = -1;
+  let airDate: string | undefined;
   for (let i = 0; i < n; i++) {
     const t = tokens[i]!.text;
     const lower = t.toLowerCase();
@@ -533,12 +613,14 @@ function parseGuessit(filename: string): ParsedInfo {
       continue;
     }
 
-    // Dates: 2023-05-12 (one token), 2023.05.12, 12.05.2023
+    // Dates: 2023-05-12 and 20230512 (one token), 2023.05.12, 12.05.2023,
+    // and 05.13.2023 (month first only when day first is impossible, as in guessit)
     if (dateStart === -1) {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
-      if (m && isValidYear(m[1]!) && isMonthDay(Number(m[2]), Number(m[3]))) {
+      const m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(t);
+      if (m && isValidYear(m[1]!) && isoDate(m[1]!, m[2]!, m[3]!)) {
         dateStart = i;
         dateEnd = i;
+        airDate = isoDate(m[1]!, m[2]!, m[3]!);
         cls[i] = { kind: "date" };
         continue;
       }
@@ -548,9 +630,15 @@ function parseGuessit(filename: string): ParsedInfo {
         if (isValidYear(t) && /^\d{2}$/.test(b) && isMonthDay(Number(a), Number(b))) {
           dateStart = i;
           dateEnd = i + 2;
+          airDate = isoDate(t, a, b);
         } else if (/^\d{2}$/.test(t) && isValidYear(b) && isMonthDay(Number(a), Number(t))) {
           dateStart = i;
           dateEnd = i + 2;
+          airDate = isoDate(b, a, t);
+        } else if (/^\d{2}$/.test(t) && isValidYear(b) && isMonthDay(Number(t), Number(a))) {
+          dateStart = i;
+          dateEnd = i + 2;
+          airDate = isoDate(b, t, a);
         }
         if (dateStart === i) {
           for (let k = i; k <= i + 2; k++) cls[k] = { kind: "date" };
@@ -683,6 +771,13 @@ function parseGuessit(filename: string): ParsedInfo {
   let episodeTitle: string | undefined;
   let isEpisode = false;
   let titleTokens: Token[];
+  // Every episode number, in filename order (multi-episode files).
+  const episodeNumbers: number[] = [];
+  const collectEpisodes = (c: Classified): void => {
+    for (const number of c.episodes ?? (c.episode !== undefined ? [c.episode] : [])) {
+      if (!episodeNumbers.includes(number)) episodeNumbers.push(number);
+    }
+  };
 
   const firstMarker = cls.findIndex(
     (c) => c.kind === "episode" || c.kind === "season" || c.kind === "markerWord",
@@ -698,11 +793,22 @@ function parseGuessit(filename: string): ParsedInfo {
       const c = cls[i]!;
       if (c.kind === "episode" || c.kind === "season" || c.kind === "markerWord" || c.kind === "date") {
         if (c.kind === "date" && i > dateEnd) break;
+        // "S01E01.S02E01": a second season ends the episode list (guessit
+        // reports two seasons; ParsedInfo keeps the first).
+        const otherSeason = season !== undefined && c.season !== undefined && c.season !== season;
         season ??= c.season;
         episode ??= c.episode;
+        if (c.kind === "episode" && !otherSeason) collectEpisodes(c);
         lastMarker = i;
       } else {
         break;
+      }
+    }
+    // Later markers of the same season ("S01E01.1080p.E02", "S01E01.and.E02").
+    for (let i = lastMarker + 1; i < n; i++) {
+      const c = cls[i]!;
+      if (c.kind === "episode" && cls[i - 1]!.kind !== "markerWord" && (c.season === undefined || c.season === season)) {
+        collectEpisodes(c);
       }
     }
     titleTokens = cutAtDash(runFrom(0));
@@ -723,7 +829,7 @@ function parseGuessit(filename: string): ParsedInfo {
         if (
           t.dashBefore &&
           t.bracket === -1 &&
-          /^\d{1,4}$/.test(t.text) &&
+          (/^\d{1,4}$/.test(t.text) || animeEpisodes(t.text) !== undefined) &&
           (!following || following.dashBefore || following.bracket !== -1 || isStop(i + 1))
         ) {
           dashNum = i;
@@ -735,13 +841,30 @@ function parseGuessit(filename: string): ParsedInfo {
       if (dashNum !== -1) {
         isEpisode = true;
         const digits = tokens[dashNum]!.text;
-        if (lead) {
+        // "- 12v2" (a second version) and "- 01-02" / "- 01~02" (a range).
+        const anime = animeEpisodes(digits);
+        if (anime) {
+          episode = anime[0];
+          if (anime.length > 1) episodeNumbers.push(...anime);
+        } else if (lead) {
           episode = Number(digits);
         } else {
           ({ season, episode } = splitSeasonEpisode(digits));
         }
         titleTokens = cutAtDash(runFrom(0));
-        const after = cutAtDash(runFrom(dashNum + 1));
+        let after = cutAtDash(runFrom(dashNum + 1));
+        // "- 01 - 03": guessit reads two episodes (a list, not a range).
+        if (
+          season === undefined &&
+          after.length === 1 &&
+          after[0]!.dashBefore &&
+          /^\d{1,4}(?:v\d)?$/.test(after[0]!.text)
+        ) {
+          const second = Number(/^\d+/.exec(after[0]!.text)![0]);
+          if (episodeNumbers.length === 0) episodeNumbers.push(episode!);
+          if (!episodeNumbers.includes(second)) episodeNumbers.push(second);
+          after = [];
+        }
         episodeTitle = after.length ? joinTokens(after) : undefined;
       } else if (leadNum) {
         // (b) "01 - Title", "12 Angry Men", "101 Dalmatians"
@@ -779,6 +902,8 @@ function parseGuessit(filename: string): ParsedInfo {
     year,
     season,
     episode,
+    episodes: isEpisode && episodeNumbers.length > 1 ? episodeNumbers : undefined,
+    airDate: isEpisode ? airDate : undefined,
     episodeTitle: isEpisode ? episodeTitle : undefined,
     mediaType,
     quality,

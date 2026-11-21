@@ -67,6 +67,8 @@ tidytitles rename [options] <path>
 | `-a, --auto-select` | Automatically select first match when multiple results found |
 | `-p, --provider <provider>` | Metadata provider: `auto`, `tmdb`, `tvdb`, or `musicbrainz` (default: `auto`) |
 | `-c, --cover-art` | Download cover art (posters/album covers) after renaming |
+| `--order <order>` | Episode order: `aired`, `dvd`, or `absolute` (default: `tv.episode_order` in config.toml) |
+| `--language <code>` | Metadata language, such as `en-US`, `de-DE`, `pt-BR`, or `ja` (default: `metadata.language`) |
 | `--json` | Print the result as JSON |
 | `-h, --help` | Show this message and exit |
 
@@ -138,6 +140,26 @@ It then asks `Select match (1-3) or skip:` with a list of the matches, for examp
 After renaming, more outcomes are counted as skipped (in hard-link mode, also a drive without hard links, `the volume doesn't support hard links`): the file already had its new name, or the new name was taken (`conflict_resolution = "skip"`, or the existing file is part of the same batch). See [Conflict resolution](Configuration.md#conflict-resolution).
 
 If no file can be renamed, the CLI prints `No matches found.` and stops.
+
+### `--order` and `--language`
+
+`--order` says how the season and episode numbers in the file names count, and how the new names count: `aired` (broadcast order), `dvd`, or `absolute` (one running number, for anime). TVDB has all three; TMDB has DVD order only for shows with a DVD episode group, and says so before the lookups start:
+
+```
+TMDB has DVD order only for shows with a DVD episode group; files of other shows are left unmatched.
+```
+
+Files of a show without one fail with lookup error kind `order_unavailable`. Files without a season (`[Group] Show - 123`) are always read as absolute numbers, and files named by date (`Show.2024.03.15`) are found by their air date.
+
+`--language` gets titles in that language when the service has a translation, otherwise in English, then in the original language. It accepts `de`, `de-DE`, or `de_de`; anything that is not a language code is a usage error (exit 2). See [Configuration](Configuration.md#tv-and-metadata) for both settings.
+
+```bash
+# Anime numbered 1 to 1100, named in absolute order with Japanese titles
+tidytitles rename ~/Anime/One\ Piece -t tv --order absolute --language ja-JP --dry-run
+
+# A show whose files follow the DVD order
+tidytitles rename ~/TV/Firefly -t tv -p tvdb --order dvd
+```
 
 ### `--output`
 
