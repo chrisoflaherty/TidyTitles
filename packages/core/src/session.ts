@@ -29,6 +29,7 @@ import {
 import { isConflictStrategy, type ConflictStrategy } from "./conflictResolution";
 import { CoverArtDownloader } from "./coverArt";
 import { ConfigError, HistoryChangedError, RenameError } from "./errors";
+import { PlanCorrector } from "./matchCorrection";
 import type { MediaType, RenameOperation } from "./models";
 import type { MusicParser } from "./musicParser";
 import type { FilenameParser } from "./parser";
@@ -688,6 +689,21 @@ export class RenameSession {
   /** Parse, fetch metadata, and plan operations. */
   plan(paths: readonly string[], options: PlanOptions = {}): Promise<PlannedOperation[]> {
     return this.service.processFiles(paths, { ...options, forceType: this.forceType });
+  }
+
+  /**
+   * A corrector for operations this session planned (see `PlanCorrector`):
+   * search again, choose or clear a match, edit a new name. Pass the
+   * `destinationDir` the operations were planned with.
+   */
+  corrector(
+    operations: readonly PlannedOperation[],
+    options: { destinationDir?: string } = {},
+  ): PlanCorrector {
+    return new PlanCorrector(this.service, operations, {
+      forceType: this.forceType,
+      ...options,
+    });
   }
 
   /** Execute planned operations (updated in place). */

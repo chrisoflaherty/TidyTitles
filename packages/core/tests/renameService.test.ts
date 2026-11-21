@@ -252,7 +252,9 @@ describe("music flow", () => {
     const selectionCallback = vi.fn(() => 1);
     const music = new FakeMusicProvider({ "Bohemian Rhapsody": [bohemian, bohemianLive] });
     const { track } = await runMusic({ title: "Bohemian Rhapsody" }, music, { selectionCallback });
-    expect(selectionCallback).toHaveBeenCalledWith([bohemian, bohemianLive], SONG);
+    expect(selectionCallback).toHaveBeenCalledWith([bohemian, bohemianLive], SONG, {
+      path: expect.stringContaining(SONG),
+    });
     expect(track).toMatchObject({ id: "rec-2", verificationStatus: "from_provider" });
   });
 
@@ -280,7 +282,9 @@ describe("selection", () => {
   it("uses a synchronous callback's choice, as manual_selection", async () => {
     const cb = vi.fn((_options: SelectableOption[], _filename: string) => 1);
     const ops = await ambiguousMovie(cb);
-    expect(cb).toHaveBeenCalledWith([matrix, matrixReloaded], MATRIX_FILE);
+    expect(cb).toHaveBeenCalledWith([matrix, matrixReloaded], MATRIX_FILE, {
+      path: path.join(dir, MATRIX_FILE),
+    });
     expect(ops[0]!.mediaFile.matchedMetadata).toMatchObject({
       id: 604,
       verificationStatus: "manual_selection",

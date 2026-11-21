@@ -54,6 +54,8 @@ import {
 } from "./models";
 import { createMusicParser, isMusicFile, type MusicParser } from "./musicParser";
 import { createParser, type FilenameParser } from "./parser";
+import { applyCustomName } from "./customName";
+import type { MatchCorrection } from "./matchCorrection";
 import type { MovieProvider, MusicProvider, TVProvider } from "./providers/base";
 import {
   BATCH_OVERWRITE_MESSAGE,
@@ -84,7 +86,14 @@ export type SelectionResult = number | undefined | null;
 export type SelectionCallback = (
   options: SelectableOption[],
   filename: string,
+  context: SelectionContext,
 ) => SelectionResult | Promise<SelectionResult>;
+
+/** More about the file a selection callback is asked about. */
+export interface SelectionContext {
+  /** The file's full path (`filename` is its base name). */
+  path: string;
+}
 
 /** Phase reported by `processFiles` progress. */
 export type ProcessPhase = "parse" | "fetch";
@@ -122,6 +131,12 @@ export interface PlannedMediaFile extends MediaFile {
    * question was reused.
    */
   selectionSkipped?: true;
+  /**
+   * Set when the user corrected the file after the lookup: chose or cleared
+   * its match, or typed its new name (see `matchCorrection.ts`). Never set
+   * by a lookup, so the next lookup drops it.
+   */
+  correction?: MatchCorrection;
 }
 
 /**
@@ -134,6 +149,8 @@ export interface PlannedMediaFile extends MediaFile {
  * - "same_path": the file already has its target name (set by `executeRename`)
  * - "would_overwrite": the destination exists and overwriting is off, or it is
  *   another file in this batch (set by `executeRename`)
+ * - "match_cleared": the user cleared the file's match, so it is left alone
+ *   (set by `PlanCorrector`)
  */
 export type SkipReason =
   | "no_match"
@@ -142,7 +159,8 @@ export type SkipReason =
   | "template_error"
   | "duplicate_destination"
   | "same_path"
-  | "would_overwrite";
+  | "would_overwrite"
+  | "match_cleared";
 
 /** A rename operation produced by `generatePreview`. */
 export interface PlannedOperation extends RenameOperation {
@@ -377,6 +395,8 @@ interface FetchRun {
   decide<T>(index: number, step: () => Promise<T>): Promise<T>;
   /** Mark that file `index` will not decide, so later files need not wait for it. */
   pass(index: number): void;
+  /** The file whose `decide` step is running (steps run one at a time). */
+  deciding(): PlannedMediaFile | undefined;
   /** Album verification shared by the files of one album (see `albumGroupKey`). */
   albumChecks: Map<string, Promise<AlbumCheck>>;
   /** How many files with complete tags share each album key. */
@@ -645,6 +665,8 @@ export class RenameService {
       }
     }
 
+    let deciding: PlannedMediaFile | undefined;
+
     return {
       memory: new SelectionMemory(),
       signal,
@@ -654,12 +676,15 @@ export class RenameService {
         try {
           if (index > 0) await abortable(turnDone[index - 1]!, signal);
           signal.throwIfAborted();
+          deciding = mediaFiles[index];
           return await step();
         } finally {
+          deciding = undefined;
           release[index]!();
         }
       },
       pass: (index) => release[index]!(),
+      deciding: () => deciding,
       albumChecks: new Map(),
       albumSizes,
     };
@@ -683,7 +708,9 @@ export class RenameService {
     let answer: SelectionResult;
     run.progress.hold();
     try {
-      answer = await this.selectionCallback!(options, filename);
+      answer = await this.selectionCallback!(options, filename, {
+        path: run.deciding()?.path ?? filename,
+      });
     } catch (error) {
       throw new SelectionCallbackFailure(error);
     } finally {
@@ -1021,6 +1048,11 @@ export class RenameService {
         if (!(error instanceof TemplateError)) throw error;
         operations.push(skipped(mediaFile, "template_error", error.message));
         continue;
+      }
+
+      // A name the user typed replaces the template's file name (its folders stay).
+      if (mediaFile.correction?.customName !== undefined) {
+        newName = applyCustomName(newName, mediaFile.correction.customName, extension);
       }
 
       const destDir = destinationDir ?? path.dirname(mediaFile.path);
