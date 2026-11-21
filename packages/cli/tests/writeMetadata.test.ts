@@ -77,6 +77,7 @@ describe("rename --write-tags", () => {
     // Undo puts the old tags back.
     const u = await runIn(["undo", "-y", "--config-dir", sb.configDir]);
     expect(u.code).toBe(0);
+    expect(strip(u.stdout)).toContain("Tags put back: 1");
     expect((await readFile(path.join(sb.media, "song.flac"))).equals(await readFile(FLAC))).toBe(true);
   });
 
@@ -122,7 +123,8 @@ describe("rename --write-nfo", () => {
     const nfo = path.join(sb.media, "The Matrix (1999).nfo");
     expect(strip(r.stdout)).toContain("NFO files written: 1");
     expect(await readFile(nfo, "utf8")).toContain("<title>The Matrix</title>");
-    await runIn(["undo", "-y", "--config-dir", sb.configDir]);
+    const u = await runIn(["undo", "-y", "--json", "--config-dir", sb.configDir]);
+    expect(JSON.parse(u.stdout).items[0].createdFiles).toEqual([{ path: nfo, kind: "movie", status: "removed" }]);
     expect(existsSync(nfo)).toBe(false);
     expect(existsSync(path.join(sb.media, MATRIX_FILE))).toBe(true);
   });

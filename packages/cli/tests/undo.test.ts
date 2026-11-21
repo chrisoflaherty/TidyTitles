@@ -168,8 +168,10 @@ describe("undo", () => {
           status: "failed",
           errors: [expect.stringContaining("Destination already exists")],
           kept: [],
+          tags: null,
+          createdFiles: [],
         },
-        { source: a.source, destination: a.destination, status: "undone", errors: [], kept: [] },
+        { source: a.source, destination: a.destination, status: "undone", errors: [], kept: [], tags: null, createdFiles: [] },
       ]);
     });
   });
