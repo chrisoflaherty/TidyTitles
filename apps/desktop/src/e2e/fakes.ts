@@ -44,6 +44,10 @@ export const MOVIES: Record<string, Movie[]> = {
   inception: [
     createMovie({ id: 27205, title: "Inception", originalTitle: "Inception", year: 2010, releaseDate: "2010-07-15", posterPath: "/inception.jpg" }),
   ],
+  // Other words for "Change Match" searches.
+  "matrix reloaded": [
+    createMovie({ id: 604, title: "The Matrix Reloaded", originalTitle: "The Matrix Reloaded", year: 2003, releaseDate: "2003-05-15" }),
+  ],
 };
 
 const breakingBad: TVShow = createTVShow({ id: 81189, title: "Breaking Bad", originalTitle: "Breaking Bad", year: 2008, network: "AMC", posterPath: "/bb.jpg" });
@@ -55,6 +59,25 @@ export const EPISODES: Record<number, Episode> = {
   81189: createEpisode({ show: breakingBad, season: 1, episode: 1, title: "Pilot", airDate: "2008-01-20" }),
 };
 
+// "The Office" finds the UK show; "The Office US" (or "Office") finds the US one.
+const officeUK: TVShow = createTVShow({ id: 78107, title: "The Office", originalTitle: "The Office", year: 2001, network: "BBC Two" });
+const officeUS: TVShow = createTVShow({ id: 73244, title: "The Office (US)", originalTitle: "The Office", year: 2005, network: "NBC" });
+SHOWS["the office"] = [officeUK];
+SHOWS["the office us"] = [officeUS];
+SHOWS["office"] = [officeUS, officeUK];
+
+function season1(show: TVShow, titles: string[]): Record<string, Episode> {
+  return Object.fromEntries(
+    titles.map((title, i) => [`1:${i + 1}`, createEpisode({ show, season: 1, episode: i + 1, title })]),
+  );
+}
+
+/** Episodes by show id and "season:episode" (shows not listed here use `EPISODES`). */
+export const EPISODE_LISTS: Record<number, Record<string, Episode>> = {
+  [officeUK.id]: season1(officeUK, ["Downsize", "Work Experience", "The Quiz"]),
+  [officeUS.id]: season1(officeUS, ["Pilot", "Diversity Day", "Health Care"]),
+};
+
 const queen = createArtist({ id: "0383dadf-2a4e-4d10-a46a-e9e041da8eb3", name: "Queen" });
 const opera: Album = createAlbum({ id: "r-opera", title: "A Night at the Opera", artist: queen, year: 1975 });
 const daftPunk = createArtist({ id: "056e4f3e-d505-4dad-8ec1-d04f521cbb56", name: "Daft Punk" });
@@ -63,6 +86,10 @@ const discovery: Album = createAlbum({ id: "r-discovery", title: "Discovery", ar
 export const RECORDINGS: Record<string, Track[]> = {
   "bohemian rhapsody": [createTrack({ id: "rec-bohemian", title: "Bohemian Rhapsody", artist: queen, album: opera, trackNumber: 11 })],
   "one more time": [createTrack({ id: "rec-omt", title: "One More Time", artist: daftPunk, album: discovery, trackNumber: 1 })],
+  "digital love": [
+    createTrack({ id: "rec-dl", title: "Digital Love", artist: daftPunk, album: discovery, trackNumber: 3 }),
+    createTrack({ id: "rec-dl-live", title: "Digital Love (Live)", artist: daftPunk, trackNumber: 5 }),
+  ],
 };
 
 /** Tags for the e2e music files (empty files on disk have none). */
@@ -90,7 +117,9 @@ export class FakeTVProvider implements TVProvider {
   async getShow(): Promise<undefined> {
     return undefined;
   }
-  async getEpisode(showId: number): Promise<Episode | undefined> {
+  async getEpisode(showId: number, season?: number, episode?: number): Promise<Episode | undefined> {
+    const listed = EPISODE_LISTS[showId];
+    if (listed) return listed[`${season}:${episode}`];
     return EPISODES[showId];
   }
 }

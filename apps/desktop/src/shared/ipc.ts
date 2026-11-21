@@ -11,6 +11,11 @@
 
 import type {
   ApiKeyStatus,
+  EditableName,
+  FileNameProblem,
+  LookupErrorInfo,
+  MatchQuery,
+  MatchQueryType,
   MediaTypeChoice,
   OperationSummary,
   PlannedOperation,
@@ -43,6 +48,12 @@ export const IPC = {
   restartToUpdate: "updates:restart",
   openReleasePage: "updates:open-release-page",
   setAutoCheckForUpdates: "updates:set-auto-check",
+  getMatchContext: "match:context",
+  searchMatches: "match:search",
+  chooseMatch: "match:choose",
+  clearMatch: "match:clear",
+  getEditableName: "name:get",
+  setFileName: "name:set",
 } as const;
 
 /** Event channels (main -> renderer, `webContents.send`). */
@@ -79,7 +90,7 @@ export interface FileEntry {
 }
 
 /** What main is doing right now (null: idle). */
-export type BusyKind = "adding" | "fetching" | "renaming" | "undoing" | "saving";
+export type BusyKind = "adding" | "fetching" | "renaming" | "undoing" | "saving" | "correcting";
 
 /** Toolbar options for the next fetch / rename. */
 export interface RunOptions {
@@ -340,6 +351,63 @@ export type SaveSettingsResult =
   | { ok: false; errors: string[]; templateErrors?: Partial<Record<keyof TemplateSet, string[]>> };
 
 export const CONFLICT_CHOICES = ["skip", "overwrite", "auto_version"] as const;
+
+// ---------------------------------------------------------------------------
+// Correcting a match or a new name (after a fetch, while the plan is "planned")
+// ---------------------------------------------------------------------------
+
+/** What the "Change Match" dialog starts with. */
+export interface MatchContext {
+  fileId: number;
+  /** What the fetch searched for (or the user's last search for this file). */
+  query: MatchQuery;
+  /** The kinds the file can be searched as: music for audio, movie or TV episode for video. */
+  queryTypes: MatchQueryType[];
+  /** The parsed show title, for "the other files named …". */
+  parsedTitle: string;
+  /** Other files with the same parsed show title (a chosen TV show can be given to them too). */
+  similarCount: number;
+}
+
+/**
+ * "unavailable": nothing to correct right now (no plan, a task is running,
+ * the file left the list, or the plan changed since the search).
+ */
+export type MatchContextOutcome = { kind: "ok"; context: MatchContext } | { kind: "unavailable" };
+
+export type MatchSearchOutcome =
+  /** Choose one with `chooseMatch(searchId, index, ...)`. */
+  | { kind: "results"; searchId: string; query: MatchQuery; options: SelectableOption[] }
+  /** No metadata service is set up for this kind (no API key, or another provider chosen). */
+  | { kind: "noProvider"; mediaType: MatchQueryType }
+  | { kind: "error"; error: LookupErrorInfo }
+  | { kind: "unavailable" };
+
+export type ChooseMatchOutcome =
+  /** `changed` files got the match; `unmatched` similar files had no such episode and were left alone. */
+  | { kind: "applied"; changed: number; unmatched: number }
+  | { kind: "episodeNotFound"; season: number; episode: number }
+  | { kind: "needsEpisode" }
+  | { kind: "error"; error: LookupErrorInfo }
+  | { kind: "unavailable" };
+
+export interface ChooseMatchOptions {
+  /** For a TV show: also give it to the other files with the same parsed show title. */
+  applyToSimilar: boolean;
+  /** For a TV show: the episode to use, when the numbers changed after the search. */
+  season?: number;
+  episode?: number;
+}
+
+export type CorrectionOutcome = { kind: "applied" } | { kind: "unavailable" };
+
+export type EditableNameOutcome = { kind: "ok"; name: EditableName } | { kind: "unavailable" };
+
+export type SetFileNameOutcome =
+  | { kind: "applied" }
+  /** Refused, nothing changed. "exists": another file already has the name. */
+  | { kind: "invalid"; problem: FileNameProblem | "exists"; message: string }
+  | { kind: "unavailable" };
 export const COVER_SIZE_CHOICES = ["w92", "w154", "w185", "w342", "w500", "w780", "original"] as const;
 export const TV_PROVIDER_CHOICES = ["tvdb", "tmdb"] as const;
 
@@ -386,6 +454,18 @@ export interface TidyTitlesApi {
   /** Open the release page of the newest known version in the browser. */
   openReleasePage(): Promise<void>;
   setAutoCheckForUpdates(enabled: boolean): Promise<void>;
+  /** What to start the "Change Match" dialog with for a file. */
+  getMatchContext(fileId: number): Promise<MatchContextOutcome>;
+  /** Search for a file's match with the user's words. */
+  searchMatches(fileId: number, query: MatchQuery): Promise<MatchSearchOutcome>;
+  /** Give the searched file result `index` of search `searchId` (see `ChooseMatchOptions`). */
+  chooseMatch(searchId: string, index: number, options: ChooseMatchOptions): Promise<ChooseMatchOutcome>;
+  /** Clear a file's match, so it is left alone. */
+  clearMatch(fileId: number): Promise<CorrectionOutcome>;
+  /** The name a file gets, for editing. */
+  getEditableName(fileId: number): Promise<EditableNameOutcome>;
+  /** Set a file's new name (without extension); null goes back to the template's name. */
+  setFileName(fileId: number, name: string | null): Promise<SetFileNameOutcome>;
   onUpdateState(listener: (state: UpdateState) => void): Unsubscribe;
   onState(listener: (state: AppState) => void): Unsubscribe;
   onProgress(listener: (progress: ProgressEvent | null) => void): Unsubscribe;

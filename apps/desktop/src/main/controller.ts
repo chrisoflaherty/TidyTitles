@@ -54,6 +54,21 @@ import type {
 } from "../shared/ipc";
 import { EVENTS } from "../shared/ipc";
 import { previewTemplates } from "./templatePreview";
+import {
+  describeLookupError,
+  queryTypesFor,
+  type MatchQuery,
+  type PlanCorrector,
+} from "@tidytitles/core";
+import type {
+  ChooseMatchOptions,
+  ChooseMatchOutcome,
+  CorrectionOutcome,
+  EditableNameOutcome,
+  MatchContextOutcome,
+  MatchSearchOutcome,
+  SetFileNameOutcome,
+} from "../shared/ipc";
 
 export type Emit = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => void;
 
@@ -141,6 +156,12 @@ export class AppController {
   };
   private lastRename: LastRenameInfo | null = null;
   private status: StatusMessage = { text: "Ready", tone: "info" };
+  /** Corrects the current plan (set by a successful fetch). */
+  private corrector: PlanCorrector | null = null;
+  /** The latest "Change Match" search; `chooseMatch` picks from it. */
+  private lastSearch: { id: string; fileId: number; query: MatchQuery; options: SelectableOption[]; version: number } | null = null;
+  /** Changes whenever the plan is dropped, so late search results are not used. */
+  private planVersion = 0;
 
   constructor(options: ControllerOptions) {
     this.config = options.config;
@@ -231,6 +252,9 @@ export class AppController {
     this.operations = null;
     this.plan = "none";
     this.session = null;
+    this.corrector = null;
+    this.lastSearch = null;
+    this.planVersion += 1;
   }
 
   // -------------------------------------------------------------------------
@@ -416,6 +440,7 @@ export class AppController {
       this.session = session;
       this.operations = operations;
       this.plan = "planned";
+      this.corrector = session.corrector(operations);
       const summary = summarizeOperations(operations);
       const ready = summary.pending;
       this.setStatus(
@@ -577,6 +602,141 @@ export class AppController {
       this.busy = null;
       this.emitProgress(null);
       this.emitState();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Correcting a match or a new name
+  // -------------------------------------------------------------------------
+
+  /** The file and corrector, when the plan can be corrected now. */
+  private correctable(fileId: number): { index: number; name: string; corrector: PlanCorrector } | null {
+    if (this.busy || this.plan !== "planned" || !this.corrector || !this.operations) return null;
+    const index = this.files.findIndex((f) => f.id === fileId);
+    if (index < 0 || !this.operations[index]) return null;
+    return { index, name: this.files[index]!.name, corrector: this.corrector };
+  }
+
+  /** Run a change to the plan; the list is busy meanwhile, so nothing else changes it. */
+  private async correct<T>(corrector: PlanCorrector, change: () => Promise<T>): Promise<T> {
+    this.busy = "correcting";
+    this.emitState();
+    try {
+      const result = await change();
+      if (this.corrector === corrector) this.operations = corrector.operations;
+      return result;
+    } finally {
+      this.busy = null;
+      this.emitState();
+    }
+  }
+
+  getMatchContext(fileId: number): MatchContextOutcome {
+    const target = this.correctable(fileId);
+    if (!target) return { kind: "unavailable" };
+    const { corrector, index } = target;
+    const file = this.operations![index]!.mediaFile;
+    return {
+      kind: "ok",
+      context: {
+        fileId,
+        query: corrector.query(index),
+        queryTypes: queryTypesFor(file),
+        parsedTitle: file.parsedInfo.title,
+        similarCount: corrector.similarFiles(index).length,
+      },
+    };
+  }
+
+  async searchMatches(fileId: number, query: MatchQuery): Promise<MatchSearchOutcome> {
+    const target = this.correctable(fileId);
+    if (!target) return { kind: "unavailable" };
+    if (!queryTypesFor(this.operations![target.index]!.mediaFile).includes(query.mediaType)) {
+      return { kind: "unavailable" };
+    }
+    const version = this.planVersion;
+    try {
+      const result = await target.corrector.search(query);
+      if (version !== this.planVersion) return { kind: "unavailable" };
+      if (!result.providerAvailable) return { kind: "noProvider", mediaType: query.mediaType };
+      const id = randomUUID();
+      this.lastSearch = { id, fileId, query: result.query, options: result.options, version };
+      return { kind: "results", searchId: id, query: result.query, options: result.options };
+    } catch (error) {
+      return { kind: "error", error: describeLookupError(error) };
+    }
+  }
+
+  async chooseMatch(searchId: string, index: number, options: ChooseMatchOptions): Promise<ChooseMatchOutcome> {
+    const search = this.lastSearch;
+    if (!search || search.id !== searchId || search.version !== this.planVersion) return { kind: "unavailable" };
+    const option = search.options[index];
+    const target = this.correctable(search.fileId);
+    if (!option || !target) return { kind: "unavailable" };
+    // The season and episode may have been corrected after the show search.
+    const query: MatchQuery =
+      search.query.mediaType === "tv_episode"
+        ? {
+            ...search.query,
+            ...(options.season !== undefined ? { season: options.season } : {}),
+            ...(options.episode !== undefined ? { episode: options.episode } : {}),
+          }
+        : search.query;
+    try {
+      const result = await this.correct(target.corrector, () =>
+        target.corrector.chooseMatch(target.index, query, option, { applyToSimilar: options.applyToSimilar }),
+      );
+      switch (result.kind) {
+        case "applied": {
+          const title = option.kind === "track" ? `${option.artist.name} – ${option.title}` : option.title;
+          this.setStatus(
+            result.changed.length > 1
+              ? `Matched ${plural(result.changed.length, "file")} to ${title}${result.unmatched.length ? `; ${plural(result.unmatched.length, "file")} had no such episode` : ""}`
+              : `Matched ${target.name} to ${title}`,
+            result.unmatched.length ? "warning" : "success",
+          );
+          this.emitState();
+          return { kind: "applied", changed: result.changed.length, unmatched: result.unmatched.length };
+        }
+        case "episode_not_found":
+          return { kind: "episodeNotFound", season: result.season, episode: result.episode };
+        case "needs_episode":
+          return { kind: "needsEpisode" };
+      }
+    } catch (error) {
+      return { kind: "error", error: describeLookupError(error) };
+    }
+  }
+
+  async clearMatch(fileId: number): Promise<CorrectionOutcome> {
+    const target = this.correctable(fileId);
+    if (!target) return { kind: "unavailable" };
+    await this.correct(target.corrector, () => target.corrector.clearMatch(target.index));
+    this.setStatus(`Cleared the match for ${target.name}; it will be left as it is`);
+    this.emitState();
+    return { kind: "applied" };
+  }
+
+  async getEditableName(fileId: number): Promise<EditableNameOutcome> {
+    const target = this.correctable(fileId);
+    if (!target) return { kind: "unavailable" };
+    const name = await target.corrector.editableName(target.index);
+    return name ? { kind: "ok", name } : { kind: "unavailable" };
+  }
+
+  async setFileName(fileId: number, name: string | null): Promise<SetFileNameOutcome> {
+    const target = this.correctable(fileId);
+    if (!target) return { kind: "unavailable" };
+    const result = await this.correct(target.corrector, () => target.corrector.setName(target.index, name));
+    switch (result.kind) {
+      case "applied":
+        this.setStatus(name === null ? `${target.name} gets the template’s name again` : `New name set for ${target.name}`, "success");
+        this.emitState();
+        return { kind: "applied" };
+      case "invalid":
+        return { kind: "invalid", problem: result.problem, message: result.message };
+      case "not_editable":
+        return { kind: "unavailable" };
     }
   }
 

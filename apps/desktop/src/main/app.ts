@@ -81,6 +81,7 @@ import {
   parseSelectionAnswer,
   parseTemplates,
 } from "./validate";
+import { parseFileId, parseMatchChoice, parseMatchQuery, parseNewName } from "./validate";
 import { MIN_SIZE, fitToDisplays, loadWindowState, saveWindowState } from "./windowState";
 
 export interface StartOptions {
@@ -361,6 +362,15 @@ function startMain(
   handle(IPC.getSettings, () => controller.getSettingsPayload());
   handle(IPC.previewTemplates, (templates) => controller.previewTemplates(parseTemplates(templates)));
   handle(IPC.saveSettings, (settings) => controller.saveSettings(parseEditableSettings(settings)));
+  handle(IPC.getMatchContext, (fileId) => controller.getMatchContext(parseFileId(fileId)));
+  handle(IPC.searchMatches, (fileId, query) => controller.searchMatches(parseFileId(fileId), parseMatchQuery(query)));
+  handle(IPC.chooseMatch, (searchId, index, options) => {
+    const choice = parseMatchChoice(searchId, index, options);
+    return controller.chooseMatch(choice.searchId, choice.index, choice.options);
+  });
+  handle(IPC.clearMatch, (fileId) => controller.clearMatch(parseFileId(fileId)));
+  handle(IPC.getEditableName, (fileId) => controller.getEditableName(parseFileId(fileId)));
+  handle(IPC.setFileName, (fileId, name) => controller.setFileName(parseFileId(fileId), parseNewName(name)));
   handle(IPC.openExternal, async (url) => {
     if (!isSafeExternalUrl(url)) throw new Error("Only https links can be opened");
     await shell.openExternal(url);
