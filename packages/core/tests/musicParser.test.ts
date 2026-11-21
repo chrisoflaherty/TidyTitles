@@ -243,6 +243,8 @@ describe("MusicMetadataParser (mocked music-metadata)", () => {
       discNumber: 2,
       genre: "Progressive Rock",
       durationMs: 382456,
+      totalTracks: 13,
+      totalDiscs: 2,
       rawFilename: "whatever.flac",
       source: "tags",
     });

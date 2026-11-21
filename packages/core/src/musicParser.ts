@@ -90,6 +90,8 @@ export class MusicMetadataParser implements MusicParser {
         year: this.parseYear(common.date) ?? (common.year || undefined),
         trackNumber: common.track.no ?? undefined,
         discNumber: common.disk.no ?? undefined,
+        totalTracks: common.track.of ?? undefined,
+        totalDiscs: common.disk.of ?? undefined,
         genre: tag(common.genre),
         durationMs: duration != null && Number.isFinite(duration) ? Math.trunc(duration * 1000) : undefined,
         rawFilename: path.basename(filePath),

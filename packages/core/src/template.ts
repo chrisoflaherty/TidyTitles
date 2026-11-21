@@ -7,6 +7,7 @@
 
 import { TemplateError } from "./errors";
 import type { Episode, Movie, Track } from "./models";
+import { hasSections, renderSections, sectionErrors } from "./templateSections";
 
 /** Values substituted into a template; `undefined`/`null` render as "". */
 export type TemplateContext = Record<string, unknown>;
@@ -178,6 +179,15 @@ export class TemplateEngine {
     "source",
     "codec",
     "group",
+    "edition",
+    "audio_codec",
+    "audio_channels",
+    "hdr",
+    // Metadata IDs and dates
+    "tmdb_id",
+    "tvdb_id",
+    "air_date",
+    "air_year",
     // Music fields
     "artist",
     "album",
@@ -187,6 +197,9 @@ export class TemplateEngine {
     "disc",
     "disc2",
     "genre",
+    "track_total",
+    "disc_total",
+    "disc_multi",
   ]);
 
   movieTemplate: string;
@@ -209,8 +222,19 @@ export class TemplateEngine {
    * A "/" inside a value is removed ("AC/DC" renders as "ACDC", "Face/Off"
    * as "FaceOff"), so only the slashes written in the template itself
    * create folders.
+   *
+   * Text between `<` and `>` is an optional section: it disappears when
+   * none of its placeholders has a value (see `templateSections.ts`).
    */
   render(template: string, context: TemplateContext): string {
+    if (hasSections(template)) {
+      return renderSections(template, (text) => this.renderPlaceholders(text, context));
+    }
+    return this.renderPlaceholders(template, context);
+  }
+
+  /** Fill in the placeholders of a template without optional sections. */
+  private renderPlaceholders(template: string, context: TemplateContext): string {
     return template.replace(TemplateEngine.PLACEHOLDER_PATTERN, (...args: unknown[]) => {
       const groups = args[args.length - 1] as { field: string; formatter?: string; arg?: string };
       const { field, formatter, arg } = groups;
@@ -250,6 +274,7 @@ export class TemplateEngine {
       title: movie.title,
       original_title: movie.originalTitle,
       year: movie.year,
+      tmdb_id: movie.provider === "tmdb" ? movie.id : undefined,
       ext: stripLeadingDots(extension),
       ...extraContext,
     };
@@ -267,6 +292,10 @@ export class TemplateEngine {
       episode: episode.episode,
       episode2: zfill(String(episode.episode), 2),
       episode_title: episode.title,
+      tmdb_id: episode.show.provider === "tmdb" ? episode.show.id : undefined,
+      tvdb_id: episode.show.provider === "tvdb" ? episode.show.id : undefined,
+      air_date: episode.airDate,
+      air_year: episode.airDate ? episode.airDate.slice(0, 4) : undefined,
       ext: stripLeadingDots(extension),
       ...extraContext,
     };
@@ -287,6 +316,9 @@ export class TemplateEngine {
       disc: track.discNumber || "",
       disc2: zfill(String(track.discNumber || 1), 2),
       genre: track.genres.length ? track.genres[0] : "",
+      track_total: album?.totalTracks || undefined,
+      disc_total: album?.totalDiscs || undefined,
+      disc_multi: album?.totalDiscs && album.totalDiscs > 1 ? track.discNumber || undefined : undefined,
       ext: stripLeadingDots(extension),
       ...extraContext,
     };
@@ -346,6 +378,7 @@ export class TemplateEngine {
     if (openCount !== closeCount) {
       errors.push("Mismatched braces in template");
     }
+    errors.push(...sectionErrors(template));
 
     return { isValid: errors.length === 0, errors };
   }
@@ -368,6 +401,14 @@ export class TemplateEngine {
       source: "Video source (e.g., BluRay)",
       codec: "Video codec (e.g., x264)",
       group: "Release group",
+      edition: "Edition (e.g., Director's Cut)",
+      audio_codec: "Audio codec (e.g., Dolby Digital Plus)",
+      audio_channels: "Audio channels (e.g., 5.1)",
+      hdr: "HDR format (e.g., HDR10, Dolby Vision)",
+      tmdb_id: "TMDB ID of the movie or show",
+      tvdb_id: "TVDB ID of the show",
+      air_date: "Episode air date (YYYY-MM-DD)",
+      air_year: "Year the episode aired",
       // Music
       artist: "Track artist name",
       album: "Album title",
@@ -377,6 +418,9 @@ export class TemplateEngine {
       disc: "Disc number",
       disc2: "Disc number (2 digits, zero-padded)",
       genre: "Music genre",
+      track_total: "Number of tracks on the album",
+      disc_total: "Number of discs in the album",
+      disc_multi: "Disc number, only for albums with more than one disc",
     };
   }
 
