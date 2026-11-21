@@ -38,6 +38,7 @@ The desktop app also stores its window size and position in `window-state.json` 
 | Setting | Desktop app | Command line | `config.toml` |
 |---------|-------------|--------------|---------------|
 | Templates | Settings → Templates | `config set-template` | `[templates]` |
+| Naming preset (fills all three templates) | Settings → Templates → Naming preset | `config preset` | `[templates]` |
 | TMDB / TVDB API keys | Settings → API Keys | `config set-key` | `[api]` |
 | TVDB subscriber PIN | Settings → API Keys | | `[api] tvdb_pin` |
 | Associated files | Settings → Files | | `[associated_files]` |
@@ -105,7 +106,7 @@ If the file cannot be parsed or a value has the wrong type, the CLI stops with a
 | `templates.tv` | `{title} - S{season2}E{episode2} - {episode_title}` | TV episode names |
 | `templates.music` | `{artist}/{album} ({year})/{track2} - {title}` | Music names (and folders) |
 
-See [Templates](Templates.md).
+See [Templates](Templates.md). A [naming preset](Templates.md#naming-presets) only writes these three keys; no preset name is stored. The preset in effect is the one whose templates equal these, or "Custom".
 
 ### API keys
 

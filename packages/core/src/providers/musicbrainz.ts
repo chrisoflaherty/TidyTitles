@@ -251,6 +251,9 @@ export function parseRecording(data: JsonObject): Track {
  */
 export function parseReleaseTracks(data: JsonObject): Track[] {
   const album = parseRelease(data);
+  // A release lookup lists every medium, so their count is the disc total.
+  const mediaCount = optionalArray(data.media, LABEL, "media").length;
+  if (mediaCount > 0) album.totalDiscs = mediaCount;
   const tracks: Track[] = [];
   for (const rawMedium of optionalArray(data.media, LABEL, "media")) {
     const medium = asObject(rawMedium);

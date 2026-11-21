@@ -12,6 +12,8 @@
 import type {
   ApiKeyStatus,
   MediaTypeChoice,
+  NamingPreset,
+  TemplateFieldDoc,
   OperationSummary,
   PlannedOperation,
   ProviderChoice,
@@ -330,6 +332,12 @@ export interface SettingsPayload {
   fields: Record<string, string>;
   /** Formatter syntax -> description. */
   formatters: Record<string, string>;
+  /** Every placeholder with its group, description, and an example. */
+  fieldDocs: TemplateFieldDoc[];
+  /** Field group -> heading in the placeholder reference. */
+  fieldGroupLabels: Record<string, string>;
+  /** Naming presets; choosing one fills in the three templates. */
+  presets: NamingPreset[];
   preview: TemplatePreview;
   /** Set when config.toml could not be loaded; `settings` are then the defaults. */
   loadError: string | null;

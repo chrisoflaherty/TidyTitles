@@ -12,6 +12,7 @@
 
 import { createParsedInfo } from "./models";
 import type { MediaType, ParsedInfo } from "./models";
+import { releaseDetails } from "./releaseDetails";
 
 /** A filename parser. */
 export interface FilenameParser {
@@ -123,6 +124,7 @@ const WEAK_TAGS = new Set([
   "criterion", "proper", "internal", "complete", "dubbed", "subbed", "multi",
   "hq", "dd", "ma", "dv", "ws", "fs", "3d", "sbs", "anniversary", "edition",
   "dl", "opus", "mp3", "md",
+  "restored",
 ]);
 
 /** Words that, followed by "Cut", form an edition tag. */
@@ -783,6 +785,14 @@ function parseGuessit(filename: string): ParsedInfo {
     source,
     codec,
     group,
+    ...releaseDetails(
+      tokens.map((t, i) => {
+        // "DTS-FGT": only the part before the release group is a tag.
+        const offset = cls[i]!.groupOffset;
+        return { text: offset === undefined ? t.text : t.text.slice(0, offset - 1), tag: cls[i]!.kind === "tech" };
+      }),
+      filename,
+    ),
     rawFilename: filename,
   });
 }

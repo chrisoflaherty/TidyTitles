@@ -1,7 +1,7 @@
 /** `config show | set-key | set-template | init`. */
 
 import { existsSync } from "node:fs";
-import { TemplateEngine, getApiKeyStatus } from "@tidytitles/core";
+import { CUSTOM_PRESET_NAME, TemplateEngine, getApiKeyStatus, matchPreset } from "@tidytitles/core";
 import type { CommandContext, GlobalOptions } from "../context";
 import { EXIT_ERROR, EXIT_OK } from "../errors";
 
@@ -26,6 +26,7 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
       configFile: config.configFile,
       cacheDir: config.cacheDir,
       templates: { ...s.templates },
+      templatePreset: matchPreset(s.templates)?.id ?? null,
       apiKeys: { tmdb: keyStatus(keys.tmdb), tvdb: keyStatus(keys.tvdb) },
       associatedFiles: { ...s.associatedFiles },
       coverArt: { ...s.coverArt },
@@ -50,6 +51,7 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
   ui.print(`  Movie: ${s.templates.movie}`);
   ui.print(`  TV:    ${s.templates.tv}`);
   ui.print(`  Music: ${s.templates.music}`);
+  ui.print(`  Preset: ${matchPreset(s.templates)?.name ?? CUSTOM_PRESET_NAME}`);
   ui.print();
   ui.print(c.bold("API Keys:"));
   ui.print(`  TMDB: ${status(keys.tmdb)}`);

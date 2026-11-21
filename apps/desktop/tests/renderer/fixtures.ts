@@ -76,6 +76,27 @@ export function settingsPayload(): SettingsPayload {
     configFile: "/config/config.toml",
     fields: { title: "Title", year: "Year" },
     formatters: { lower: "Lowercase" },
+    fieldDocs: [
+      { field: "title", group: "common", description: "Title", example: "The Matrix" },
+      { field: "quality", group: "release", description: "Video quality", example: "1080p" },
+    ],
+    fieldGroupLabels: { common: "Any type", release: "From the original file name" },
+    presets: [
+      {
+        id: "default",
+        name: "TidyTitles",
+        description: "TidyTitles' own default.",
+        templates: { movie: "{title} ({year})", tv: "{title} - S{season2}E{episode2}", music: "{artist}/{title}" },
+        sources: [],
+      },
+      {
+        id: "plex",
+        name: "Plex",
+        description: "Plex naming.",
+        templates: { movie: "{title} ({year})/{title} ({year})", tv: "{title}/Season {season2}/{title} - s{season2}e{episode2}", music: "{album_artist}/{album}/{track2} - {title}" },
+        sources: ["https://support.plex.tv/"],
+      },
+    ],
     preview: {
       movie: { preview: "The Matrix (1999).mkv", errors: [] },
       tv: { preview: "Breaking Bad - S01E01.mkv", errors: [] },

@@ -13,6 +13,7 @@ import { updateSummary } from "../updates";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
 import { MiddleEllipsis } from "./MiddleEllipsis";
+import { PlaceholderTable, PresetPicker } from "./TemplatePresets";
 
 type TabId = "templates" | "api" | "files" | "coverArt" | "providers" | "updates";
 const TABS: { id: TabId; label: string }[] = [
@@ -25,9 +26,9 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const TEMPLATE_LABELS: Record<keyof TemplateSet, { label: string; sample: string }> = {
-  movie: { label: "Movies", sample: "The Matrix (1999), 1080p BluRay" },
-  tv: { label: "TV shows", sample: "Breaking Bad S01E01 “Pilot”, 720p HDTV" },
-  music: { label: "Music", sample: "Pink Floyd, The Wall (1979), disc 2 track 6" },
+  movie: { label: "Movies", sample: "The Matrix (1999), 1080p BluRay, DTS-HD 5.1, no edition or HDR" },
+  tv: { label: "TV shows", sample: "Breaking Bad S01E01 “Pilot”, aired 1/20/2008, 720p HDTV" },
+  music: { label: "Music", sample: "Pink Floyd, The Wall (1979), disc 2 of 2, track 6 of 26" },
 };
 
 const CONFLICT_LABELS: Record<(typeof CONFLICT_CHOICES)[number], { label: string; hint: string }> = {
@@ -344,6 +345,14 @@ export function SettingsDialog({
             {tab === "templates" && (
               <>
                 <Section title="Naming templates" description="How renamed files are named. A “/” in a template creates folders; a “/” in a title or artist name is removed.">
+                  <PresetPicker
+                    presets={payload.presets}
+                    templates={draft.templates}
+                    onChoose={(t) => {
+                      setTemplateErrors({});
+                      update((d) => ({ ...d, templates: t }));
+                    }}
+                  />
                   {(["movie", "tv", "music"] as const).map((kind) => (
                     <TemplateField
                       key={kind}
@@ -358,16 +367,12 @@ export function SettingsDialog({
                 <details className="reference">
                   <summary>Placeholders and formatters</summary>
                   <div className="reference-grid">
-                    <table>
-                      <tbody>
-                        {Object.entries(payload.fields).map(([field, desc]) => (
-                          <tr key={field}>
-                            <td className="mono">{`{${field}}`}</td>
-                            <td>{desc}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <p className="form-hint">
+                      Put optional parts between <span className="mono">&lt;</span> and <span className="mono">&gt;</span>: they
+                      disappear when none of their placeholders has a value, as in{" "}
+                      <span className="mono">{"{title} ({year})< [{quality}]>"}</span>.
+                    </p>
+                    <PlaceholderTable docs={payload.fieldDocs} groupLabels={payload.fieldGroupLabels} />
                     <table>
                       <tbody>
                         {Object.entries(payload.formatters).map(([syntax, desc]) => (

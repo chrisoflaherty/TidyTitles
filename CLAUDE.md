@@ -37,6 +37,7 @@ npm run dist                   # Installers: DMG (macOS), NSIS (Windows), AppIma
 
 # Parser parity against Python guessit (needs python3 with guessit; run inside packages/core)
 npx tsx scripts/parser-parity.ts
+npx tsx scripts/parser-parity.ts --corpus scripts/parser-corpus-release.txt   # edition, audio, and HDR names
 
 # Lookup benchmark against simulated APIs (no network; run inside packages/core)
 npx --no-install tsx scripts/bench-lookups.ts
@@ -57,7 +58,7 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `models.ts` - Plain JSON-serializable models (`Movie`, `Episode`, `Track`, `RenameOperation`, ...) with factory and helper functions. Metadata objects carry a `kind` discriminant.
 - `parser.ts` - Hand-written filename parser that reproduces guessit's output, plus a regex fallback
 - `musicParser.ts` - Tag reading with `music-metadata`, with filename fallback
-- `template.ts` - Placeholder-based filename generation (`{title} ({year})`)
+- `template.ts` - Placeholder-based filename generation (`{title} ({year})`); optional sections in `templateSections.ts`, the placeholder reference in `templateFields.ts`, naming presets (Plex, Jellyfin, Kodi) in `presets.ts`
 - `providers/` - `tmdb.ts`, `tvdb.ts`, `musicbrainz.ts` (fetch-based, implement the interfaces in `base.ts`), `cache.ts`. Identical requests in flight share one call; TMDB/TVDB retry a 429 a bounded number of times, MusicBrainz never retries
 - `renamer.ts`, `associatedFiles.ts`, `conflictResolution.ts`, `coverArt.ts` - File operations
 - `config.ts` - `ConfigService`: zod-validated settings in TOML, plus rename history
@@ -105,6 +106,11 @@ TV: `{title}`, `{season2}`, `{episode2}`, `{episode_title}`
 Music: `{artist}`, `{album}`, `{track2}`, `{disc2}`, `{title}`, `{year}`
 
 Formatters: `{field|lower}`, `{field|upper}`, `{field|title}`, `{field|pad:3}`
+
+Full list with examples: `templateFields.ts` (kept equal to `TemplateEngine.VALID_FIELDS` by a test) and `wiki/Templates.md`. Release details (`{edition}`, `{audio_codec}`, `{audio_channels}`, `{hdr}`) are named by `releaseDetails.ts` from the tokens `parser.ts` classifies as tags, with guessit's spellings.
+
+- Optional sections `<...>` (`templateSections.ts`): dropped when none of their placeholders has a value; templates without a matched `<` `>` take the old code path and render byte-for-byte as before.
+- Naming presets (`presets.ts`) only fill the three templates; nothing about a preset is stored. `matchPreset` finds the one in effect, otherwise "Custom".
 
 ## Opening Files and Notifications (desktop)
 

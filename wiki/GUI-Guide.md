@@ -174,7 +174,9 @@ Click **Settings** (Cmd+, / Ctrl+,). The footer shows where the settings are sav
 
 ### Templates
 
-One field each for **Movies**, **TV shows**, and **Music**. Below each field is a live **Preview** using sample metadata (The Matrix, Breaking Bad "Pilot", Pink Floyd "Comfortably Numb"). A template with an unknown placeholder or formatter, unbalanced braces, or nothing in it shows the error in red and cannot be saved. **Placeholders and formatters** expands a reference table. See [Templates](Templates.md).
+**Naming preset** fills in all three templates at once with the naming a media server expects: **TidyTitles** (the defaults), **Plex**, **Jellyfin**, or **Kodi** (see [Naming presets](Templates.md#naming-presets)). The templates stay editable; once you change one, the picker shows **Custom**. Choosing a preset only fills the fields: nothing is saved until you click **Save**, and **Cancel** leaves your templates as they were.
+
+One field each for **Movies**, **TV shows**, and **Music**. Below each field is a live **Preview** using sample metadata (The Matrix, Breaking Bad "Pilot", Pink Floyd "Comfortably Numb"). A template with an unknown placeholder or formatter, unbalanced braces or `<` `>`, or nothing in it shows the error in red and cannot be saved. **Placeholders and formatters** expands a reference table listing every placeholder, grouped (any type, movies and TV, from the original file name, music), with an example value for each. See [Templates](Templates.md).
 
 ### API Keys
 

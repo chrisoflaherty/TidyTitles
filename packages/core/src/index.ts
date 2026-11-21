@@ -12,6 +12,9 @@ export * from "./errors";
 export * from "./parser";
 export * from "./musicParser";
 export * from "./template";
+export * from "./templateFields";
+export * from "./presets";
+export { MULTI_VALUE_SEPARATOR } from "./releaseDetails";
 
 export * from "./providers/base";
 export * from "./providers/cache";

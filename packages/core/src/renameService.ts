@@ -52,6 +52,7 @@ import {
   type Track,
   type TVShow,
 } from "./models";
+import { withTagDetails } from "./trackDetails";
 import { createMusicParser, isMusicFile, type MusicParser } from "./musicParser";
 import { createParser, type FilenameParser } from "./parser";
 import type { MovieProvider, MusicProvider, TVProvider } from "./providers/base";
@@ -985,6 +986,10 @@ export class RenameService {
         source: parsed.source,
         codec: parsed.codec,
         group: parsed.group,
+        edition: parsed.edition,
+        audio_codec: parsed.audioCodec,
+        audio_channels: parsed.audioChannels,
+        hdr: parsed.hdr,
       };
       const extension = mediaFileExtension(mediaFile);
 
@@ -1008,6 +1013,7 @@ export class RenameService {
               if (track.discNumber == null && tags.discNumber) {
                 track = { ...track, discNumber: tags.discNumber };
               }
+              track = withTagDetails(track, tags);
               mediaFile.matchedMetadata = track;
             }
             newName = this.templateEngine.renderTrack(track, extension, extraContext);

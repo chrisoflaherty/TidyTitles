@@ -1299,3 +1299,20 @@ progress.update-progress {
     left: 35%;
   }
 }
+
+/* Naming presets and the placeholder reference (Templates tab). */
+.preset-row select {
+  align-self: flex-start;
+  min-width: 220px;
+}
+
+.placeholder-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 8px 8px 3px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.placeholder-table td.mono.muted {
+  white-space: nowrap;
+}
