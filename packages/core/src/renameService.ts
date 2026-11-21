@@ -55,6 +55,7 @@ import {
 import { createMusicParser, isMusicFile, type MusicParser } from "./musicParser";
 import { createParser, type FilenameParser } from "./parser";
 import { applyCustomName } from "./customName";
+import { AssociatedFileFinder } from "./associatedFileFinder";
 import type { MatchCorrection } from "./matchCorrection";
 import type { MovieProvider, MusicProvider, TVProvider } from "./providers/base";
 import {
@@ -975,6 +976,8 @@ export class RenameService {
   ): Promise<PlannedOperation[]> {
     const operations: PlannedOperation[] = [];
     const reserved = new Set<string>();
+    // Lists each folder once for the whole plan (same results as findAssociatedFiles).
+    const associatedFinder = new AssociatedFileFinder();
 
     const skipped = (
       mediaFile: PlannedMediaFile,
@@ -1077,7 +1080,7 @@ export class RenameService {
           includeImages: settings.images,
         });
         if (extensions.size > 0) {
-          const found = await findAssociatedFiles(mediaFile.path, extensions);
+          const found = await associatedFinder.find(mediaFile.path, extensions);
           const newBaseName = pathStem(newPath);
           const originalStem = pathStem(mediaFile.path);
           for (const assoc of found) {
