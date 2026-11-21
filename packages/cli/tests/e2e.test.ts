@@ -193,6 +193,25 @@ describe.each(binaries)("%s", (_name, bin) => {
   });
 });
 
+// Windows cannot deliver SIGINT to a child process: kill() ends it outright.
+describe.skipIf(process.platform === "win32").each(binaries)("watch in %s", (_name, bin) => {
+  it("watches until Ctrl+C, then exits 0 with a summary", async () => {
+    const dir = path.join(tmp, `cfg-watch-${_name.replace(/\W/g, "")}`);
+    // Only a TVDB key and --type movie: no movie provider, so nothing could reach the network.
+    await writeKeys(dir, { tvdb: "x" });
+    const media = path.join(tmp, `watch-${_name.replace(/\W/g, "")}`);
+    await touch(media, MATRIX_FILE); // already there: left alone
+    const r = await runBin(bin(), ["watch", media, "-t", "movie", "--config-dir", dir], {
+      onStderr: { waitFor: "Press Ctrl+C to stop.", then: (child) => setTimeout(() => child.kill("SIGINT"), 300) },
+    });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`Watching ${media}`);
+    expect(r.stdout).toContain("1 media file(s) already there left alone");
+    expect(r.stderr).toContain("Stopped watching. Renamed: 0, waiting for review: 0");
+    expect(r.stderr).not.toMatch(/\n\s+at /);
+  });
+});
+
 describe("standalone bundle", () => {
   it("runs alone from an empty directory", async () => {
     const lonely = await mkdtemp(path.join(os.tmpdir(), "tidytitles-standalone-"));

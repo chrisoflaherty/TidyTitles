@@ -6,6 +6,7 @@ import {
   type ConfigServiceOptions,
   type SessionOptions,
 } from "@tidytitles/core";
+import type { WatchOverrides } from "./commands/watch";
 import type { Prompter } from "./prompts";
 import type { Ui, Writer } from "./ui";
 
@@ -42,6 +43,8 @@ export interface CliDeps {
   signal?: AbortSignal;
   /** Program name shown in help and hints. Default "tidytitles". */
   programName?: string;
+  /** Tests only: watcher file system and timings for `watch`. */
+  watch?: WatchOverrides;
 }
 
 /** Global options. */

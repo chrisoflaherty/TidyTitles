@@ -21,6 +21,7 @@ import { configPresetCommand, configPresetsCommand } from "./commands/presets";
 import { previewCommand } from "./commands/preview";
 import { renameCommand, type RenameOptions } from "./commands/rename";
 import { undoCommand } from "./commands/undo";
+import { watchCommand, type WatchCommandOptions } from "./commands/watch";
 import { CONFIG_DIR_ENV, createContext, type CliDeps, type CommandContext, type GlobalOptions } from "./context";
 import {
   CancelledError,
@@ -97,6 +98,66 @@ Examples:
   $ tidytitles rename /music -t music -p musicbrainz --json
   $ tidytitles rename ~/Downloads -t movie -o /Volumes/Media/Movies --transfer copy
   $ tidytitles rename /media/anime -t tv --order absolute --language ja-JP`;
+
+const WATCH_HELP = `
+What it does:
+  Watches FOLDERS (default: [watch] folders in config.toml) for new media
+  files and looks each one up once it has finished arriving: its size and
+  modification time have not changed for the settle period (--settle,
+  default [watch] settle_seconds, normally 10), and it does not have a
+  temporary download name (.part, .crdownload, .download, .!qB, .tmp, and
+  similar) or a companion such as "Name.mkv.part" next to it. Nothing is ever
+  asked: this command never prompts.
+
+Review (the default):
+  Nothing is renamed. Each file is reported as "Ready for review" with its new
+  name, or "Needs review" with the reason (several matches, no match, ...).
+  Rename them afterward with:  tidytitles rename <folder>
+  which shows the preview and asks before renaming, as usual.
+
+Automatic (--auto):
+  A file is renamed without asking only when its lookup found exactly one
+  match (never the first of several), its new name is free (nothing exists
+  there, whatever [behavior] conflict_resolution says), and it is still the
+  file that finished arriving. Everything else is reported as "Needs review"
+  and left alone. Automatic renames use the [output] folders, --transfer,
+  associated files, and cover art settings, and are saved to the history
+  (undo with "tidytitles undo").
+
+Files already there:
+  Files in the folders when watching starts (or when a missing folder comes
+  back) are left alone. --existing processes them too.
+
+Folders that go away (an unplugged drive, a network share) are checked
+again regularly and watched again when they return. Network shares are
+rescanned, since they do not report changes reliably. When lookups fail
+(service down, rate limits) the files are tried again later, waiting 30
+seconds at first and up to 30 minutes.
+
+Output:
+  One line per event on stdout. --json prints one JSON object per line:
+  { event, time, ... } with event one of started, arriving, temporary,
+  ready, looking_up, renamed, review (reason: review_mode, several_matches,
+  no_match, lookup_failed, unverified, conflict, template_error,
+  transfer_unavailable, rename_failed, not_renamable), unchanged, retry,
+  changed, gone, unreadable, folder_missing, folder_restored, folder_error,
+  polling, history_saved, cover_art, stopped, and finally summary.
+
+Ctrl+C stops watching (exit 0); a rename in progress finishes first.
+
+Examples:
+  $ tidytitles watch ~/Downloads
+  $ tidytitles watch ~/Downloads --auto -o /Volumes/Media/Movies --transfer copy
+  $ tidytitles watch /srv/incoming -t tv --auto --json`;
+
+/** `--settle`: whole seconds from 2 to 3600. */
+function parseSettleSeconds(value: string): number {
+  const n = Number(value);
+  if (!/^\d+$/.test(value.trim()) || n < 2 || n > 3_600) {
+    throw new InvalidArgumentError("Must be a whole number of seconds from 2 to 3600.");
+  }
+  return n;
+}
 
 /** `--language`: a language code such as "de-DE" or "de", normalized. */
 function parseLanguageOption(value: string): string {
@@ -250,6 +311,52 @@ Examples:
   $ tidytitles undo --entry 3`,
     )
     .action(run(async (_opts: unknown, cmd: Command) => undoCommand(ctx, globals(cmd))));
+
+  program
+    .command("watch")
+    .description("Watch folders for new media files; report them, or with --auto rename the unambiguous ones.")
+    .argument("[folders...]", "Folders to watch (default: [watch] folders in config.toml)")
+    .addOption(
+      new Option("-t, --type <type>", "Media type (movie, tv, music, or auto-detect)")
+        .choices(MEDIA_TYPE_CHOICES)
+        .default("auto"),
+    )
+    .option("-r, --recursive", "Include subfolders (default: [watch] recursive)")
+    .option("--no-recursive", "Only the folders themselves, not their subfolders")
+    .option("--auto", "Automatic mode: rename files with exactly one match without asking")
+    .option("--existing", "Also process the files already in the folders")
+    .option("--settle <seconds>", "Seconds a file must stay unchanged (default: [watch] settle_seconds)", parseSettleSeconds)
+    .option("-o, --output <dir>", "Output directory for renamed files (overrides the [output] folders)")
+    .addOption(
+      new Option("--transfer <mode>", "How files get their new names: move, copy, or hardlink (default: [output] transfer_mode)")
+        .choices(TRANSFER_MODES),
+    )
+    .addOption(
+      new Option("-p, --provider <provider>", "Metadata provider (tmdb, tvdb, musicbrainz, or auto based on config)")
+        .choices(PROVIDER_CHOICES)
+        .default("auto"),
+    )
+    .addOption(
+      new Option("--order <order>", "Episode order of season/episode numbers (default: [tv] episode_order)").choices(
+        EPISODE_ORDERS,
+      ),
+    )
+    .addOption(
+      new Option("--language <code>", "Metadata language, e.g. en-US, de-DE, ja (default: [metadata] language)").argParser(
+        parseLanguageOption,
+      ),
+    )
+    .option("--json", "Print one JSON object per line")
+    .addHelpText("after", WATCH_HELP)
+    .action(
+      run(async (folders: string[], _opts: unknown, cmd: Command) => {
+        const opts = globals(cmd) as unknown as WatchCommandOptions & { recursive?: boolean };
+        // Neither -r nor --no-recursive given: commander leaves its default (true); use the config.
+        const source = cmd.getOptionValueSource("recursive");
+        if (source !== "cli") delete opts.recursive;
+        return watchCommand(ctx, folders, opts, deps.watch ?? {});
+      }),
+    );
 
   const config = program.command("config").description("Manage configuration settings.");
 
