@@ -71,6 +71,10 @@ function skippedStatus(op: PlannedOperation): StatusView {
       return red("Duplicate name", "Another file in this list would get the same name.", "alert");
     case "would_overwrite":
       return red("Name taken", "A file with the new name already exists. Change the conflict setting to overwrite or add a version number.", "alert");
+    case "cross_device_link":
+      return red("Can't link across drives", "Hard links work only within one drive, and the new name would be on another drive. Choose Copy or Move, or an output folder on the same drive.", "alert");
+    case "link_unsupported":
+      return red("Links not supported", "The destination drive doesn't support hard links (for example, FAT or exFAT). Choose Copy or Move.", "alert");
     case "same_path":
       return { label: "Already named", tone: "neutral", icon: "check", detail: "The file already has this name." };
     case "unknown_metadata":

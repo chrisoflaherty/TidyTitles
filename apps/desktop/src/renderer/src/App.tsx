@@ -3,6 +3,7 @@ import type { MenuCommand, RunOptions } from "../../shared/ipc";
 import { getApi } from "./api";
 import { EmptyState } from "./components/EmptyState";
 import { FileTable } from "./components/FileTable";
+import { HistoryDialog } from "./components/HistoryDialog";
 import { Icon } from "./components/Icon";
 import { ConfirmDialog, ErrorDialog, RenameResultDialog, UndoResultDialog } from "./components/MessageDialogs";
 import { SelectionDialog } from "./components/SelectionDialog";
@@ -11,6 +12,7 @@ import { StatusBar } from "./components/StatusBar";
 import { OptionsBar, Toolbar } from "./components/Toolbar";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
+import { outputFolderFor, TRANSFER_LABELS } from "./destination";
 import { formatTimestamp, plural } from "./format";
 import { availability, initialUiState, reducer } from "./state";
 
@@ -76,6 +78,12 @@ export function App() {
   const openSettings = useCallback(() => {
     if (can().settings) dispatch({ type: "openModal", modal: { kind: "settings" } });
   }, []);
+  const openOutputSettings = useCallback(() => {
+    if (can().settings) dispatch({ type: "openModal", modal: { kind: "settings", tab: "output" } });
+  }, []);
+  const openHistory = useCallback(() => {
+    if (can().history) dispatch({ type: "openModal", modal: { kind: "history" } });
+  }, []);
   const setOptions = useCallback((options: Partial<RunOptions>) => void api.setOptions(options), [api]);
   // Stable, so the (memoized) file list skips renders that only change the progress.
   const selectFile = useCallback((id: number | null) => dispatch({ type: "selectFile", id }), []);
@@ -127,6 +135,13 @@ export function App() {
     else if (outcome.kind === "error") showError("Couldn’t Undo", outcome.message);
   };
 
+  const doUndoEntry = async (timestamp: string) => {
+    dispatch({ type: "closeModal" });
+    const outcome = await api.undoEntry(timestamp);
+    if (outcome.kind === "done") dispatch({ type: "openModal", modal: { kind: "undoResult", outcome } });
+    else if (outcome.kind === "error") showError("Couldn’t Undo", outcome.message);
+  };
+
   // --- menu commands and keys -----------------------------------------------
 
   useEffect(() => {
@@ -140,6 +155,7 @@ export function App() {
       undo: askUndo,
       settings: openSettings,
       checkForUpdates,
+      history: openHistory,
     };
     return api.onMenuCommand((command) => {
       const { modal, selection } = uiRef.current;
@@ -147,7 +163,7 @@ export function App() {
       if ((modal || selection) && command !== "cancelFetch" && command !== "checkForUpdates") return;
       run[command]();
     });
-  }, [api, addFiles, addFolder, clear, fetchMetadata, cancelFetch, askRename, askUndo, openSettings, checkForUpdates]);
+  }, [api, addFiles, addFolder, clear, fetchMetadata, cancelFetch, askRename, askUndo, openSettings, checkForUpdates, openHistory]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -211,6 +227,9 @@ export function App() {
   const assocCount = ready.reduce((n, op) => n + op.associatedFiles.length, 0);
   const skipped = ops.filter((op) => op.status === "skipped").length;
   const dragging = ui.dragDepth > 0;
+  const transfer = app.options.transferMode;
+  const readyFolders = [...new Set(ready.map((op) => outputFolderFor(op, app.output)).filter((f): f is string => !!f))].sort();
+  const inPlace = ready.filter((op) => !outputFolderFor(op, app.output)).length;
 
   return (
     <div className="app" onDragEnter={onDragEnter} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
@@ -227,9 +246,10 @@ export function App() {
             onCancelFetch: cancelFetch,
             onRename: askRename,
             onOptions: setOptions,
+            onHistory: openHistory,
           }}
         />
-        <OptionsBar app={app} onOptions={setOptions} />
+        <OptionsBar app={app} onOptions={setOptions} onOutputSettings={openOutputSettings} />
       </header>
 
       <main className="content" aria-busy={app.busy !== null}>
@@ -300,6 +320,7 @@ export function App() {
 
       {ui.modal?.kind === "settings" && (
         <SettingsDialog
+          initialTab={ui.modal.tab}
           updates={ui.updates}
           onClose={() => dispatch({ type: "closeModal" })}
           onSaved={() => dispatch({ type: "closeModal" })}
@@ -336,18 +357,47 @@ export function App() {
           )}
         </ConfirmDialog>
       )}
+      {ui.modal?.kind === "history" && (
+        <HistoryDialog
+          busy={app.busy !== null}
+          onClose={() => dispatch({ type: "closeModal" })}
+          onUndo={(entry) => void doUndoEntry(entry.timestamp)}
+        />
+      )}
       {ui.modal?.kind === "confirmRename" && (
         <ConfirmDialog
-          title="Rename Files?"
-          confirmLabel={`Rename ${plural(ready.length, "File")}`}
+          title={transfer === "move" ? "Rename Files?" : transfer === "copy" ? "Copy Files?" : "Link Files?"}
+          confirmLabel={`${TRANSFER_LABELS[transfer].verb} ${plural(ready.length, "File")}`}
           onConfirm={() => void doRename()}
           onCancel={() => dispatch({ type: "closeModal" })}
           testId="confirm-rename"
         >
           <p>
-            {plural(ready.length, "file")} will get their new names
-            {assocCount > 0 ? `, and ${plural(assocCount, "associated file")} will move with them` : ""}.
+            {transfer === "move"
+              ? `${plural(ready.length, "file")} will get their new names`
+              : transfer === "copy"
+                ? `${plural(ready.length, "file")} will be copied under their new names; the originals stay as they are`
+                : `${plural(ready.length, "file")} will get their new names as hard links; the originals stay as they are`}
+            {assocCount > 0
+              ? `, and ${plural(assocCount, "associated file")} will ${transfer === "move" ? "move" : transfer === "copy" ? "be copied" : "be linked"} with them`
+              : ""}
+            .
           </p>
+          {readyFolders.length > 0 && (
+            <div className="confirm-destinations" data-testid="confirm-destinations">
+              <p className="muted">
+                {inPlace > 0 ? `${plural(ready.length - inPlace, "file")} go to:` : "They go to:"}
+              </p>
+              <ul>
+                {readyFolders.map((folder) => (
+                  <li key={folder} className="mono selectable">
+                    {folder}
+                  </li>
+                ))}
+              </ul>
+              {inPlace > 0 && <p className="muted">{plural(inPlace, "file")} stay in their folders.</p>}
+            </div>
+          )}
           {skipped > 0 && <p className="muted">{plural(skipped, "skipped file")} will stay as they are.</p>}
           {app.options.coverArt && <p className="muted">Cover art will be downloaded afterward.</p>}
           <p className="muted small">You can undo this afterward.</p>

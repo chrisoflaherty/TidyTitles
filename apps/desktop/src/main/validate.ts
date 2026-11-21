@@ -8,6 +8,8 @@ import { MEDIA_TYPE_CHOICES, PROVIDER_CHOICES } from "@tidytitles/core";
 import {
   CONFLICT_CHOICES,
   COVER_SIZE_CHOICES,
+  HISTORY_LIMIT_RANGE,
+  TRANSFER_MODE_CHOICES,
   TV_PROVIDER_CHOICES,
   type EditableSettings,
   type RunOptions,
@@ -82,7 +84,7 @@ export function parseRunOptions(value: unknown): Partial<RunOptions> {
   const r = record(value, "options");
   const out: Partial<RunOptions> = {};
   for (const key of Object.keys(r)) {
-    if (!["mediaType", "provider", "recursive", "coverArt"].includes(key)) {
+    if (!["mediaType", "provider", "recursive", "coverArt", "transferMode"].includes(key)) {
       throw new IpcValidationError(`unknown option ${key}`);
     }
   }
@@ -90,6 +92,7 @@ export function parseRunOptions(value: unknown): Partial<RunOptions> {
   if (r.provider !== undefined) out.provider = oneOf(r.provider, PROVIDER_CHOICES, "provider");
   if (r.recursive !== undefined) out.recursive = bool(r.recursive, "recursive");
   if (r.coverArt !== undefined) out.coverArt = bool(r.coverArt, "coverArt");
+  if (r.transferMode !== undefined) out.transferMode = oneOf(r.transferMode, TRANSFER_MODE_CHOICES, "transferMode");
   return out;
 }
 
@@ -148,7 +151,54 @@ export function parseEditableSettings(value: unknown): EditableSettings {
     },
     conflictResolution: oneOf(r.conflictResolution, CONFLICT_CHOICES, "conflictResolution"),
     tvProvider: oneOf(r.tvProvider, TV_PROVIDER_CHOICES, "tvProvider"),
+    ...parseOutputAndHistory(r),
   };
+}
+
+/** `[output]` and `[history]` from the settings dialog. */
+function parseOutputAndHistory(r: Record<string, unknown>): Pick<EditableSettings, "output" | "history"> {
+  const output = record(r.output, "output");
+  const history = record(r.history, "history");
+  const max = history.maxEntries;
+  if (
+    typeof max !== "number" ||
+    !Number.isSafeInteger(max) ||
+    max < HISTORY_LIMIT_RANGE.min ||
+    max > HISTORY_LIMIT_RANGE.max
+  ) {
+    throw new IpcValidationError(
+      `history.maxEntries must be a whole number from ${HISTORY_LIMIT_RANGE.min} to ${HISTORY_LIMIT_RANGE.max}`,
+    );
+  }
+  return {
+    output: {
+      movie: outputFolder(output.movie, "output.movie"),
+      tv: outputFolder(output.tv, "output.tv"),
+      music: outputFolder(output.music, "output.music"),
+      transferMode: oneOf(output.transferMode, TRANSFER_MODE_CHOICES, "output.transferMode"),
+    },
+    history: { maxEntries: max },
+  };
+}
+
+/** An output folder: "" (rename in place) or an absolute path. */
+function outputFolder(value: unknown, name: string): string {
+  const s = str(value, name).trim();
+  if (s !== "" && !path.isAbsolute(s)) throw new IpcValidationError(`${name} must be an absolute path`);
+  return s;
+}
+
+/** A history entry's timestamp (`undoEntry`). */
+export function parseTimestamp(value: unknown): string {
+  return str(value, "timestamp", 64);
+}
+
+/** The folder a folder picker starts in: an absolute path, or undefined. */
+export function parseOptionalFolder(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const s = str(value, "folder");
+  if (!path.isAbsolute(s)) throw new IpcValidationError("folder must be absolute");
+  return s;
 }
 
 /** A bare filename: no directory parts (cover art is written next to the media). */

@@ -11,6 +11,9 @@
 
 import type {
   ApiKeyStatus,
+  HistoryEntrySummary,
+  TransferMode,
+  UndoKeptReason,
   MediaTypeChoice,
   OperationSummary,
   PlannedOperation,
@@ -43,6 +46,9 @@ export const IPC = {
   restartToUpdate: "updates:restart",
   openReleasePage: "updates:open-release-page",
   setAutoCheckForUpdates: "updates:set-auto-check",
+  chooseFolder: "dialog:choose-folder",
+  getHistory: "history:get",
+  undoEntry: "history:undo-entry",
 } as const;
 
 /** Event channels (main -> renderer, `webContents.send`). */
@@ -89,6 +95,15 @@ export interface RunOptions {
   recursive: boolean;
   /** Download cover art after renaming. Defaults to `[cover_art] enabled`. */
   coverArt: boolean;
+  /** Move, copy, or hard link. Defaults to `[output] transfer_mode`. */
+  transferMode: TransferMode;
+}
+
+/** The `[output]` folders ("" keeps files next to the originals). */
+export interface OutputFolders {
+  movie: string;
+  tv: string;
+  music: string;
 }
 
 /**
@@ -131,6 +146,8 @@ export interface AppState {
   configError: string | null;
   configFile: string;
   platform: Platform;
+  /** Where renamed files go, per media kind. */
+  output: OutputFolders;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +183,8 @@ export type MenuCommand =
   | "rename"
   | "undo"
   | "settings"
-  | "checkForUpdates";
+  | "checkForUpdates"
+  | "history";
 
 export interface EventPayloads {
   [EVENTS.state]: AppState;
@@ -270,6 +288,8 @@ export type RenameOutcome =
       coverArtDownloaded: number;
       /** Whether cover art download was attempted. */
       coverArtAttempted: boolean;
+      /** How the files got their new names. */
+      transferMode: TransferMode;
       failures: RenameFailure[];
       historySaved: number;
     }
@@ -281,6 +301,8 @@ export interface UndoItemView {
   name: string;
   status: UndoItemStatus;
   errors: string[];
+  /** Files left in place on purpose (file name and why). */
+  kept: { name: string; reason: UndoKeptReason }[];
 }
 
 export type UndoOutcome =
@@ -289,6 +311,8 @@ export type UndoOutcome =
       historyFound: boolean;
       undone: number;
       missing: number;
+      /** Operations with files left in place on purpose. */
+      kept: number;
       failed: number;
       items: UndoItemView[];
     }
@@ -321,6 +345,8 @@ export interface EditableSettings {
   coverArt: Settings["coverArt"];
   conflictResolution: string;
   tvProvider: string;
+  output: Settings["output"];
+  history: Settings["history"];
 }
 
 export interface SettingsPayload {
@@ -342,6 +368,12 @@ export type SaveSettingsResult =
 export const CONFLICT_CHOICES = ["skip", "overwrite", "auto_version"] as const;
 export const COVER_SIZE_CHOICES = ["w92", "w154", "w185", "w342", "w500", "w780", "original"] as const;
 export const TV_PROVIDER_CHOICES = ["tvdb", "tmdb"] as const;
+export const TRANSFER_MODE_CHOICES = ["move", "copy", "hardlink"] as const satisfies readonly TransferMode[];
+/** Bounds of `[history] max_entries` (core's MAX_HISTORY_LIMIT). */
+export const HISTORY_LIMIT_RANGE = { min: 1, max: 10_000 } as const;
+
+/** A history entry as the History dialog lists it. */
+export type HistoryEntryView = HistoryEntrySummary;
 
 // ---------------------------------------------------------------------------
 // The API exposed on `window.tidytitles`
@@ -386,6 +418,12 @@ export interface TidyTitlesApi {
   /** Open the release page of the newest known version in the browser. */
   openReleasePage(): Promise<void>;
   setAutoCheckForUpdates(enabled: boolean): Promise<void>;
+  /** Pick a folder in the system dialog (starting at `current` when it exists); null when canceled. */
+  chooseFolder(current?: string): Promise<string | null>;
+  /** The rename history, most recent first. */
+  getHistory(): Promise<HistoryEntryView[]>;
+  /** Undo the history entry with this timestamp (any entry, not only the last). */
+  undoEntry(timestamp: string): Promise<UndoOutcome>;
   onUpdateState(listener: (state: UpdateState) => void): Unsubscribe;
   onState(listener: (state: AppState) => void): Unsubscribe;
   onProgress(listener: (progress: ProgressEvent | null) => void): Unsubscribe;

@@ -31,7 +31,8 @@ import {
 } from "react";
 import type { AssociatedFileType, PlannedOperation } from "@tidytitles/core";
 import type { AppState, FileEntry } from "../../../shared/ipc";
-import { baseName, dirName, relativeTo } from "../format";
+import { destinationView, outputFolderFor } from "../destination";
+import { baseName } from "../format";
 import { operationStatus, type StatusView } from "../status";
 import { Icon, type IconName } from "./Icon";
 import { MiddleEllipsis } from "./MiddleEllipsis";
@@ -63,11 +64,23 @@ export function StatusBadge({ status }: { status: StatusView }) {
   );
 }
 
-function newNameCell(op: PlannedOperation | undefined, plan: AppState["plan"]) {
+/** The new name, relative to the file's folder; a destination elsewhere gets a folder mark and its output folder's name. */
+function DestinationName({ source, destination, outputFolder }: { source: string; destination: string; outputFolder?: string }) {
+  const view = destinationView(source, destination, outputFolder);
+  if (!view.elsewhere) return <MiddleEllipsis text={view.text} title={destination} />;
+  return (
+    <span className="dest-elsewhere" data-testid="dest-elsewhere">
+      <Icon name="folder-out" size={12} className="dest-mark" />
+      <span className="visually-hidden">In another folder: </span>
+      <MiddleEllipsis text={view.text} title={`Goes to ${destination}`} />
+    </span>
+  );
+}
+
+function newNameCell(op: PlannedOperation | undefined, plan: AppState["plan"], output: AppState["output"] | undefined) {
   if (!op || plan === "none") return <span className="muted">—</span>;
   if (op.destination === op.source) return <span className="muted" title="The name stays the same">Unchanged</span>;
-  const shown = relativeTo(dirName(op.source), op.destination);
-  return <MiddleEllipsis text={shown} title={op.destination} />;
+  return <DestinationName source={op.source} destination={op.destination} outputFolder={outputFolderFor(op, output)} />;
 }
 
 /** One file of the list. */
@@ -89,6 +102,10 @@ interface FileRowProps {
   file: FileEntry;
   op: PlannedOperation | undefined;
   plan: AppState["plan"];
+  /** The output folders, to label destinations in them. */
+  output?: AppState["output"];
+  /** How associated files travel with the file. */
+  transfer?: AppState["options"]["transferMode"];
   selected: boolean;
   tabStop: boolean;
   /** aria-rowindex of the file's row (the header is row 1). */
@@ -97,7 +114,7 @@ interface FileRowProps {
 }
 
 /** A file's row and its associated-file rows. Re-renders only when its own props change. */
-const FileRow = memo(function FileRow({ file, op, plan, selected, tabStop, rowIndex, handlers }: FileRowProps) {
+const FileRow = memo(function FileRow({ file, op, plan, output, transfer, selected, tabStop, rowIndex, handlers }: FileRowProps) {
   const status = operationStatus(op, plan);
   const original = op ? baseName(op.source) : file.name;
   const originalPath = op ? op.source : file.path;
@@ -125,7 +142,7 @@ const FileRow = memo(function FileRow({ file, op, plan, selected, tabStop, rowIn
         <td className="cell-arrow" aria-hidden="true">
           {op && plan !== "none" && op.destination !== op.source ? "→" : ""}
         </td>
-        <td>{newNameCell(op, plan)}</td>
+        <td>{newNameCell(op, plan, output)}</td>
         <td>
           <StatusBadge status={status} />
         </td>
@@ -147,10 +164,12 @@ const FileRow = memo(function FileRow({ file, op, plan, selected, tabStop, rowIn
                 →
               </td>
               <td>
-                <MiddleEllipsis text={relativeTo(dirName(op.source), assoc.destination)} title={assoc.destination} />
+                <DestinationName source={op.source} destination={assoc.destination} outputFolder={outputFolderFor(op, output)} />
               </td>
               <td>
-                <span className="muted assoc-note">Moves with the file</span>
+                <span className="muted assoc-note">
+                  {transfer === "copy" ? "Copied with the file" : transfer === "hardlink" ? "Linked with the file" : "Moves with the file"}
+                </span>
               </td>
             </tr>
           ))
@@ -411,6 +430,8 @@ export const FileTable = memo(function FileTable({ app, selectedFileId, onSelect
         file={item.file}
         op={item.op}
         plan={plan}
+        output={app.output}
+        transfer={app.options.transferMode}
         selected={item.file.id === selectedFileId}
         tabStop={item.file.id === tabStopId}
         rowIndex={layout.ariaRows[i]!}

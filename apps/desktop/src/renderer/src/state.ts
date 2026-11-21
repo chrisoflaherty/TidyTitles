@@ -15,7 +15,8 @@ import type {
 } from "../../shared/ipc";
 
 export type Modal =
-  | { kind: "settings" }
+  | { kind: "settings"; tab?: "output" }
+  | { kind: "history" }
   | { kind: "confirmRename" }
   | { kind: "confirmUndo" }
   | { kind: "renameResult"; outcome: Extract<RenameOutcome, { kind: "done" }> }
@@ -171,6 +172,7 @@ export function reconcileAppState(prev: AppState | null, next: AppState): AppSta
     files: filesSame ? prev.files : files,
     operations,
     options: sameJson(prev.options, next.options) ? prev.options : next.options,
+    output: sameJson(prev.output, next.output) ? prev.output : next.output,
   };
 }
 
@@ -206,5 +208,6 @@ export function availability(app: AppState | null) {
     rename: idle && app?.plan === "planned" && pending,
     undo: idle && app?.lastRename != null,
     settings: idle,
+    history: idle,
   };
 }

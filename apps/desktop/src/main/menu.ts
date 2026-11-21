@@ -31,6 +31,7 @@ export const COMMAND_IDS = [
   "rename",
   "undo",
   "settings",
+  "history",
 ] as const satisfies readonly MenuCommand[];
 
 export function buildMenuTemplate(ctx: MenuContext): MenuItemConstructorOptions[] {
@@ -121,6 +122,7 @@ export function buildMenuTemplate(ctx: MenuContext): MenuItemConstructorOptions[
       { type: "separator" },
       cmd("rename", "Rename Files…", "CmdOrCtrl+Enter"),
       cmd("undo", "Undo Last Rename…", "CmdOrCtrl+Alt+Z"),
+      cmd("history", "Rename History…"),
     ],
   });
 
@@ -172,6 +174,7 @@ export function commandEnabled(state: AppState): Record<(typeof COMMAND_IDS)[num
     rename: idle && state.plan === "planned" && pending,
     undo: idle && state.lastRename !== null,
     settings: idle,
+    history: idle,
   };
 }
 

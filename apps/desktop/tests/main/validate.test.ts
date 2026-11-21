@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   IpcValidationError,
@@ -7,9 +9,13 @@ import {
   parseFileIds,
   parsePaths,
   parseRunOptions,
+  parseOptionalFolder,
   parseSelectionAnswer,
   parseTemplates,
+  parseTimestamp,
 } from "../../src/main/validate";
+
+const MOVIES = path.resolve(os.tmpdir(), "Movies");
 
 const validSettings = () => ({
   templates: { movie: "{title}", tv: "{title}", music: "{title}" },
@@ -18,6 +24,8 @@ const validSettings = () => ({
   coverArt: { enabled: false, filename: "poster.jpg", musicFilename: "cover.jpg", overwrite: false, size: "w500" },
   conflictResolution: "skip",
   tvProvider: "tvdb",
+  output: { movie: MOVIES, tv: "", music: "", transferMode: "move" },
+  history: { maxEntries: 200 },
 });
 
 describe("IPC validation", () => {
@@ -68,6 +76,32 @@ describe("IPC validation", () => {
     // Extra properties are dropped, not passed through.
     const extra = { ...validSettings(), dryRun: true } as Record<string, unknown>;
     expect(parseEditableSettings(extra)).not.toHaveProperty("dryRun");
+  });
+
+  it("checks output folders, the transfer mode, and the history limit", () => {
+    const relative = validSettings();
+    relative.output.movie = "Movies";
+    expect(() => parseEditableSettings(relative)).toThrow(/absolute/);
+    const mode = validSettings() as Record<string, unknown> & ReturnType<typeof validSettings>;
+    (mode.output as Record<string, unknown>).transferMode = "teleport";
+    expect(() => parseEditableSettings(mode)).toThrow(/transferMode/);
+    for (const maxEntries of [0, 10_001, 2.5, Number.NaN, "200"]) {
+      const bad = validSettings() as Record<string, unknown>;
+      bad.history = { maxEntries };
+      expect(() => parseEditableSettings(bad), String(maxEntries)).toThrow(/maxEntries/);
+    }
+    const spaced = validSettings();
+    spaced.output.tv = `  ${MOVIES}  `;
+    expect(parseEditableSettings(spaced).output.tv).toBe(MOVIES);
+    expect(() => parseEditableSettings({ ...validSettings(), output: undefined })).toThrow(/output/);
+    expect(parseRunOptions({ transferMode: "hardlink" })).toEqual({ transferMode: "hardlink" });
+    expect(() => parseRunOptions({ transferMode: "symlink" })).toThrow();
+    expect(parseTimestamp("2026-11-14T19:05:42.123000")).toBe("2026-11-14T19:05:42.123000");
+    expect(() => parseTimestamp(42)).toThrow();
+    expect(() => parseTimestamp("x".repeat(65))).toThrow(/too long/);
+    expect(parseOptionalFolder(undefined)).toBeUndefined();
+    expect(parseOptionalFolder(MOVIES)).toBe(MOVIES);
+    expect(() => parseOptionalFolder("relative")).toThrow(/absolute/);
   });
 
   it("allows only https URLs out", () => {
