@@ -5,10 +5,18 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  ConfigService,
+  RenameSession,
+  createArtist,
+  createDefaultSettings,
+  createRenameOperation,
+  createTrack,
+} from "@tidytitles/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MATRIX_FILE, touch, writeKeys } from "./helpers";
 
@@ -151,6 +159,39 @@ describe.each(binaries)("%s", (_name, bin) => {
     expect(r.code).toBe(0);
     const out = JSON.parse(r.stdout);
     expect(out.operations[0]).toMatchObject({ status: "skipped", skipReason: "no_match" });
+  });
+
+  it("undo puts back the tags a rename wrote (the tag writer runs inside the built file)", async () => {
+    const dir = freshDir();
+    const media = path.join(tmp, `media-tags-${_name.replace(/\W/g, "")}`);
+    await mkdir(media, { recursive: true });
+    const source = path.join(media, "song.flac");
+    await copyFile(path.resolve(pkgDir, "../core/tests/fixtures/audio/tagged.flac"), source);
+    const original = await readFile(source);
+    const config = new ConfigService({ configDir: dir, cacheDir: path.join(dir, "cache"), env: {} });
+    const settings = createDefaultSettings();
+    settings.writeMetadata.musicTags = true;
+    const session = new RenameSession(settings, { config, requireApiKeys: false, cache: false });
+    const queen = createArtist({ id: "q-1", name: "Queen" });
+    const destination = path.join(media, "Bohemian Rhapsody.flac");
+    const ops = [
+      createRenameOperation({
+        source,
+        destination,
+        mediaFile: {
+          path: source,
+          parsedInfo: { title: "song", mediaType: "music", rawFilename: "song.flac" },
+          matchedMetadata: createTrack({ id: "rec-1", title: "Bohemian Rhapsody", artist: queen }),
+        },
+      }),
+    ];
+    await session.execute(ops);
+    await session.saveHistory(ops);
+    expect(ops[0]!.metadataWrites?.tags?.status).toBe("written");
+
+    const r = await runBin(bin(), ["undo", "-y", "--config-dir", dir]);
+    expect(r.code).toBe(0);
+    expect((await readFile(source)).equals(original)).toBe(true);
   });
 
   it("preview parses filenames", async () => {

@@ -84,12 +84,25 @@ Output folders and transfer:
   hardlink leaves the originals in place; a hard link to another volume is
   skipped and reported, never copied instead.
 
+Tags and NFO files:
+  --write-tags writes a MusicBrainz match's title, artist, album, album
+  artist, track and disc numbers, year, and genre into renamed MP3, FLAC,
+  M4A, Ogg Vorbis, and Opus files, only where they differ (default:
+  [write_metadata] music_tags). Other formats are renamed and reported as
+  "tags not written"; hard links are never written to. --write-nfo writes NFO
+  files for Kodi, Jellyfin, and Emby next to renamed movies and episodes, and
+  tvshow.nfo in a show's folder (default: [write_metadata] nfo). --no-write-tags
+  and --no-write-nfo turn them off for one run. --dry-run lists what would be
+  written. Undo puts the old tags back and removes unchanged NFO files.
+
 Output:
   Results go to stdout, progress and prompts to stderr (progress only on a
   terminal). --json prints one JSON object: { command, path, dryRun, files,
   confirmed, operations: [{ source, destination, status, skipReason, error,
-  lookupError, mediaType, match, correction, associatedFiles }], summary,
-  skippedSelections, coverArt, historySaved, transfer, outputFolders }.
+  lookupError, mediaType, match, correction, associatedFiles, tags, nfo }],
+  summary, skippedSelections, coverArt, historySaved, transfer, outputFolders,
+  writeMetadata }. tags is { status, reason, changes: [{ field, from, to }],
+  format } and nfo is [{ kind, path, status, reason, replaced }] (null when off).
 
 Examples:
   $ tidytitles rename ~/Downloads --type movie --dry-run
@@ -206,6 +219,10 @@ export function createProgram(
         parseLanguageOption,
       ),
     )
+    .option("--write-tags", "Write the match's tags into renamed music files (default: [write_metadata] music_tags)")
+    .option("--no-write-tags", "Do not write tags into music files in this run")
+    .option("--write-nfo", "Write NFO files for Kodi, Jellyfin, and Emby (default: [write_metadata] nfo)")
+    .option("--no-write-nfo", "Do not write NFO files in this run")
     .option("--json", "Print the result as JSON")
     .addHelpText("after", RENAME_HELP)
     .action(

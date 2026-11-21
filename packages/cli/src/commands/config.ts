@@ -48,6 +48,7 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
       history: { ...s.history },
       tv: { episodeOrder: s.tv.episodeOrder },
       metadata: { language: s.metadata.language },
+      writeMetadata: { ...s.writeMetadata },
     });
     return EXIT_OK;
   }
@@ -98,6 +99,11 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
   ui.print(
     `  Language:      ${s.metadata.language}${languageName === s.metadata.language ? "" : ` (${languageName})`}`,
   );
+  ui.print();
+  ui.print(c.bold("Write Metadata:"));
+  const onOff = (b: boolean) => (b ? c.green("on") : c.dim("off"));
+  ui.print(`  Music tags: ${onOff(s.writeMetadata.musicTags)}`);
+  ui.print(`  NFO files:  ${onOff(s.writeMetadata.nfo)}`);
   return EXIT_OK;
 }
 

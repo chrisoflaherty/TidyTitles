@@ -530,8 +530,11 @@ describe("rename", () => {
               fileType: "subtitle",
             },
           ],
+          tags: null,
+          nfo: null,
         },
       ]);
+      expect(out.writeMetadata).toEqual({ musicTags: false, nfo: false });
       expect(JSON.stringify(out)).not.toContain("secret");
     });
 
