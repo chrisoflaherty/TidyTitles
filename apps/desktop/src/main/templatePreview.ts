@@ -22,23 +22,39 @@ const SAMPLE_MOVIE = createMovie({
   title: "The Matrix",
   originalTitle: "The Matrix",
   year: 1999,
+  provider: "tmdb",
 });
-const MOVIE_EXTRA: TemplateContext = { quality: "1080p", source: "BluRay", codec: "x264", group: "GROUP" };
+const MOVIE_EXTRA: TemplateContext = {
+  quality: "1080p",
+  source: "BluRay",
+  codec: "x264",
+  group: "GROUP",
+  audio_codec: "DTS-HD",
+  audio_channels: "5.1",
+};
 
 const SAMPLE_EPISODE = createEpisode({
   show: createTVShow({ id: 81189, title: "Breaking Bad", originalTitle: "Breaking Bad", year: 2008 }),
   season: 1,
   episode: 1,
   title: "Pilot",
+  airDate: "2008-01-20",
 });
-const TV_EXTRA: TemplateContext = { quality: "720p", source: "HDTV", codec: "x264", group: "GROUP" };
+const TV_EXTRA: TemplateContext = {
+  quality: "720p",
+  source: "HDTV",
+  codec: "x264",
+  group: "GROUP",
+  audio_codec: "AAC",
+  audio_channels: "2.0",
+};
 
 const PINK_FLOYD = createArtist({ id: "sample", name: "Pink Floyd" });
 const SAMPLE_TRACK = createTrack({
   id: "sample",
   title: "Comfortably Numb",
   artist: PINK_FLOYD,
-  album: createAlbum({ id: "sample", title: "The Wall", artist: PINK_FLOYD, year: 1979 }),
+  album: createAlbum({ id: "sample", title: "The Wall", artist: PINK_FLOYD, year: 1979, totalTracks: 26, totalDiscs: 2 }),
   trackNumber: 6,
   discNumber: 2,
   genres: ["Progressive Rock"],

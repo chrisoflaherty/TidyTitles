@@ -285,6 +285,52 @@ describe("TidyTitles desktop app", () => {
     expect(toml).toContain('tmdb_api_key = "e2e-not-a-real-key"');
   });
 
+  it("fills the templates from a naming preset and shows Custom once edited", async () => {
+    await page.getByTestId("settings").click();
+    const dialog = page.getByTestId("settings-dialog");
+    const picker = dialog.getByTestId("naming-preset");
+    await picker.waitFor();
+    // The movie template was edited by the previous test.
+    await expect(picker.inputValue()).resolves.toBe("custom");
+
+    await picker.selectOption("plex");
+    await expect(dialog.getByTestId("template-movie").inputValue()).resolves.toBe(
+      "{title} ({year})< {tmdb-{tmdb_id}}>< {edition-{edition}}>/{title} ({year})< {edition-{edition}}>",
+    );
+    await dialog
+      .getByTestId("template-movie-preview")
+      .filter({ hasText: "The Matrix (1999) {tmdb-603}/The Matrix (1999).mkv" })
+      .waitFor();
+    await dialog
+      .getByTestId("template-tv-preview")
+      .filter({ hasText: "Breaking Bad (2008) {tvdb-81189}/Season 01/Breaking Bad (2008) - s01e01 - Pilot.mkv" })
+      .waitFor();
+    await dialog.getByTestId("template-music-preview").filter({ hasText: "Pink Floyd/The Wall/206 - Comfortably Numb.flac" }).waitFor();
+    await dialog.locator("details.reference summary").click();
+    await dialog.getByTestId("placeholder-table").filter({ hasText: "{audio_channels}" }).waitFor();
+    await shoot("05d-settings-naming-preset");
+
+    // Still editable: an edit turns the picker to Custom.
+    const tv = dialog.getByTestId("template-tv");
+    await tv.fill("{title} S{season2}E{episode2}");
+    await expect(picker.inputValue()).resolves.toBe("custom");
+    await expect(dialog.getByTestId("naming-preset-hint").textContent()).resolves.toContain("Custom");
+
+    await picker.selectOption("plex");
+    await dialog.getByTestId("settings-save").click();
+    await dialog.waitFor({ state: "detached" });
+    const toml = await readFile(path.join(configDir, "config.toml"), "utf8");
+    expect(toml).toContain("Season {season2}/{title} ({year}) - s{season2}e{episode2}");
+
+    // Reopened, the dialog shows the saved preset; put the previous template back.
+    await page.getByTestId("settings").click();
+    await expect(dialog.getByTestId("naming-preset").inputValue()).resolves.toBe("plex");
+    await dialog.getByTestId("naming-preset").selectOption("default");
+    await dialog.getByTestId("template-movie").fill("{title} [{year}] {quality}");
+    await dialog.getByTestId("settings-save").click();
+    await dialog.waitFor({ state: "detached" });
+  });
+
   it("remembers the window size and position", async () => {
     await electronApp.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0]!;
