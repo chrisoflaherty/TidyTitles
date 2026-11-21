@@ -72,6 +72,8 @@ export function describeSkip(op: PlannedOperation): string {
       return "already named";
     case "would_overwrite":
       return "destination exists";
+    case "match_cleared":
+      return "match cleared";
     default:
       return op.errorMessage ?? "skipped";
   }
@@ -152,6 +154,8 @@ export function operationToJson(op: PlannedOperation): Record<string, unknown> {
     lookupError: lookupErrorToJson(op.lookupError),
     mediaType: op.mediaFile.parsedInfo.mediaType,
     match: matchToJson(op.mediaFile.matchedMetadata),
+    // "chosen" when the user picked the match with a search of their own words.
+    correction: op.mediaFile.correction?.match ?? null,
     associatedFiles: op.associatedFiles.map((a) => ({
       source: a.source,
       destination: a.destination,

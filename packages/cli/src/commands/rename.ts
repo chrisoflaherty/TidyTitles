@@ -17,6 +17,7 @@ import { base, capitalize, destinationLabel, describeOption, describeSkip, forma
 import type { Ui } from "../ui";
 import { makeTable } from "../ui";
 import { requireExistingPath } from "./shared";
+import { CliCorrections, SEARCH_CHOICE } from "./correct";
 
 export interface RenameOptions extends GlobalOptions {
   type: MediaTypeChoice;
@@ -41,10 +42,14 @@ const SCAN_TEXT: Record<MediaTypeChoice, { scanning: string; notFound: string }>
  * Builds the selection callback. Core asks each distinct question once per
  * run and reuses the answer for later files with the same options.
  */
-function createSelection(ctx: CommandContext, autoSelect: boolean): SelectionCallback {
+function createSelection(
+  ctx: CommandContext,
+  autoSelect: boolean,
+  corrections?: () => CliCorrections | undefined,
+): SelectionCallback {
   const { ui, signal } = ctx;
 
-  const callback: SelectionCallback = async (options: SelectableOption[], filename: string) => {
+  const callback: SelectionCallback = async (options: SelectableOption[], filename: string, context) => {
     if (autoSelect) return 0;
     // Nothing can be asked without a terminal: skip the file.
     if (!ctx.stdinIsTTY) return undefined;
@@ -64,12 +69,16 @@ function createSelection(ctx: CommandContext, autoSelect: boolean): SelectionCal
 
     const choices = options.map((option, i) => {
       const [title, info] = describeOption(option);
-      return { name: `${i + 1}. ${title} (${info})`, value: i as number | undefined };
+      return { name: `${i + 1}. ${title} (${info})`, value: i as number | undefined | typeof SEARCH_CHOICE };
     });
+    const correct = corrections?.();
+    if (correct) choices.push({ name: "Search with different words...", value: SEARCH_CHOICE });
     choices.push({ name: "Skip this file", value: undefined });
-    return ctx.deps.prompter.select(`Select match (1-${options.length}) or skip:`, choices, {
+    const answer = await ctx.deps.prompter.select(`Select match (1-${options.length}) or skip:`, choices, {
       signal,
     });
+    if (answer === SEARCH_CHOICE) return correct!.searchFromSelection(options, context?.path ?? filename);
+    return answer;
   };
 
   return callback;
@@ -155,7 +164,9 @@ export async function renameCommand(
 
   const config = ctx.config(options);
   const autoSelect = options.autoSelect ?? false;
-  const selectionCallback = createSelection(ctx, autoSelect);
+  // Searching with different words needs a terminal (and no --auto-select).
+  let corrections: CliCorrections | undefined;
+  const selectionCallback = createSelection(ctx, autoSelect, () => corrections);
   // Files skipped because they had several matches and nothing could be asked.
   const skippedNonInteractive: string[] = [];
   // Throws MissingApiKeyError / ConfigError before any file is touched.
@@ -166,6 +177,7 @@ export async function renameCommand(
     selectionCallback,
     ...ctx.deps.session,
   });
+  if (ctx.stdinIsTTY && !autoSelect) corrections = new CliCorrections(ctx, session);
 
   const text = SCAN_TEXT[options.type];
   if (!statSync(target).isFile()) ui.progress.update(text.scanning);
@@ -212,6 +224,14 @@ export async function renameCommand(
     signal,
   );
   progress.clear();
+
+  if (corrections) {
+    const corrected = await corrections.afterPlan(
+      operations,
+      options.output ? path.resolve(options.output) : undefined,
+    );
+    operations.splice(0, operations.length, ...corrected);
+  }
 
   if (!autoSelect && !ctx.stdinIsTTY) {
     for (const op of operations) {
