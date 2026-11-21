@@ -300,6 +300,8 @@ Manage configuration settings. All `config` commands work on `config.toml` in th
 | `config show [--json]` | Show current configuration (API keys are shown only as configured / not set). |
 | `config set-key <provider> <key>` | Set an API key for a provider (`tmdb` or `tvdb`). |
 | `config set-template <type> <template>` | Set a naming template (`movie`, `tv`, or `music`). |
+| `config presets [--json]` | List the naming presets and which one is in effect. |
+| `config preset <name>` | Set all three templates from a preset: `default`, `plex`, `jellyfin`, or `kodi`. |
 | `config init` | Initialize configuration file with defaults (asks before overwriting). |
 
 ### config show
@@ -315,6 +317,7 @@ Templates:
   Movie: {title} ({year})
   TV:    {title} - S{season2}E{episode2} - {episode_title}
   Music: {artist}/{album} ({year})/{track2} - {title}
+  Preset: TidyTitles
 
 API Keys:
   TMDB: configured
@@ -331,13 +334,14 @@ Behavior:
   Preview before rename: True
 ```
 
-The values shown are the effective ones: defaults, then `FILE_RENAMER_*` environment variables, then `config.toml` on top. `--json` prints every setting, including cover art and providers:
+`Preset` names the [naming preset](Templates.md#naming-presets) whose three templates equal yours, or `Custom` (in JSON, `templatePreset` is the preset id or `null`). The values shown are the effective ones: defaults, then `FILE_RENAMER_*` environment variables, then `config.toml` on top. `--json` prints every setting, including cover art and providers:
 
 ```json
 {
   "configFile": "/Users/me/Library/Application Support/file-renamer/config.toml",
   "cacheDir": "/Users/me/Library/Caches/file-renamer",
   "templates": { "movie": "{title} ({year})", "tv": "{title} - S{season2}E{episode2} - {episode_title}", "music": "{artist}/{album} ({year})/{track2} - {title}" },
+  "templatePreset": "default",
   "apiKeys": { "tmdb": "configured", "tvdb": "not set" },
   "associatedFiles": { "enabled": true, "subtitles": true, "nfo": true, "images": true },
   "coverArt": { "enabled": false, "filename": "poster.jpg", "musicFilename": "cover.jpg", "overwrite": false, "size": "w500" },
@@ -376,6 +380,43 @@ Invalid template:
 
 See [Templates](Templates.md) for placeholders and formatters.
 
+### config presets
+
+Lists the [naming presets](Templates.md#naming-presets) with their templates and marks the one in effect:
+
+```
+$ tidytitles config presets
+Naming presets
+
+default  TidyTitles (in effect)
+  TidyTitles' own default: no movie or TV folders, music by artist and album.
+  Movie: {title} ({year})
+  TV:    {title} - S{season2}E{episode2} - {episode_title}
+  Music: {artist}/{album} ({year})/{track2} - {title}
+
+plex  Plex
+  ...
+
+In effect: TidyTitles
+Apply one with: tidytitles config preset <name>
+```
+
+`--json` prints `{ "current": "default", "presets": [{ "id", "name", "description", "templates", "sources" }, ...] }`; `current` is `null` when the templates match no preset.
+
+### config preset
+
+Sets the movie, TV, and music templates from a preset. Nothing else is stored: the preset is only a quick way to fill in the templates, and you can change any of them afterward with `set-template` (`config show` then reports `Preset: Custom`).
+
+```
+$ tidytitles config preset plex
+Applied the Plex preset.
+  Movie: {title} ({year})< {tmdb-{tmdb_id}}>< {edition-{edition}}>/{title} ({year})< {edition-{edition}}>
+  TV:    {title} ({year})< {tvdb-{tvdb_id}}>< {tmdb-{tmdb_id}}>/Season {season2}/{title} ({year}) - s{season2}e{episode2}< - {episode_title}>
+  Music: {album_artist}/{album}/{disc_multi}{track2} - {title}
+```
+
+The name is case-insensitive. An unknown name prints the available presets and exits 1 without changing anything.
+
 ### config init
 
 Writes `config.toml` with the default settings (plus any values from `FILE_RENAMER_*` environment variables) and prints the next steps. If the file exists, it asks `Config file exists. Overwrite?` first; overwriting replaces your API keys and templates with the defaults. You do not need to run `config init`: every command works without a config file, and `set-key` and `set-template` create it.
@@ -391,7 +432,7 @@ Writes `config.toml` with the default settings (plus any values from `FILE_RENAM
 | `2` | Usage error (bad option or argument, PATH does not exist) |
 | `130` | Canceled with Ctrl+C |
 
-In detail, `rename` exits 1 when a required API key is missing, `config.toml` cannot be read, any file's lookup failed, or any rename failed; files that were skipped for other reasons (no match, name taken) do not cause a non-zero exit. It also exits 1 when the confirmation reads end of input from a non-terminal stdin (`Aborted!`). Answering no to the confirmation exits 0. `undo` exits 1 when any file could not be moved back. `config set-template` exits 1 for an invalid template.
+In detail, `rename` exits 1 when a required API key is missing, `config.toml` cannot be read, any file's lookup failed, or any rename failed; files that were skipped for other reasons (no match, name taken) do not cause a non-zero exit. It also exits 1 when the confirmation reads end of input from a non-terminal stdin (`Aborted!`). Answering no to the confirmation exits 0. `undo` exits 1 when any file could not be moved back. `config set-template` exits 1 for an invalid template, and `config preset` for an unknown preset.
 
 ## Environment variables
 
