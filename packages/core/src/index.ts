@@ -46,3 +46,10 @@ export * from "./renameService";
 export * from "./session";
 export * from "./customName";
 export * from "./matchCorrection";
+
+export * from "./watchConfig";
+export * from "./watchNames";
+export * from "./watchEvents";
+export * from "./watcher";
+export * from "./watchBatch";
+export * from "./watchService";

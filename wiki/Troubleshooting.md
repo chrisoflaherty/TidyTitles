@@ -12,6 +12,7 @@ Common problems and how to solve them, grouped by where they show up.
 - [Undo](#undo)
 - [Configuration](#configuration)
 - [Desktop app](#desktop-app)
+- [Watch folders](#watch-folders)
 - [Getting help](#getting-help)
 
 ## Installing and opening the app
@@ -405,6 +406,33 @@ Notifications appear only when TidyTitles is not the active app. Otherwise the s
 ### The CLI renamed files but the app's Undo offers something else
 
 The app reads the history when it starts and after each rename or undo it does. Restart the app, or just click **Undo**: if the history changed, it refuses and refreshes, and the next Undo offers the newest rename.
+
+## Watch folders
+
+### A new file in a watch folder was not picked up
+
+- Watching runs only while TidyTitles is open, and not while it is paused (the status bar says **Watching paused**). The CLI watches only while `tidytitles watch` runs.
+- Files that were already in the folder when watching started, or when a missing folder came back, are left alone on purpose. Use **Process Existing Files** in Watch Activity, or `tidytitles watch --existing`.
+- A file is taken only after it has stopped changing for the settle period (10 seconds by default), and never while it has a temporary download name (`.part`, `.crdownload`, `.download`, `.!qB`, ...) or a companion such as `Movie.mkv.part` next to it.
+- On a network share, new files are found by rescanning, every 30 seconds.
+- Files in output folders inside the watched folder, files TidyTitles renamed itself, and files in hidden or system folders are never picked up.
+- Only media files count (the same extensions as **Add Folder**).
+
+### A file was renamed before its download finished
+
+That happens only if the downloader writes under the final name and stalls for longer than the settle period. Raise **Wait until unchanged for** (Settings → Watch, or `settle_seconds`), or have the downloader use a temporary name (qBittorrent: "Append .!qB extension to incomplete files"; Transmission: "Append .part to incomplete files"). Automatic renames can be undone from History.
+
+### A file was not renamed in automatic mode
+
+Automatic mode renames only files whose lookup found exactly one match and whose new name is free. Watch Activity (or the CLI log) gives the reason for each file that waits: several matches, no match, the new name is already taken, music tags not confirmed, and so on. Those files are in the file list for review; rename them there.
+
+### "Lookup failed ... trying again at ..."
+
+The metadata service could not be reached, rate-limited the lookups, or rejected the API key. TidyTitles tries again on its own, waiting longer each time (up to 30 minutes), and does not ask the service in between. **Retry Lookups Now** in Watch Activity tries at once. If the key is wrong, fix it in Settings; the next try uses it.
+
+### "Watch folder missing"
+
+The folder is not there: a drive is unplugged, a network share is not connected, or the folder was renamed or deleted. TidyTitles checks again every 10 seconds and watches it again when it comes back. Files found in it then are treated like files present at start and left alone.
 
 ## Getting help
 

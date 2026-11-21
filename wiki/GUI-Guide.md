@@ -245,6 +245,14 @@ See [Configuration](Configuration.md#associated-files) for how associated files 
 
 See [Configuration](Configuration.md#output-folders-and-transfer-modes) for the details and safety rules.
 
+### Watch
+
+- **Watch these folders while TidyTitles is open**, the list of folders (**Add Folder…**, **Remove**), and **Include subfolders**.
+- **When a new file has arrived**: **Review before renaming** (the default) or **Rename automatically when the match is certain**.
+- **Wait until unchanged for**: the settle period in seconds (default 10).
+
+See [Watch folders](#watch-folders) below.
+
 ### Cover Art
 
 - **Download cover art by default**: the starting value of the **Download cover art** checkbox in the main window.
@@ -267,6 +275,24 @@ Files that hold several episodes (`Show.S01E01E02.mkv`) get one name for all of 
 
 - **Check for updates automatically** (on by default): look for a new version shortly after starting and every few hours, and download it in the background. This setting is saved on this computer only, with the window position, not in `config.toml`; the command-line tool does not use it.
 - The installed **Version** and the current update **Status**.
+
+## Watch folders
+
+TidyTitles can notice new media files arriving in folders you choose, such as your downloads folder, and look them up without your adding them. Turn it on in **Settings** → **Watch**: tick **Watch these folders while TidyTitles is open**, add one or more folders, and choose what happens to a new file.
+
+Watching runs **only while TidyTitles is open**. There is no background service and no login item; quitting the app stops watching. (For watching around the clock, see `tidytitles watch` in the [CLI Reference](CLI-Reference.md#watch).)
+
+- **A file is touched only once it has finished arriving**: its size and modification time have not changed for the settle period, and it does not have a temporary download name such as `.part`, `.crdownload`, or `.download`. See [Configuration → Watch folders](Configuration.md#watch-folders) for the full rules.
+- **Review before renaming**: new files are added to the file list and their metadata is fetched, just as if you had added them and clicked **Fetch Metadata**. If a search finds several matches you are asked which one. Nothing is renamed until you click **Rename**.
+- **Rename automatically when the match is certain**: a file is renamed without asking only when the lookup finds exactly one match and nothing already has its new name. Files with several matches, no match, a failed lookup, or a name that is taken are added to the file list for review instead. Automatic renames are in **History** and can be undone there.
+- **While TidyTitles is busy** (fetching, renaming, or with a dialog open), new files wait and are taken as soon as it is free. Adding them starts a new fetch of the whole list, as adding any files does, so matches you changed by hand in the current list are fetched again.
+- **Files already in a folder** when watching starts are left alone. To process them, open the watch activity and click **Process Existing Files**.
+
+**The status bar** shows whether watching is on: **Watching · Review** or **Watching · Automatic** with a green dot, **Watching paused**, or **Watch folder missing** (red) when a folder is not there (for example, a drive is not connected; it is watched again when it comes back). It also shows how many files are arriving, and a badge counts what happened since you last looked. **Pause** stops watching until you click **Resume** or restart the app; files that arrived while paused are picked up on resume.
+
+**Watch Activity** (click the status-bar indicator) lists what the watcher did since the app started: files **Renamed** automatically, files added **For review** and why, files **Skipped** (gone before they finished arriving, unreadable), lookups **Retrying** after a service failure and when they are tried next, and **Folders** that went missing or came back. Buttons there process the files that were already in the folders, retry failed lookups now, and open the Watch settings. The log is kept until you quit; automatic renames stay in History.
+
+When files are renamed automatically or wait for review while the TidyTitles window is in the background, a notification says so.
 
 ## Updates
 

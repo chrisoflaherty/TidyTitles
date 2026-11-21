@@ -101,6 +101,13 @@ language = "en-US"
 [write_metadata]
 music_tags = false
 nfo = false
+
+[watch]
+enabled = false
+folders = []
+recursive = true
+mode = "review"
+settle_seconds = 10
 `;
 
 describe("directory resolution", () => {
@@ -208,6 +215,7 @@ describe("settings", () => {
       tv: { episodeOrder: "aired" },
       metadata: { language: "en-US" },
       writeMetadata: { musicTags: false, nfo: false },
+      watch: { enabled: false, folders: [], recursive: true, mode: "review", settleSeconds: 10 },
     });
   });
 

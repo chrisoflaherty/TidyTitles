@@ -15,7 +15,7 @@ import type {
 } from "../../shared/ipc";
 
 export type Modal =
-  | { kind: "settings"; tab?: "output" }
+  | { kind: "settings"; tab?: "output" | "watch" }
   | { kind: "history" }
   | { kind: "confirmRename" }
   | { kind: "confirmUndo" }
@@ -28,7 +28,9 @@ export type Modal =
   /** "Change Match" for a file in the list. */
   | { kind: "changeMatch"; fileId: number }
   /** "Edit New Name" for a file in the list. */
-  | { kind: "editName"; fileId: number };
+  | { kind: "editName"; fileId: number }
+  /** What the watch folders did. */
+  | { kind: "watchActivity" };
 
 export interface UiState {
   app: AppState | null;

@@ -68,4 +68,6 @@ startApp({
     },
     isFocused: () => feedback.focused,
   },
+  // Watch folders are rescanned every second (file-system events still apply).
+  watchTimings: { rescanMs: 1_000, pollingRescanMs: 1_000, checkMs: 250 },
 });

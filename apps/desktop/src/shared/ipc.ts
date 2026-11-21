@@ -32,6 +32,9 @@ import type {
   NfoWriteResult,
   TagUndoOutcome,
   TagWriteResult,
+  WatchFolderInfo,
+  WatchMode,
+  WatchReviewReason,
 } from "@tidytitles/core";
 
 /** Request/response channels (renderer -> main, `ipcRenderer.invoke`). */
@@ -66,6 +69,13 @@ export const IPC = {
   clearMatch: "match:clear",
   getEditableName: "name:get",
   setFileName: "name:set",
+  getWatchState: "watch:get",
+  takeWatchArrivals: "watch:take",
+  setWatchPaused: "watch:set-paused",
+  processExistingWatchFiles: "watch:process-existing",
+  retryWatchNow: "watch:retry-now",
+  getWatchActivity: "watch:activity",
+  chooseWatchFolder: "dialog:choose-watch-folder",
 } as const;
 
 /** Event channels (main -> renderer, `webContents.send`). */
@@ -77,6 +87,7 @@ export const EVENTS = {
   menuCommand: "event:menu-command",
   updateState: "event:update-state",
   pathsOpened: "event:paths-opened",
+  watchState: "event:watch-state",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -102,7 +113,7 @@ export interface FileEntry {
 }
 
 /** What main is doing right now (null: idle). */
-export type BusyKind = "adding" | "fetching" | "renaming" | "undoing" | "saving" | "correcting";
+export type BusyKind = "adding" | "fetching" | "renaming" | "undoing" | "saving" | "correcting" | "watching";
 
 /** Toolbar options for the next fetch / rename. */
 export interface RunOptions {
@@ -218,6 +229,8 @@ export interface EventPayloads {
    * command line) and wait in main; take them with `takeOpenedPaths`.
    */
   [EVENTS.pathsOpened]: null;
+  /** The watch folders' state changed (see `WatchViewState`). */
+  [EVENTS.watchState]: WatchViewState;
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +406,8 @@ export interface EditableSettings {
   metadata: Settings["metadata"];
   /** `[write_metadata]`: tags into music files, NFO files. */
   writeMetadata: Settings["writeMetadata"];
+  /** `[watch]`: watch folders. */
+  watch: Settings["watch"];
 }
 
 /** A metadata language the settings offer: its code (stored) and English name. */
@@ -569,4 +584,88 @@ export interface TidyTitlesApi {
   onSelectionClosed(listener: (event: { id: string }) => void): Unsubscribe;
   onMenuCommand(listener: (command: MenuCommand) => void): Unsubscribe;
   onPathsOpened(listener: () => void): Unsubscribe;
+  /** The watch folders' state, pushed on every change. */
+  getWatchState(): Promise<WatchViewState>;
+  onWatchState(listener: (state: WatchViewState) => void): Unsubscribe;
+  /**
+   * Take the files that finished arriving in the watch folders, when the
+   * window would accept a drop now (`accept`). Main checks again that it is
+   * idle; otherwise they keep waiting.
+   */
+  takeWatchArrivals(accept: boolean): Promise<WatchTakeOutcome>;
+  /** Pause or resume watching (until the app quits). */
+  setWatchPaused(paused: boolean): Promise<void>;
+  /** Treat the files already in the watch folders as new arrivals; resolves to how many. */
+  processExistingWatchFiles(): Promise<number>;
+  /** Try files whose lookups failed now, without waiting. */
+  retryWatchNow(): Promise<void>;
+  /** What the watcher did, most recent first. */
+  getWatchActivity(): Promise<WatchActivityEntry[]>;
+  /** Pick a folder to watch; null when canceled. */
+  chooseWatchFolder(current?: string): Promise<string | null>;
 }
+
+// ---------------------------------------------------------------------------
+// Watch folders
+// ---------------------------------------------------------------------------
+
+export const WATCH_MODE_CHOICES = ["review", "automatic"] as const satisfies readonly WatchMode[];
+/** Bounds of `[watch] settle_seconds` (core's SETTLE_SECONDS_RANGE). */
+export const SETTLE_SECONDS_RANGE = { min: 2, max: 3_600 } as const;
+/** core's MAX_WATCH_FOLDERS. */
+export const MAX_WATCH_FOLDERS = 50;
+
+/** One line of the watch activity log. */
+export interface WatchActivityEntry {
+  id: number;
+  /** Epoch milliseconds. */
+  time: number;
+  /**
+   * - "renamed": renamed automatically (in the history, can be undone)
+   * - "review": added to the list for review (`reason` says why)
+   * - "skipped": left alone (gone before it finished, unreadable)
+   * - "retry": the lookup failed; tried again later
+   * - "folder": a watch folder went missing, came back, or cannot be read
+   * - "info": watching started, paused, or resumed
+   */
+  kind: "renamed" | "review" | "skipped" | "retry" | "folder" | "info";
+  /** The file or folder. */
+  path: string;
+  /** The new path (renamed) or planned one (review). */
+  destination?: string;
+  reason?: WatchReviewReason;
+  /** A sentence for display. */
+  text: string;
+}
+
+/** The watch folders as the window shows them. */
+export interface WatchViewState {
+  /** `[watch] enabled` with at least one folder. */
+  enabled: boolean;
+  /** Paused by the user (until the app quits). */
+  paused: boolean;
+  mode: WatchMode;
+  folders: WatchFolderInfo[];
+  /** New files still being written or not yet unchanged for the settle period. */
+  arriving: number;
+  /** Downloads under temporary names. */
+  temporary: number;
+  /** Finished files waiting for the app to be free. */
+  waiting: number;
+  /** Files whose lookup failed, waiting until `retryAt` (epoch ms). */
+  retrying: number;
+  retryAt: number | null;
+  /** Media files that were already in the folders (left alone). */
+  existing: number;
+  /** Since the app started. */
+  totals: { renamed: number; review: number; skipped: number };
+  /** Entries in the activity log (grows; the renderer compares it to what it has seen). */
+  activityCount: number;
+  latest: WatchActivityEntry | null;
+}
+
+export type WatchTakeOutcome =
+  | { kind: "nothing" }
+  /** Not taken now (busy, or the window would not accept a drop); they keep waiting. */
+  | { kind: "busy" }
+  | { kind: "done"; renamed: number; review: number };

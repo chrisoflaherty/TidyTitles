@@ -114,6 +114,22 @@ export function undoNotification(outcome: UndoOutcome): FeedbackNotification | n
 }
 
 /**
+ * The notification after files from the watch folders were renamed
+ * automatically or added to the list for review, or null for nothing.
+ */
+export function watchNotification(summary: { renamed: number; review: number }): FeedbackNotification | null {
+  const { renamed, review } = summary;
+  if (renamed === 0 && review === 0) return null;
+  if (renamed === 0) {
+    return { title: "New Files to Review", body: `${plural(review, "new file")} from the watch folders ${review === 1 ? "is" : "are"} ready for review.` };
+  }
+  return {
+    title: "New Files Renamed",
+    body: `Renamed ${plural(renamed, "new file")} from the watch folders${review > 0 ? `; ${COUNT.format(review)} ${review === 1 ? "waits" : "wait"} for review` : ""}.`,
+  };
+}
+
+/**
  * Feeds state and progress events to the sink. The icon's progress follows
  * the task in `AppState.busy`, so it is cleared whenever the task ends,
  * however it ends (done, failed, canceled).
@@ -153,6 +169,11 @@ export class TaskFeedback {
 
   undoFinished(outcome: UndoOutcome): void {
     this.notifyInBackground(undoNotification(outcome));
+  }
+
+  /** Files from the watch folders were renamed or wait for review. */
+  watchFinished(summary: { renamed: number; review: number }): void {
+    this.notifyInBackground(watchNotification(summary));
   }
 
   /** Clear the icon (the window is going away). */

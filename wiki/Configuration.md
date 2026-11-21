@@ -11,6 +11,7 @@ TidyTitles keeps its settings in a TOML file, `config.toml`, and the record of r
 - [Cover art](#cover-art)
 - [Writing tags into music files](#writing-tags-into-music-files)
 - [NFO files](#nfo-files)
+- [Watch folders](#watch-folders)
 - [Environment variables](#environment-variables)
 - [Using a different settings folder](#using-a-different-settings-folder)
 - [Rename history](#rename-history)
@@ -109,9 +110,16 @@ language = "en-US"
 [write_metadata]
 music_tags = false
 nfo = false
+
+[watch]
+enabled = false
+folders = []
+recursive = true
+mode = "review"
+settle_seconds = 10
 ```
 
-`[output]`, `[history]`, and `[write_metadata]` are TidyTitles additions; the old Python app ignores them.
+`[output]`, `[history]`, `[tv]`, `[metadata]`, `[write_metadata]`, and `[watch]` were added after the original layout; a file without them loads with the defaults.
 
 Every key is optional; a missing key takes its default. Booleans also accept `1`/`0` and strings such as `"yes"`/`"no"`. Unknown sections and keys are ignored when reading.
 
@@ -222,6 +230,18 @@ The CLI can override both for one run with `--order` and `--language`.
 
 Both are off unless you turn them on: in the app, **Settings** → **Files** → **Write metadata**; in the CLI, `--write-tags` and `--write-nfo` (and `--no-write-tags`, `--no-write-nfo`) override them for one run.
 
+### Watch
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `watch.enabled` | `false` | The desktop app watches `folders` while it is open. The CLI's `watch` command ignores this key (running the command is the decision). |
+| `watch.folders` | `[]` | Folders to watch, as absolute paths, for example `["/Users/me/Downloads"]` or `["C:\\Users\\Me\\Downloads"]`. At most 50. |
+| `watch.recursive` | `true` | Files in subfolders count too. |
+| `watch.mode` | `review` | `review` or `automatic`; see [Watch folders](#watch-folders). The CLI renames automatically only with `--auto`. |
+| `watch.settle_seconds` | `10` | How long, 2 to 3,600 seconds, a new file's size and modification time must stay unchanged before it is touched. |
+
+Files without the table load with these defaults.
+
 ## Output folders and transfer modes
 
 In the desktop app these are **Settings** → **Output**, plus the **Transfer** menu and **Output** button in the main window. In the CLI, `--output` and `--transfer` override them for one run.
@@ -324,6 +344,36 @@ Each file is UTF-8 with an XML declaration and a `<!-- Written by TidyTitles -->
 - **Undo** removes the NFO files the rename created, if they are unchanged since. A replaced file, or one you edited afterward, is left in place. `tvshow.nfo` is removed only when no video is left in the show's folder (or two folders below it) after the undo, because other episodes use it.
 - **Dry run** lists the files that would be written.
 
+## Watch folders
+
+A watch folder is a folder, such as a downloads folder, where TidyTitles notices new media files and looks them up without your adding them. Watching is off until you turn it on: **Settings** → **Watch** in the desktop app, or the `tidytitles watch` command. The desktop app watches **only while it is open**; there is no background service and no login item, so quitting the app stops watching. For around-the-clock watching on a server, run `tidytitles watch` (for example under your system's service manager).
+
+**When a file has finished arriving.** A file being copied or downloaded is never touched. A new file is handed on only when:
+
+- its size and modification time have not changed for the settle period (`settle_seconds`, 10 seconds by default; use a longer one for slow network shares or copies that stall);
+- its name is not a temporary download name: names ending in `.part`, `.partial`, `.crdownload` (Chrome, Edge), `.download` (Safari), `.opdownload` (Opera), `.!qB` (qBittorrent), `.!ut`, `.!bt`, `.bc!`, `.jc!`, `.dtapart`, `.aria2`, `.xltd`, `.td`, `.filepart` (WinSCP), `.!sync`, `.tmp`, `.temp`, `.crswap`, macOS "safe save" names (`.sb-…`), hidden names starting with `.` (rsync and Syncthing temporaries), `~$` lock files, and names ending in `~`. The finished file is picked up under its final name. Folders with such names (Safari's `Movie.mkv.download`), hidden folders, and system folders (`@eaDir`, `#recycle`, `$RECYCLE.BIN`, `System Volume Information`, `lost+found`) are not looked into;
+- no companion that marks it as unfinished sits next to it: `Movie.mkv.part` (Firefox writes an empty `Movie.mkv` first), `Movie.mkv.aria2`, `.crdownload`, `.!qB`, `.!ut`, or `.filepart`;
+- on macOS, Finder is not still copying it (Finder gives a file it is copying the creation date January 24, 1984).
+
+**Review mode** (the default): new files are looked up and wait for you. In the desktop app they are added to the file list and fetched, exactly as if you had added them and clicked **Fetch Metadata**, including the question when a search finds several matches; you rename them as usual. The CLI reports them and renames nothing.
+
+**Automatic mode**: a file is renamed without asking only when all of these hold; otherwise it waits for review and nothing about it changes on disk:
+
+1. The lookup found **exactly one** candidate: a movie or show search with a single result (and, for TV, the episode was found), a music search with a single result, or music tags that MusicBrainz confirmed. A search with several results is never resolved by taking the first one. Music tags MusicBrainz could not confirm wait too.
+2. The new name is free: nothing exists at the new name, or at the new name of any of its subtitles and other associated files, and no other new file wants the same name. This holds whatever **When a file already exists** (`conflict_resolution`) says: automatic renames never replace a file and never add a number; such files go to review, where your setting applies.
+3. The naming template could be filled in, and a hard link (in hard-link mode) is possible.
+4. It is still the file that finished arriving (same size, modification time, and identity), checked again right before renaming, and its associated files have not changed within the settle period.
+
+Automatic renames use everything a normal rename uses: the output folders, the transfer mode (move, copy, hard link), associated files, and cover art. They are saved in the [rename history](#rename-history), one entry per batch, so they can be undone like any rename.
+
+**Lookups that fail** because a service is down, rate-limits, or rejects the key are tried again later, not in a loop: after 30 seconds, then 1, 2, 4 minutes and so on, up to 30 minutes between tries. New files that arrive meanwhile wait for the same retry, so a service that is down is asked once per wait. A lookup that cannot succeed by retrying (no episodes in the chosen order) goes to review.
+
+**Files already there.** Files that are in a folder when watching starts are left alone. So are the files found in a folder that went missing and came back (an unplugged drive or a disconnected share): TidyTitles cannot tell what arrived while it was away. To process them anyway, use **Process Existing Files** in the desktop app's Watch Activity, or `tidytitles watch --existing`.
+
+**No loops.** A file TidyTitles renamed inside a watched folder is not picked up again, in either mode, and neither is a file moved back by undo: files are recognized by their identity (device, inode, size, and modification time), and the identities in the rename history count too, so a file renamed by the other front end is recognized as well. Output folders inside a watched folder are never watched.
+
+**How changes are found.** Each watched folder is rescanned (its listing, not the files' contents) every 30 seconds, and the operating system's change notifications only make the next rescan happen sooner. Network shares (SMB, NFS) usually do not report changes made by other computers, so on them new files are found by the rescan, within about 30 seconds plus the settle period. A watched folder that disappears is checked again every 10 seconds and watched again when it comes back. Folders and files that cannot be read are reported and skipped; watching goes on.
+
 ## Environment variables
 
 Every setting can also come from an environment variable named `FILE_RENAMER_` plus the setting's name, with `__` (two underscores) between a section and a key. Names are not case-sensitive.
@@ -344,6 +394,8 @@ Every setting can also come from an environment variable named `FILE_RENAMER_` p
 | `FILE_RENAMER_METADATA__LANGUAGE` | `metadata.language` |
 | `FILE_RENAMER_WRITE_METADATA__MUSIC_TAGS` | `write_metadata.music_tags` |
 | `FILE_RENAMER_WRITE_METADATA__NFO` | `write_metadata.nfo` |
+| `FILE_RENAMER_WATCH__ENABLED` | `watch.enabled` (also `__RECURSIVE`, `__MODE`, `__SETTLE_SECONDS`) |
+| `FILE_RENAMER_WATCH__FOLDERS` | `watch.folders`: a JSON array such as `["/srv/in","/srv/more"]`, or a single folder |
 
 The `[behavior]` and `[providers]` settings use flat names without a section: `FILE_RENAMER_CONFLICT_RESOLUTION`, `FILE_RENAMER_DRY_RUN`, `FILE_RENAMER_MOVIE_PROVIDER`, `FILE_RENAMER_TV_PROVIDER`, `FILE_RENAMER_MUSIC_PROVIDER`. A whole section can also be given as JSON, for example `FILE_RENAMER_API='{"tmdb_api_key": "..."}'`; the `__` variables win over the JSON.
 

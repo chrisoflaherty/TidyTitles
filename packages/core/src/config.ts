@@ -62,6 +62,13 @@
  * [write_metadata]
  * music_tags = false          # write the match's tags into renamed music files
  * nfo = false                 # write NFO files for Kodi, Jellyfin, and Emby
+ *
+ * [watch]                     # see watchConfig.ts
+ * enabled = false
+ * folders = []
+ * recursive = true
+ * mode = "review"             # "review" or "automatic"
+ * settle_seconds = 10
  * ```
  *
  * `[output]` and `[history]` are TidyTitles additions (the Python app
@@ -138,6 +145,7 @@ import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 import { DEFAULT_EPISODE_ORDER, EPISODE_ORDERS, type EpisodeOrder } from "./episodeOrder";
 import { ConfigError } from "./errors";
+import { watchFromRaw, watchSchema, watchToTomlLines, type WatchSettings } from "./watchConfig";
 import { DEFAULT_METADATA_LANGUAGE, isMetadataLanguageCode } from "./languages";
 import type { RenameOperation } from "./models";
 import { DEFAULT_WRITE_METADATA, type CreatedFileRecord, type WriteMetadataSettings } from "./metadataWrite";
@@ -249,6 +257,8 @@ export interface Settings {
   metadata: MetadataSettings;
   /** `[write_metadata]`: tags into music files, NFO files for media servers. */
   writeMetadata: WriteMetadataSettings;
+  /** `[watch]`: watch folders (see watchConfig.ts). */
+  watch: WatchSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +366,7 @@ const settingsSchema = z.object({
   tv: tvSchema.prefault({}),
   metadata: metadataSchema.prefault({}),
   write_metadata: writeMetadataSchema.prefault({}),
+  watch: watchSchema.prefault({}),
 });
 
 type RawSettings = z.output<typeof settingsSchema>;
@@ -371,6 +382,7 @@ const NESTED_FIELDS = new Set([
   "tv",
   "metadata",
   "write_metadata",
+  "watch",
 ]);
 const SCALAR_FIELDS = new Set([
   "dry_run",
@@ -426,6 +438,7 @@ function fromRaw(raw: RawSettings): Settings {
     tv: { episodeOrder: raw.tv.episode_order },
     metadata: { language: raw.metadata.language },
     writeMetadata: { musicTags: raw.write_metadata.music_tags, nfo: raw.write_metadata.nfo },
+    watch: watchFromRaw(raw.watch),
   };
 }
 
@@ -453,7 +466,18 @@ function deepMerge(base: Dict, override: Dict): Dict {
 /** Map the config.toml structure onto the flat settings fields (Python `load`). */
 function configDataFromToml(rawConfig: Dict): Dict {
   const data: Dict = {};
-  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history", "tv", "metadata", "write_metadata"]) {
+  for (const section of [
+    "templates",
+    "api",
+    "associated_files",
+    "cover_art",
+    "output",
+    "history",
+    "tv",
+    "metadata",
+    "write_metadata",
+    "watch",
+  ]) {
     if (section in rawConfig) data[section] = rawConfig[section];
   }
   const behavior = rawConfig.behavior;
@@ -638,6 +662,8 @@ export function settingsToToml(settings: Settings): string {
     "[write_metadata]",
     `music_tags = ${s.writeMetadata.musicTags}`,
     `nfo = ${s.writeMetadata.nfo}`,
+    "",
+    ...watchToTomlLines(s.watch, tomlString),
   ];
   return lines.join("\n") + "\n";
 }

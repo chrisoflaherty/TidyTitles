@@ -58,6 +58,7 @@ import {
 } from "./openPaths";
 import { TaskFeedback, electronProgressArgs, type FeedbackNotification, type FeedbackSink } from "./taskFeedback";
 import { AppController, type SessionOverrides } from "./controller";
+import { WatchManager } from "./watchManager";
 import { REPO_URL, applyMenuState, buildMenuTemplate } from "./menu";
 import { PREFERENCES_FILE, loadPreferences, savePreferences } from "./preferences";
 import { UpdateController, resolveUpdateCapability, type UpdateEngine } from "./updater";
@@ -85,6 +86,7 @@ import {
   parseTimestamp,
 } from "./validate";
 import { parseFileId, parseMatchChoice, parseMatchQuery, parseNewName } from "./validate";
+import { parsePaused } from "./validate";
 import { MIN_SIZE, fitToDisplays, loadWindowState, saveWindowState } from "./windowState";
 
 export interface StartOptions {
@@ -100,6 +102,8 @@ export interface StartOptions {
    * taskbar flash, and the focus check (the e2e build records them instead).
    */
   feedback?: Partial<Pick<FeedbackSink, "notify" | "requestAttention" | "isFocused">>;
+  /** Test builds only: shorter watch-folder rescans. */
+  watchTimings?: { rescanMs?: number; pollingRescanMs?: number; checkMs?: number };
 }
 
 /**
@@ -270,6 +274,14 @@ function startMain(
     sessionOverrides: options.sessionOverrides,
   });
 
+  // Watch folders, while the app is open (watchManager.ts).
+  const watch = new WatchManager({
+    controller,
+    emit: (state) => send(EVENTS.watchState, state),
+    finished: (summary) => feedback.watchFinished(summary),
+    ...(options.watchTimings ? { timings: options.watchTimings } : {}),
+  });
+
   // -------------------------------------------------------------------------
   // Security policy for every web contents
   // -------------------------------------------------------------------------
@@ -355,6 +367,8 @@ function startMain(
   handle(IPC.rename, async () => {
     const outcome = await controller.rename();
     feedback.renameFinished(outcome);
+    // Renamed files in a watch folder are not new arrivals.
+    if (outcome.kind === "done") await watch.noteRenamed(controller.getState().operations).catch(() => undefined);
     return outcome;
   });
   handle(IPC.undo, async () => {
@@ -364,7 +378,11 @@ function startMain(
   });
   handle(IPC.getSettings, () => controller.getSettingsPayload());
   handle(IPC.previewTemplates, (templates) => controller.previewTemplates(parseTemplates(templates)));
-  handle(IPC.saveSettings, (settings) => controller.saveSettings(parseEditableSettings(settings)));
+  handle(IPC.saveSettings, async (settings) => {
+    const result = await controller.saveSettings(parseEditableSettings(settings));
+    if (result.ok) await watch.apply();
+    return result;
+  });
   handle(IPC.getMatchContext, (fileId) => controller.getMatchContext(parseFileId(fileId)));
   handle(IPC.searchMatches, (fileId, query) => controller.searchMatches(parseFileId(fileId), parseMatchQuery(query)));
   handle(IPC.chooseMatch, (searchId, index, options) => {
@@ -415,6 +433,27 @@ function startMain(
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!;
   });
   handle(IPC.getHistory, () => controller.getHistory());
+
+  // Watch folders.
+  handle(IPC.getWatchState, () => watch.getState());
+  handle(IPC.takeWatchArrivals, (accept) => watch.take(parseAccept(accept)));
+  handle(IPC.setWatchPaused, (paused) => watch.setPaused(parsePaused(paused)));
+  handle(IPC.processExistingWatchFiles, () => watch.processExisting());
+  handle(IPC.retryWatchNow, () => watch.retryNow());
+  handle(IPC.getWatchActivity, () => watch.getActivity());
+  handle(IPC.chooseWatchFolder, async (current) => {
+    const start = parseOptionalFolder(current);
+    const dialogOptions: OpenDialogOptions = {
+      title: "Choose Folder to Watch",
+      buttonLabel: "Watch",
+      properties: ["openDirectory", "createDirectory"],
+      ...(start && existsSync(start) ? { defaultPath: start } : {}),
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!;
+  });
   handle(IPC.undoEntry, async (timestamp) => {
     const outcome = await controller.undoEntry(parseTimestamp(timestamp));
     feedback.undoFinished(outcome);
@@ -588,7 +627,7 @@ function startMain(
 
     win.on("close", (event) => {
       const busy = controller.getState().busy;
-      if (busy === "renaming" || busy === "undoing") {
+      if (busy === "renaming" || busy === "undoing" || busy === "watching") {
         event.preventDefault();
         void messageBox({
           type: "warning",
@@ -691,6 +730,7 @@ function startMain(
     });
     installMenu();
     await controller.init();
+    await watch.apply().catch((error: unknown) => console.error("[watch] could not start:", error));
     updates = await createUpdates();
     await ensureWindow();
     started = true;
@@ -699,7 +739,10 @@ function startMain(
     updates.start();
   });
 
-  app.on("will-quit", () => updates?.dispose());
+  app.on("will-quit", () => {
+    updates?.dispose();
+    watch.dispose();
+  });
 
   // -------------------------------------------------------------------------
   // Updates
