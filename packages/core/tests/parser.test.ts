@@ -236,7 +236,9 @@ describe("GuessItParser parity with guessit", () => {
   const parser = new GuessItParser();
 
   it.each(GUESSIT_CASES)("%s", (filename, expected) => {
-    expect(parser.parse(filename)).toEqual({ ...expected, rawFilename: filename });
+    // Edition, audio, and HDR are checked in releaseDetails.test.ts.
+    const { edition: _e, audioCodec: _a, audioChannels: _c, hdr: _h, ...info } = parser.parse(filename);
+    expect(info).toEqual({ ...expected, rawFilename: filename });
   });
 
   it("covers a broad slice of the corpus", () => {

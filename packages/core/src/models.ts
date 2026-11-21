@@ -48,6 +48,14 @@ export interface ParsedInfo {
   source?: string;
   codec?: string;
   group?: string;
+  /** Edition, such as "Director's Cut" or "Extended, Remastered". */
+  edition?: string;
+  /** Audio codec, such as "Dolby Digital Plus" or "Dolby TrueHD, Dolby Atmos". */
+  audioCodec?: string;
+  /** Audio channels, such as "5.1". */
+  audioChannels?: string;
+  /** HDR format, such as "HDR10" or "Dolby Vision, HDR10". */
+  hdr?: string;
   rawFilename: string;
 }
 
@@ -145,6 +153,10 @@ export interface ParsedMusicInfo {
   discNumber?: number;
   genre?: string;
   durationMs?: number;
+  /** Number of tracks on the album, from the "track N of M" tag. */
+  totalTracks?: number;
+  /** Number of discs in the album, from the "disc N of M" tag. */
+  totalDiscs?: number;
   rawFilename: string;
   /** Where the info came from: "tags", "filename", or "unknown". */
   source: string;

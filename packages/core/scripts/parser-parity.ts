@@ -9,6 +9,9 @@
  * Requires python3 with guessit installed. The Python source is found at
  * ../../src relative to this package (override with TIDYTITLES_PY_SRC).
  * --json writes the guessit results to OUT for building test fixtures.
+ *
+ * scripts/parser-corpus-release.txt adds names rich in edition, audio, and
+ * HDR tags: run it with --corpus to check those fields more thoroughly.
  */
 
 import { execFileSync } from "node:child_process";
@@ -41,6 +44,10 @@ const FIELDS = [
   "source",
   "codec",
   "group",
+  "edition",
+  "audioCodec",
+  "audioChannels",
+  "hdr",
 ] as const;
 type Field = (typeof FIELDS)[number];
 const KEY_FIELDS: readonly Field[] = ["mediaType", "title", "year", "season", "episode"];
@@ -90,7 +97,7 @@ names.forEach((name, i) => {
     if (a === b) {
       agree[field] = (agree[field] ?? 0) + 1;
     } else {
-      diffs.push(`    ${field.padEnd(12)} guessit=${fmt(a)}  ts=${fmt(b)}`);
+      diffs.push(`    ${field.padEnd(13)} guessit=${fmt(a)}  ts=${fmt(b)}`);
       if (KEY_FIELDS.includes(field)) keyOk = false;
     }
   }
@@ -107,8 +114,8 @@ console.log("");
 console.log(`Per-field agreement over ${total} filenames:`);
 for (const field of fields) {
   const count = agree[field] ?? 0;
-  console.log(`  ${field.padEnd(12)} ${String(count).padStart(4)}/${total}  ${pct(count)}`);
+  console.log(`  ${field.padEnd(13)} ${String(count).padStart(4)}/${total}  ${pct(count)}`);
 }
 console.log(
-  `  ${"key fields".padEnd(12)} ${String(allKeyAgree).padStart(4)}/${total}  ${pct(allKeyAgree)}  (mediaType, title, year, season, episode all agree)`,
+  `  ${"key fields".padEnd(13)} ${String(allKeyAgree).padStart(4)}/${total}  ${pct(allKeyAgree)}  (mediaType, title, year, season, episode all agree)`,
 );

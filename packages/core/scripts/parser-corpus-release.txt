@@ -1,0 +1,57 @@
+# Names rich in edition, audio, and HDR tags, for checking those fields:
+#   npx tsx scripts/parser-parity.ts --corpus scripts/parser-corpus-release.txt
+Heat.1995.1080p.BluRay.DTS-HD.MA.5.1.x264-GRP.mkv
+Alien.1979.Directors.Cut.1080p.BluRay.DTS-HD.MA.7.1.x264-GRP.mkv
+Collateral.2004.1080p.BluRay.DTS.x264-GRP.mkv
+Dune.2021.1080p.BluRay.DTS-X.7.1.x264-GRP.mkv
+Tenet.2020.2160p.UHD.BluRay.TrueHD.7.1.Atmos.HDR.x265-GRP.mkv
+Arrival.2016.2160p.UHD.BluRay.TrueHD.Atmos.7.1.HDR10.x265-GRP.mkv
+Wonka.2023.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GRP.mkv
+Barbie.2023.2160p.WEB-DL.DD+5.1.HDR10+.H.265-GRP.mkv
+Nope.2022.2160p.WEB-DL.EAC3.5.1.H.265-GRP.mkv
+Arrival.2016.2160p.UHD.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1-GRP.mkv
+Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.H.265-GRP.mkv
+Oppenheimer.2023.2160p.UHD.BluRay.REMUX.DV.HDR.HEVC.TrueHD.Atmos.7.1-GRP.mkv
+Up.2009.1080p.WEB-DL.AAC2.0.H.264-GRP.mkv
+Coco.2017.1080p.WEB-DL.AAC.2.0.H.264-GRP.mkv
+Jaws.1975.1080p.BluRay.AC3.x264-GRP.mkv
+Fargo.1996.1080p.BluRay.DD5.1.x264-GRP.mkv
+Amelie.2001.1080p.BluRay.FLAC.2.0.x264-GRP.mkv
+Akira.1988.1080p.BluRay.LPCM.2.0.x264-GRP.mkv
+Parasite.2019.1080p.BluRay.Opus.5.1.x265-GRP.mkv
+Clerks.1994.720p.BluRay.MP3.x264-GRP.mkv
+Brazil.1985.1080p.BluRay.DTS5.1.x264-GRP.mkv
+Gravity.2013.1080p.BluRay.TrueHD7.1.x264-GRP.mkv
+Speed.1994.1080p.BluRay.AC3.5.1.x264-GRP.mkv
+Ronin.1998.1080p.BluRay.EAC3.x264-GRP.mkv
+Hereditary.2018.1080p.BluRay.TrueHD.x264-GRP.mkv
+Midsommar.2019.Directors.Cut.1080p.WEB-DL.DDP5.1.H.264-GRP.mkv
+Kingdom.of.Heaven.2005.Director's.Cut.1080p.BluRay.x264-GRP.mkv
+Aliens.1986.EXTENDED.1080p.BluRay.x264-GRP.mkv
+The.Lord.of.the.Rings.The.Two.Towers.2002.Extended.Edition.1080p.BluRay.x264-GRP.mkv
+Watchmen.2009.Extended.Cut.1080p.BluRay.x264-GRP.mkv
+Amadeus.1984.Theatrical.Cut.1080p.BluRay.x264-GRP.mkv
+Anchorman.2004.UNRATED.1080p.BluRay.x264-GRP.mkv
+Apocalypse.Now.1979.Uncut.1080p.BluRay.x264-GRP.mkv
+Vertigo.1958.REMASTERED.1080p.BluRay.x264-GRP.mkv
+Seven.Samurai.1954.Criterion.1080p.BluRay.x264-GRP.mkv
+Avatar.2009.Special.Edition.1080p.BluRay.x264-GRP.mkv
+Cube.1997.Limited.1080p.BluRay.x264-GRP.mkv
+Dunkirk.2017.IMAX.1080p.BluRay.x264-GRP.mkv
+Terminator.2.1991.Collectors.Edition.1080p.BluRay.x264-GRP.mkv
+Ghostbusters.1984.Extended.Remastered.1080p.BluRay.x264-GRP.mkv
+Brazil (1985) Directors Cut 1080p.mkv
+Blade Runner (1982) Director's Cut.mkv
+Aliens (1986) Extended 1080p.mkv
+Severance.S01E01.2160p.ATVP.WEB-DL.DDP5.1.Atmos.DV.H.265-GRP.mkv
+The.Bear.S02E06.1080p.HULU.WEB-DL.DDP5.1.H.264-GRP.mkv
+Succession.S04E10.1080p.AMZN.WEB-DL.DDP2.0.H.264-GRP.mkv
+The.Office.US.S02E01.720p.HDTV.AAC.x264-GRP.mkv
+Shogun.2024.S01E01.2160p.DSNP.WEB-DL.DDP5.1.HDR.H.265-GRP.mkv
+House.of.the.Dragon.S02E01.2160p.HMAX.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GRP.mkv
+Movie.Name.2010.2160p.HDR.mkv
+Movie.Name.2010.2160p.10bit.HDR.mkv
+Movie.Name.2010.2160p.DV.mkv
+Movie.Name.2010.1080p.DTS-HDMA.5.1.mkv
+Movie.Name.2010.1080p.DDP.5.1.mkv
+Movie.Name.2010.1080p.DDP.Atmos.mkv
