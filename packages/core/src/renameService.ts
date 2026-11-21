@@ -62,6 +62,7 @@ import {
   type ProgressCallback,
 } from "./renamer";
 import { scanDirectory, type ScanOptions } from "./scan";
+import { CROSS_DEVICE_LINK_MESSAGE, LINK_UNSUPPORTED_MESSAGE } from "./transfer";
 import { TemplateEngine, type TemplateContext } from "./template";
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,10 @@ export interface PlannedMediaFile extends MediaFile {
  * - "same_path": the file already has its target name (set by `executeRename`)
  * - "would_overwrite": the destination exists and overwriting is off, or it is
  *   another file in this batch (set by `executeRename`)
+ * - "cross_device_link": hard-link mode, but the destination is on another
+ *   volume (set by `applyTransferChecks` and `executeRename`)
+ * - "link_unsupported": hard-link mode, but the destination volume has no
+ *   hard links (set by `executeRename`)
  */
 export type SkipReason =
   | "no_match"
@@ -142,7 +147,15 @@ export type SkipReason =
   | "template_error"
   | "duplicate_destination"
   | "same_path"
-  | "would_overwrite";
+  | "would_overwrite"
+  | "cross_device_link"
+  | "link_unsupported";
+
+/**
+ * The folder a file's new name goes into, chosen per file (for example by
+ * the matched media kind); undefined keeps it next to the original.
+ */
+export type DestinationDirResolver = (mediaFile: PlannedMediaFile) => string | undefined;
 
 /** A rename operation produced by `generatePreview`. */
 export interface PlannedOperation extends RenameOperation {
@@ -221,7 +234,7 @@ export interface ProcessOptions {
   /** Treat every non-music file as this media type. */
   forceType?: MediaType;
   /** Put renamed files here instead of next to the originals. */
-  destinationDir?: string;
+  destinationDir?: string | DestinationDirResolver;
   progressCallback?: ProcessProgressCallback;
   signal?: AbortSignal;
 }
@@ -287,6 +300,8 @@ const RENAMER_SKIP_REASONS: Record<string, SkipReason> = {
   "Source and destination are the same": "same_path",
   "Would overwrite existing file": "would_overwrite",
   [BATCH_OVERWRITE_MESSAGE]: "would_overwrite",
+  [CROSS_DEVICE_LINK_MESSAGE]: "cross_device_link",
+  [LINK_UNSUPPORTED_MESSAGE]: "link_unsupported",
 };
 
 export const NO_MATCH_MESSAGE = "No metadata match found";
@@ -940,11 +955,12 @@ export class RenameService {
    * or whose template fails to render) become "skipped" operations whose
    * destination is the source, so they stay visible.
    *
-   * @param destinationDir Put renamed files here; default: next to the original.
+   * @param destinationDir Put renamed files here (one folder, or one per
+   *   file); default: next to the original.
    */
   async generatePreview(
     mediaFiles: readonly PlannedMediaFile[],
-    destinationDir?: string,
+    destinationDir?: string | DestinationDirResolver,
   ): Promise<PlannedOperation[]> {
     const operations: PlannedOperation[] = [];
     const reserved = new Set<string>();
@@ -1023,7 +1039,9 @@ export class RenameService {
         continue;
       }
 
-      const destDir = destinationDir ?? path.dirname(mediaFile.path);
+      const destDir =
+        (typeof destinationDir === "function" ? destinationDir(mediaFile) : destinationDir) ??
+        path.dirname(mediaFile.path);
       const newPath = this.resolveDestination(
         mediaFile.path,
         path.join(destDir, newName),

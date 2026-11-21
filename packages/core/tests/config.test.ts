@@ -81,6 +81,18 @@ tv = "tvdb"
 music = "musicbrainz"
 `;
 
+/** Sections the Python app does not have (it ignores them). */
+const TIDYTITLES_SECTIONS_TOML = `
+[output]
+movie = ""
+tv = ""
+music = ""
+transfer_mode = "move"
+
+[history]
+max_entries = 200
+`;
+
 describe("directory resolution", () => {
   it("matches platformdirs on macOS", () => {
     const ctx = { platform: "darwin" as const, env: {}, homedir: "/Users/test" };
@@ -181,11 +193,13 @@ describe("settings", () => {
       movieProvider: "tmdb",
       tvProvider: "tvdb",
       musicProvider: "musicbrainz",
+      output: { movie: "", tv: "", music: "", transferMode: "move" },
+      history: { maxEntries: 200 },
     });
   });
 
-  it("serializes byte-for-byte like the Python for default settings", () => {
-    expect(settingsToToml(createDefaultSettings())).toBe(PYTHON_DEFAULT_TOML);
+  it("serializes like the Python for default settings, plus the TidyTitles-only sections", () => {
+    expect(settingsToToml(createDefaultSettings())).toBe(PYTHON_DEFAULT_TOML + TIDYTITLES_SECTIONS_TOML);
   });
 
   it("escapes quotes and backslashes so the TOML stays valid", () => {
@@ -295,7 +309,7 @@ overwrite = true
   it("saves defaults when nothing was loaded", async () => {
     const s = service();
     await s.save();
-    expect(await readFile(s.configFile, "utf8")).toBe(PYTHON_DEFAULT_TOML);
+    expect(await readFile(s.configFile, "utf8")).toBe(PYTHON_DEFAULT_TOML + TIDYTITLES_SECTIONS_TOML);
   });
 
   it("does not preserve unknown keys on save (as in the Python)", async () => {
@@ -480,8 +494,10 @@ describe("history", () => {
     expect(raw[1]!.operations[1]).not.toHaveProperty("associated_files");
   });
 
-  it("keeps the 10 most recent entries, newest first", async () => {
+  it("keeps the [history] max_entries most recent entries, newest first", async () => {
+    await writeConfig("[history]\nmax_entries = 10\n");
     const s = service();
+    await s.load();
     for (let i = 0; i < 12; i++) {
       await s.saveHistory([{ source: `/s${i}`, destination: `/d${i}`, associatedFiles: [] }]);
     }

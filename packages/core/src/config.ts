@@ -43,7 +43,19 @@
  * movie = "tmdb"
  * tv = "tvdb"
  * music = "musicbrainz"
+ *
+ * [output]
+ * movie = ""
+ * tv = ""
+ * music = ""
+ * transfer_mode = "move"
+ *
+ * [history]
+ * max_entries = 200
  * ```
+ *
+ * `[output]` and `[history]` are TidyTitles additions (the Python app
+ * ignores them). An empty output folder renames files where they are.
  *
  * Every key is optional when reading; missing keys take the defaults above.
  * Unknown sections and keys are ignored on load and, as in the Python, are not
@@ -51,7 +63,8 @@
  *
  * ## history.json
  *
- * A JSON array of entries, most recent first, at most 10:
+ * A JSON array of entries, most recent first, at most `[history] max_entries`
+ * (default DEFAULT_HISTORY_LIMIT):
  *
  * ```json
  * [
@@ -76,6 +89,12 @@
  * - Only completed operations are recorded, and no status is stored: every
  *   recorded operation is one that was renamed.
  * - `associated_files` may be missing in hand-edited files; it reads as [].
+ * - Entries written by TidyTitles 0.2 and later also carry, on each
+ *   operation and associated file, `fingerprint` ({ dev, ino, size,
+ *   mtime_ns }, all decimal strings: the file right after it was
+ *   transferred) and, for copies and hard links, `transfer` ("copy" or
+ *   "hardlink"; absent means moved). Undo uses them to tell its own files
+ *   from files put at the same path later. Older entries have neither.
  * - The file is written with 2-space indentation and non-ASCII characters
  *   escaped as \uXXXX (Python's `json.dump(..., indent=2)`), so it is pure
  *   ASCII and reads back correctly in Python regardless of the locale encoding.
@@ -104,12 +123,26 @@ import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 import { ConfigError } from "./errors";
 import type { RenameOperation } from "./models";
+import { TRANSFER_MODES, type FileFingerprint, type TransferMode } from "./transfer";
 
 export const APP_NAME = "file-renamer";
 export const ENV_PREFIX = "FILE_RENAMER_";
 export const ENV_NESTED_DELIMITER = "__";
-/** Number of history entries kept. */
-export const MAX_HISTORY_ENTRIES = 10;
+/**
+ * Default number of history entries kept (`[history] max_entries`).
+ *
+ * 200 entries: an entry costs about 0.5 KB per renamed file (paths,
+ * associated files, fingerprints, 2-space indented). With typical batches
+ * of 10 to 50 files that is 1 to 5 MB at most, which parses in well under
+ * 50 ms and is rewritten (atomically) only after a rename or undo. Months
+ * of regular use stay undoable; huge batches are the outliers, and the
+ * limit counts entries, not files, so raise or lower it in config.toml.
+ */
+export const DEFAULT_HISTORY_LIMIT = 200;
+/** Largest accepted `[history] max_entries`. */
+export const MAX_HISTORY_LIMIT = 10_000;
+/** Number of history entries kept by default (formerly a fixed 10). */
+export const MAX_HISTORY_ENTRIES = DEFAULT_HISTORY_LIMIT;
 /** How long `saveHistory` and friends wait for another process's history lock. */
 export const HISTORY_LOCK_TIMEOUT_MS = 10_000;
 /** A history lock file older than this was left behind by a crashed process. */
@@ -147,6 +180,24 @@ export interface CoverArtSettings {
   size: string;
 }
 
+/** Where renamed files go and how they get there (`[output]`). */
+export interface OutputSettings {
+  /** Folder for renamed movies; "" keeps them next to the originals. */
+  movie: string;
+  /** Folder for renamed TV episodes; "" keeps them next to the originals. */
+  tv: string;
+  /** Folder for renamed music; "" keeps it next to the originals. */
+  music: string;
+  /** Move (default), copy, or hard link files to their new names. */
+  transferMode: TransferMode;
+}
+
+/** Rename history (`[history]`). */
+export interface HistorySettings {
+  /** Entries kept in history.json, 1 to MAX_HISTORY_LIMIT. */
+  maxEntries: number;
+}
+
 export interface Settings {
   templates: TemplateSettings;
   api: APISettings;
@@ -160,6 +211,8 @@ export interface Settings {
   movieProvider: string;
   tvProvider: string;
   musicProvider: string;
+  output: OutputSettings;
+  history: HistorySettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +237,13 @@ function coerceBool(value: unknown): unknown {
 }
 
 const bool = (def: boolean) => z.preprocess(coerceBool, z.boolean()).default(def);
+
+/** Integers from the environment arrive as strings. */
+function coerceInt(value: unknown): unknown {
+  if (typeof value === "string" && /^\s*\d+\s*$/.test(value)) return Number(value);
+  if (typeof value === "bigint") return Number(value);
+  return value;
+}
 const str = (def: string) => z.string().default(def);
 
 const templateSchema = z.object({
@@ -213,6 +273,19 @@ const coverArtSchema = z.object({
   size: str("w500"),
 });
 
+const outputSchema = z.object({
+  movie: str(""),
+  tv: str(""),
+  music: str(""),
+  transfer_mode: z.enum(TRANSFER_MODES as [TransferMode, ...TransferMode[]]).default("move"),
+});
+
+const historySchema = z.object({
+  max_entries: z
+    .preprocess(coerceInt, z.number().int().min(1).max(MAX_HISTORY_LIMIT))
+    .default(DEFAULT_HISTORY_LIMIT),
+});
+
 const settingsSchema = z.object({
   templates: templateSchema.prefault({}),
   api: apiSchema.prefault({}),
@@ -225,12 +298,14 @@ const settingsSchema = z.object({
   movie_provider: str("tmdb"),
   tv_provider: str("tvdb"),
   music_provider: str("musicbrainz"),
+  output: outputSchema.prefault({}),
+  history: historySchema.prefault({}),
 });
 
 type RawSettings = z.output<typeof settingsSchema>;
 
 /** Nested (model) fields, which accept JSON and `__` variables from the environment. */
-const NESTED_FIELDS = new Set(["templates", "api", "associated_files", "cover_art"]);
+const NESTED_FIELDS = new Set(["templates", "api", "associated_files", "cover_art", "output", "history"]);
 const SCALAR_FIELDS = new Set([
   "dry_run",
   "overwrite",
@@ -275,6 +350,13 @@ function fromRaw(raw: RawSettings): Settings {
     movieProvider: raw.movie_provider,
     tvProvider: raw.tv_provider,
     musicProvider: raw.music_provider,
+    output: {
+      movie: raw.output.movie,
+      tv: raw.output.tv,
+      music: raw.output.music,
+      transferMode: raw.output.transfer_mode,
+    },
+    history: { maxEntries: raw.history.max_entries },
   };
 }
 
@@ -302,7 +384,7 @@ function deepMerge(base: Dict, override: Dict): Dict {
 /** Map the config.toml structure onto the flat settings fields (Python `load`). */
 function configDataFromToml(rawConfig: Dict): Dict {
   const data: Dict = {};
-  for (const section of ["templates", "api", "associated_files", "cover_art"]) {
+  for (const section of ["templates", "api", "associated_files", "cover_art", "output", "history"]) {
     if (section in rawConfig) data[section] = rawConfig[section];
   }
   const behavior = rawConfig.behavior;
@@ -468,6 +550,15 @@ export function settingsToToml(settings: Settings): string {
     `movie = ${tomlString(s.movieProvider)}`,
     `tv = ${tomlString(s.tvProvider)}`,
     `music = ${tomlString(s.musicProvider)}`,
+    "",
+    "[output]",
+    `movie = ${tomlString(s.output.movie)}`,
+    `tv = ${tomlString(s.output.tv)}`,
+    `music = ${tomlString(s.output.music)}`,
+    `transfer_mode = ${tomlString(s.output.transferMode)}`,
+    "",
+    "[history]",
+    `max_entries = ${s.history.maxEntries}`,
   ];
   return lines.join("\n") + "\n";
 }
@@ -554,6 +645,10 @@ export function resolveCacheDir(ctx: PlatformContext = {}): string {
 export interface HistoryAssociatedFile {
   source: string;
   destination: string;
+  /** How the file was transferred; absent: moved. */
+  transfer?: Exclude<TransferMode, "move">;
+  /** The file right after the transfer; absent in entries from older versions. */
+  fingerprint?: FileFingerprint;
 }
 
 /** One renamed file in a history entry. */
@@ -561,6 +656,43 @@ export interface HistoryOperation {
   source: string;
   destination: string;
   associatedFiles: HistoryAssociatedFile[];
+  /** How the file was transferred; absent: moved. */
+  transfer?: Exclude<TransferMode, "move">;
+  /** The file right after the transfer; absent in entries from older versions. */
+  fingerprint?: FileFingerprint;
+}
+
+/** `transfer` and `fingerprint` of a history record, present only when known. */
+function transferFields(record: RenameOperation["transfer"]): Pick<HistoryOperation, "transfer" | "fingerprint"> {
+  const out: Pick<HistoryOperation, "transfer" | "fingerprint"> = {};
+  if (record && record.mode !== "move") out.transfer = record.mode;
+  if (record?.fingerprint) out.fingerprint = { ...record.fingerprint };
+  return out;
+}
+
+function transferFromDisk(raw: Dict): Pick<HistoryOperation, "transfer" | "fingerprint"> {
+  const out: Pick<HistoryOperation, "transfer" | "fingerprint"> = {};
+  if (raw.transfer === "copy" || raw.transfer === "hardlink") out.transfer = raw.transfer;
+  const f = raw.fingerprint;
+  if (isDict(f) && [f.dev, f.ino, f.size, f.mtime_ns].every((v) => typeof v === "string" && /^\d+$/.test(v))) {
+    out.fingerprint = {
+      dev: f.dev as string,
+      ino: f.ino as string,
+      size: f.size as string,
+      mtimeNs: f.mtime_ns as string,
+    };
+  }
+  return out;
+}
+
+function transferToDisk(record: Pick<HistoryOperation, "transfer" | "fingerprint">): Dict {
+  const out: Dict = {};
+  if (record.transfer) out.transfer = record.transfer;
+  if (record.fingerprint) {
+    const f = record.fingerprint;
+    out.fingerprint = { dev: f.dev, ino: f.ino, size: f.size, mtime_ns: f.mtimeNs };
+  }
+  return out;
 }
 
 /** One batch of renames, most recent first in the history. */
@@ -578,7 +710,9 @@ export function toHistoryOperation(op: RenameOperation): HistoryOperation {
     associatedFiles: op.associatedFiles.map((a) => ({
       source: a.source,
       destination: a.destination,
+      ...transferFields(a.transfer),
     })),
+    ...transferFields(op.transfer),
   };
 }
 
@@ -590,8 +724,9 @@ function operationFromDisk(raw: unknown): HistoryOperation {
     destination: String(r.destination ?? ""),
     associatedFiles: assoc.map((a) => {
       const d = isDict(a) ? a : {};
-      return { source: String(d.source ?? ""), destination: String(d.destination ?? "") };
+      return { source: String(d.source ?? ""), destination: String(d.destination ?? ""), ...transferFromDisk(d) };
     }),
+    ...transferFromDisk(r),
   };
 }
 
@@ -602,7 +737,9 @@ function operationToDisk(op: HistoryOperation): Dict {
     associated_files: op.associatedFiles.map((a) => ({
       source: a.source,
       destination: a.destination,
+      ...transferToDisk(a),
     })),
+    ...transferToDisk(op),
   };
 }
 
@@ -813,17 +950,20 @@ export class ConfigService {
 
   /**
    * Record a batch of renames for undo. The entry goes first; only the most
-   * recent 10 entries are kept.
+   * recent `[history] max_entries` entries are kept. When the settings
+   * cannot be loaded, nothing older is dropped (the limit is unknown).
    */
   async saveHistory(operations: HistoryOperation[]): Promise<void> {
     await this.ensureDirs();
+    const settings = this._settings ?? (await this.load().catch(() => undefined));
     await this.withHistoryLock(async () => {
       const history = await this.readRawHistory();
       history.unshift({
         timestamp: pythonIsoTimestamp(),
         operations: operations.map(operationToDisk),
       });
-      await this.writeRawHistory(history.slice(0, MAX_HISTORY_ENTRIES));
+      const limit = settings ? settings.history.maxEntries : Math.max(DEFAULT_HISTORY_LIMIT, history.length);
+      await this.writeRawHistory(history.slice(0, limit));
     });
   }
 

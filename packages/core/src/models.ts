@@ -16,6 +16,7 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { TransferRecord } from "./transfer";
 
 /** Type of media file. */
 export type MediaType = "movie" | "tv_episode" | "music" | "unknown";
@@ -166,6 +167,8 @@ export interface AssociatedFileRename {
   source: string;
   destination: string;
   fileType: AssociatedFileType;
+  /** Set by `FileRenamer.execute` once the file was transferred (see transfer.ts). */
+  transfer?: TransferRecord;
 }
 
 /** A planned rename operation. */
@@ -176,6 +179,8 @@ export interface RenameOperation {
   status: RenameStatus;
   errorMessage?: string;
   associatedFiles: AssociatedFileRename[];
+  /** Set by `FileRenamer.execute` once the file was transferred (see transfer.ts). */
+  transfer?: TransferRecord;
 }
 
 // ---------------------------------------------------------------------------

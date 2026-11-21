@@ -435,7 +435,19 @@ describe("full flow", () => {
     expect(raw[0].operations[1]).toEqual({
       source: movie,
       destination: path.join(media, "The Matrix (1999).mkv"),
-      associated_files: [{ source: srt, destination: path.join(media, "The Matrix (1999).en.srt") }],
+      associated_files: [
+        {
+          source: srt,
+          destination: path.join(media, "The Matrix (1999).en.srt"),
+          fingerprint: expect.objectContaining({ size: expect.stringMatching(/^\d+$/) }),
+        },
+      ],
+      fingerprint: {
+        dev: expect.stringMatching(/^\d+$/),
+        ino: expect.stringMatching(/^\d+$/),
+        size: expect.stringMatching(/^\d+$/),
+        mtime_ns: expect.stringMatching(/^\d+$/),
+      },
     });
 
     const progress: string[] = [];
@@ -449,6 +461,7 @@ describe("full flow", () => {
     expect(await undoLastRename(config)).toEqual({
       historyFound: false,
       items: [],
+      kept: 0,
       undone: 0,
       missing: 0,
       failed: 0,
