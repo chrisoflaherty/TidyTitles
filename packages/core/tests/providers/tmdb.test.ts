@@ -262,13 +262,13 @@ describe("TMDBClient TV", () => {
     expect(episode?.show.title).toBe("Breaking Bad");
   });
 
-  it("falls back to the requested season and an empty title", async () => {
+  it("falls back to the requested season and an \"Episode N\" title", async () => {
     const { fetch } = mockFetch([
       { path: "/3/tv/1396", reply: { json: SHOW_DETAILS } },
       { path: "/3/tv/1396/season/2", reply: { json: { episodes: [{ episode_number: 5, air_date: "bad" }] } } },
     ]);
     const episode = await new TMDBClient({ apiKey: V3_KEY, fetch }).getEpisode(1396, 2, 5);
-    expect(episode).toMatchObject({ season: 2, episode: 5, title: "" });
+    expect(episode).toMatchObject({ season: 2, episode: 5, title: "Episode 5" });
     expect(episode?.airDate).toBeUndefined();
   });
 

@@ -289,14 +289,14 @@ describe("TVDBClient.getEpisode", () => {
   const routes = (): Route[] => [
     LOGIN,
     { path: "/v4/series/81189", reply: { json: SERIES } },
-    { path: "/v4/series/81189/episodes/default", reply: { json: EPISODES } },
+    { path: "/v4/series/81189/episodes/official", reply: { json: EPISODES } },
   ];
 
   it("finds the episode in the season listing", async () => {
     const { fetch, requests } = mockFetch(routes());
     const episode = await new TVDBClient({ apiKey: API_KEY, fetch }).getEpisode(81189, 1, 2);
 
-    expect(queryOf(requests.at(-1)!)).toEqual({ season: "1" });
+    expect(queryOf(requests.at(-1)!)).toEqual({ page: "0", season: "1" });
     expect(episode).toMatchObject({
       kind: "episode",
       season: 1,

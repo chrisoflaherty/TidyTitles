@@ -30,8 +30,10 @@ import {
 import { abortable, Limiter, mapConcurrent, OrderedProgress } from "./concurrency";
 import type { AssociatedFilesSettings } from "./config";
 import type { ConflictStrategy } from "./conflictResolution";
+import { episodeTarget, lookupEpisode } from "./episodeLookup";
 import {
   AuthenticationError,
+  EpisodeOrderUnavailableError,
   ProviderError,
   RateLimitError,
   TemplateError,
@@ -101,7 +103,13 @@ export type ProcessProgressCallback = (
 ) => void;
 
 /** Broad class of a metadata lookup failure. */
-export type LookupErrorKind = "authentication" | "rate_limit" | "provider" | "other";
+export type LookupErrorKind =
+  | "authentication"
+  | "rate_limit"
+  | "provider"
+  | "other"
+  /** The provider has no episodes in the chosen episode order for this show. */
+  | "order_unavailable";
 
 /** A serializable description of a metadata lookup failure. */
 export interface LookupErrorInfo {
@@ -301,6 +309,7 @@ export function describeLookupError(error: unknown): LookupErrorInfo {
   let kind: LookupErrorKind = "other";
   if (error instanceof AuthenticationError) kind = "authentication";
   else if (error instanceof RateLimitError) kind = "rate_limit";
+  else if (error instanceof EpisodeOrderUnavailableError) kind = "order_unavailable";
   else if (error instanceof ProviderError) kind = "provider";
   return { kind, name, message };
 }
@@ -724,8 +733,10 @@ export class RenameService {
   ): Promise<void> {
     const parsed = mediaFile.parsedInfo;
     // The Python searched first and then gave up; checking first saves a request.
-    if (parsed.season == null || parsed.episode == null) return;
-    const { season, episode: episodeNumber } = parsed;
+    // Besides season and episode, a file may name several episodes, an air
+    // date, or an absolute number (see episodeLookup.ts).
+    const target = episodeTarget(parsed);
+    if (!target) return;
 
     const shows = await run.net(() => this.tvProvider.searchShow(parsed.title, parsed.year));
     if (shows.length === 0) return;
@@ -747,7 +758,7 @@ export class RenameService {
     if (!selected) return;
 
     const showId = selected.id;
-    const episode = await run.net(() => this.tvProvider.getEpisode(showId, season, episodeNumber));
+    const episode = await run.net(() => lookupEpisode(this.tvProvider, showId, target));
     if (episode) {
       out.matchedMetadata = {
         ...episode,
