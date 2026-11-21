@@ -1,6 +1,6 @@
 # electron-builder configuration for TidyTitles.
-# Identifiers and names follow the PyInstaller/NSIS/DMG/AppImage setup
-# (file-renamer.spec, installer/): bundle id com.filerenamer.tidytitles,
+# Identifiers and names are the ones the app has always shipped under, so
+# existing installs and settings carry over: bundle id com.filerenamer.tidytitles,
 # product name TidyTitles, artifacts TidyTitles-<version>-macos-<arch>.dmg,
 # TidyTitles-<version>-windows-setup.exe, TidyTitles-<version>-<arch>.AppImage.
 #
@@ -140,7 +140,9 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: TidyTitles
-  license: ../../installer/windows/license.txt
+  # Not named license.txt: electron-builder would then also add it to the
+  # AppImage as a license prompt.
+  license: build/installer-license.txt
   artifactName: ${productName}-${version}-windows-setup.${ext}
 
 linux:

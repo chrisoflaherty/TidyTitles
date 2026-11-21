@@ -52,11 +52,9 @@ TidyTitles/
 │       ├── src/e2e/              test-only main entry with fake providers (never shipped)
 │       ├── tests/                unit tests (main in Node, renderer in jsdom)
 │       ├── e2e/                  end-to-end tests (Playwright driving Electron)
-│       ├── build/                app icons (icon.svg is the source)
+│       ├── build/                app icons (icon.svg is the source), the Windows installer's license text
 │       └── electron-builder.yml  packaging configuration
-├── .github/workflows/release.yml   builds installers for a version tag
-└── src/file_renamer/, tests/, build.py, installer/, pyproject.toml
-                              the legacy Python app (reference only)
+└── .github/workflows/release.yml   builds installers for a version tag
 ```
 
 How the parts fit together: the CLI and the Electron main process both call `@tidytitles/core`. Core uses `node:fs`, so it runs only in Node and the Electron main process, never in the renderer. The renderer is sandboxed and talks to the main process through the typed API in `src/preload`; the main process holds the state and validates every IPC argument.
@@ -172,7 +170,7 @@ node scripts/measure-file-list.mjs --files 10000 --out /tmp/file-list.json
 
 ### Parser parity with Python guessit
 
-The filename parser (`packages/core/src/parser.ts`) is a hand-written reproduction of [guessit](https://github.com/guessit-io/guessit), which the Python app used. The parity script runs both over a corpus of filenames and reports every disagreement:
+The filename parser (`packages/core/src/parser.ts`) is a hand-written reproduction of [guessit](https://github.com/guessit-io/guessit), which the original Python app used. The parity script runs both over a corpus of filenames and reports every disagreement:
 
 ```bash
 cd packages/core
@@ -180,7 +178,7 @@ npx tsx scripts/parser-parity.ts
 npx tsx scripts/parser-parity.ts --corpus my-names.txt --fields title,year
 ```
 
-It needs `python3` with guessit installed, and the Python sources in `src/` (set `TIDYTITLES_PY_SRC` to use another location). The corpus is `scripts/parser-corpus.txt`.
+It needs `python3` with guessit installed. The corpus is `scripts/parser-corpus.txt`.
 
 ## Package the desktop app
 
@@ -228,7 +226,7 @@ What the configuration sets:
 - `publish` (GitHub, `chrisoflaherty/TidyTitles`, `channel: ${channel}`) decides which update-info file is written and goes into `resources/app-update.yml`. Releases are still uploaded by the workflow (`--publish never`).
 - The CLI bundle is copied to `Resources/cli/tidytitles.mjs` (`resources/cli/` on Windows and Linux). The **Install Command Line Tool…** menu item writes a launcher that runs it with the app's own executable (`ELECTRON_RUN_AS_NODE=1`).
 - macOS: DMG plus a zip (the updater installs from the zip), hardened runtime with electron-builder's default entitlements (`allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation`), dark mode support, icon `build/icon.icns`. Without a signing identity, `scripts/after-pack.cjs` gives the app an ad-hoc signature (no hardened runtime).
-- Windows: an NSIS installer (not one-click) that installs for the current user by default (`perMachine: false`, so installs and updates need no administrator prompt) and still offers "Anyone who uses this computer", lets the user change the folder, creates desktop and Start menu shortcuts, and shows the license from `installer/windows/license.txt`.
+- Windows: an NSIS installer (not one-click) that installs for the current user by default (`perMachine: false`, so installs and updates need no administrator prompt) and still offers "Anyone who uses this computer", lets the user change the folder, creates desktop and Start menu shortcuts, and shows the license from `apps/desktop/build/installer-license.txt` (the same text as the top-level `LICENSE`).
 - Linux: AppImage, executable `TidyTitles`, desktop entry in the Utility and AudioVideo categories.
 - Opening files with the app (macOS): `mac.extendInfo` declares three document types in `Info.plist`, so files and folders can be dropped on the Dock icon and folders get **Open With** → **TidyTitles**. Folders have rank `Alternate`; video and audio files rank `None` (they accept drops but are never opened by a double-click and are not listed under Open With). `Alternate` is not safe for files: when no other installed app claims a type, Launch Services makes the `Alternate` app its default (checked on macOS 27: with `Alternate`, `.mkv` and `.ape` defaulted to TidyTitles). There is deliberately no `fileAssociations`: electron-builder's NSIS installer writes each listed extension's default (`HKCU\Software\Classes\.<ext>`, the `APP_ASSOCIATE` macro in `templates/nsis/include/FileAssociation.nsh`). Windows and Linux receive opened files on the command line, which needs no registration.
 - Electron is pinned to an exact version in `apps/desktop/package.json`, because electron-builder rejects a version range.
@@ -400,7 +398,3 @@ The update-info file is missing, is for another version, or lists a file whose `
 ### The tag push did not produce installers
 
 Check the workflow run on GitHub. The most common cause is a tag that does not match `apps/desktop/package.json` (for example `v0.2.0` when the file says `0.2.0-beta.1`).
-
-### The legacy Python app
-
-The Python implementation in `src/file_renamer/` is the behavioral reference for the port and will be removed later. Its PyInstaller build (`build.py`, `file-renamer.spec`, and the scripts in `installer/`) is no longer used for releases. Do not change it; fix behavior in the TypeScript code. Note that `installer/windows/license.txt` is still used by the Windows installer, and `scripts/parser-parity.ts` reads the Python sources.

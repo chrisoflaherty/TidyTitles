@@ -145,10 +145,6 @@ npm run typecheck
 
 The repository is an npm-workspace monorepo: `packages/core` (all the logic), `packages/cli` (the `tidytitles` command), and `apps/desktop` (the Electron app). See [BUILD.md](BUILD.md) for the layout, the desktop end-to-end tests, and how releases are made.
 
-## Legacy Python app
-
-The original Python implementation is still in `src/file_renamer/` for reference and will be removed later. To run it: `pip install -e ".[dev,gui]"`, then `file-renamer` (CLI) or `file-renamer-gui` (window).
-
 ## License
 
 MIT. See [LICENSE](LICENSE).

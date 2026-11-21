@@ -6,10 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TidyTitles is a cross-platform media file renaming application. It fetches metadata from TMDB (movies), TVDB (TV shows), and MusicBrainz (music) to rename files with consistent naming patterns.
 
-The app has been rewritten from Python to TypeScript. Both versions live in this repository until the Python one is retired:
+It is a TypeScript npm-workspace monorepo with a shared core, a Node CLI (`tidytitles`), and an Electron desktop app.
 
-- **TypeScript (current work):** an npm-workspace monorepo with a shared core, a Node CLI (`tidytitles`), and an Electron desktop app.
-- **Python (reference):** `src/file_renamer/`, `tests/`, `build.py`, `installer/`. It is the behavioral reference for the port. Do not change it; fix behavior in the TypeScript code.
+The app was first written in Python and rewritten in TypeScript; the Python code was removed after 0.2.0-beta.7 (it is in the git history). Comments that say "as in the Python client" explain where a behavior or file format came from. Config, history, and cache files written by the Python app must keep loading.
 
 ## Development Commands (TypeScript)
 
@@ -92,7 +91,7 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 
 ## Configuration
 
-- Stored in the same location and format as the Python app, so the two are interchangeable:
+- Stored where the original Python app kept them (hence the `file-renamer` folder name), so existing installs carry over:
   - macOS: `~/Library/Application Support/file-renamer/`
   - Linux: `~/.config/file-renamer/` (or `$XDG_CONFIG_HOME/file-renamer/`)
   - Windows: `%LOCALAPPDATA%\file-renamer\file-renamer\`
@@ -129,13 +128,3 @@ Formatters: `{field|lower}`, `{field|upper}`, `{field|title}`, `{field|pad:3}`
 - The desktop package bundles the CLI at `Resources/cli/tidytitles.mjs`; the "Install Command Line Tool…" menu item writes a launcher for it.
 - Electron is pinned to an exact version because electron-builder rejects a range.
 - The release workflow creates a draft release, uploads each platform's checked feed, and publishes after all package and test jobs pass. macOS is signed and notarized when the `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` secrets exist, otherwise ad-hoc signed. Windows (NSIS, per-user by default) and Linux are unsigned.
-
-## Python Reference App
-
-```bash
-pip install -e ".[dev,gui]"    # Install
-pytest                         # Tests
-python build.py --installer    # PyInstaller build
-```
-
-Layout: `core/` (parser, templates, models, renamer), `providers/` (async httpx clients), `services/` (rename and config services), `cli/main.py` (Click), `gui/app.py` (PySide6).

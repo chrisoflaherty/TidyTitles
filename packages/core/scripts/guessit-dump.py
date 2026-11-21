@@ -1,34 +1,46 @@
-"""Run the Python GuessItParser over filenames read from stdin (one per line).
+"""Run guessit over filenames read from stdin (one per line).
 
 Prints one JSON object per line with ParsedInfo fields in camelCase, so the
 TypeScript parity script can compare them. Used by parser-parity.ts.
 
-Run with PYTHONPATH pointing at the repo's src/ directory.
+The mapping from guessit's result to these fields is the one the original
+Python app used (its GuessItParser): the first of several episodes or
+seasons, `screen_size` as quality, `video_codec` as codec, `release_group`
+as group. Needs the `guessit` package.
 """
 
 import json
 import sys
 
-from file_renamer.core.parser import GuessItParser
+import guessit
 
-parser = GuessItParser()
+MEDIA_TYPES = {"movie": "movie", "episode": "tv_episode"}
+
+
+def first(value):
+    """guessit returns a list for several episodes or seasons: take the first."""
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
 for line in sys.stdin:
     name = line.rstrip("\n")
     if not name:
         continue
-    info = parser.parse(name)
+    result = guessit.guessit(name)
     out = {
         "rawFilename": name,
-        "title": info.title,
-        "year": info.year,
-        "season": info.season,
-        "episode": info.episode,
-        "episodeTitle": info.episode_title,
-        "mediaType": info.media_type.name.lower(),
-        "quality": info.quality,
-        "source": info.source,
-        "codec": info.codec,
-        "group": info.group,
+        "title": result.get("title", ""),
+        "year": result.get("year"),
+        "season": first(result.get("season")),
+        "episode": first(result.get("episode")),
+        "episodeTitle": result.get("episode_title"),
+        "mediaType": MEDIA_TYPES.get(result.get("type"), "unknown"),
+        "quality": result.get("screen_size"),
+        "source": result.get("source"),
+        "codec": result.get("video_codec"),
+        "group": result.get("release_group"),
     }
     # guessit values are str subclasses or plain ints/lists; default=str keeps
     # anything unexpected visible instead of crashing.

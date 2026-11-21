@@ -1,13 +1,12 @@
 /**
- * Parser parity check: runs the Python GuessItParser (real guessit) and the
+ * Parser parity check: runs Python guessit (through guessit-dump.py) and the
  * TypeScript GuessItParser over scripts/parser-corpus.txt and reports
  * per-field agreement plus every disagreement.
  *
  * Usage (from packages/core):
  *   npx tsx scripts/parser-parity.ts [--corpus FILE] [--fields a,b] [--json OUT]
  *
- * Requires python3 with guessit installed. The Python source is found at
- * ../../src relative to this package (override with TIDYTITLES_PY_SRC).
+ * Requires python3 with guessit installed.
  * --json writes the guessit results to OUT for building test fixtures.
  */
 
@@ -27,7 +26,6 @@ const argValue = (flag: string): string | undefined => {
 };
 
 const corpusPath = argValue("--corpus") ?? path.join(here, "parser-corpus.txt");
-const pySrc = process.env.TIDYTITLES_PY_SRC ?? path.resolve(here, "../../../src");
 const jsonOut = argValue("--json");
 
 const FIELDS = [
@@ -56,7 +54,6 @@ const names = readFileSync(corpusPath, "utf8")
 
 const output = execFileSync("python3", [path.join(here, "guessit-dump.py")], {
   input: names.join("\n") + "\n",
-  env: { ...process.env, PYTHONPATH: pySrc },
   encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
 });

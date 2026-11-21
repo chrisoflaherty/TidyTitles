@@ -1,65 +1,23 @@
-# Byte-compiled / optimized / DLL files
+# Dependencies and build output
+node_modules/
+packages/*/dist/
+apps/*/dist/
+apps/*/out/
+apps/*/release/
+*.tsbuildinfo
+
+# Settings with API keys must never be committed
+config.toml
+.env
+
+# Logs
+*.log
+
+# Python, only for the optional parser parity check (packages/core/scripts)
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyInstaller
-*.manifest
-*.spec~
-# But keep our main spec file
-!file-renamer.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Environments
-.env
-.venv
-env/
+.venv/
 venv/
-ENV/
-env.bak/
-venv.bak/
 
 # IDE
 .idea/
@@ -68,26 +26,6 @@ venv.bak/
 *.swo
 *~
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# ruff
-.ruff_cache/
-
 # OS
 .DS_Store
 Thumbs.db
-
-# Project specific
-config.toml
-*.log
-
-# Node / TypeScript rewrite
-node_modules/
-packages/*/dist/
-apps/*/dist/
-apps/*/out/
-apps/*/release/
-*.tsbuildinfo
