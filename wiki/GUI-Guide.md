@@ -178,6 +178,12 @@ With **Download cover art** checked, TidyTitles saves, next to each renamed file
 
 An existing poster or cover is kept unless **Replace cover art that is already there** is checked in Settings. Files in the same folder share one poster or cover. The file extension follows the image type (`.jpg`, `.png`, or `.webp`). A download that fails is skipped silently.
 
+### Tags and NFO files
+
+With **Write tags into music files** or **Write NFO files for media servers** turned on (**Settings** → **Files** → **Write metadata**), the confirmation says what will also be written, for example "Tags from MusicBrainz matches will be written into the 3 music files where they differ" and "NFO files will be written for 2 videos". In **Hard link** mode it says that tags won't be written, because the originals would change too.
+
+After the rename, **Rename Complete** adds **Tags written**, **Tags already right**, **Tags not written**, **NFO files written**, and **NFO files not written**, and lists each file: the fields that changed (for example *title "Wrong Title" → "One More Time"*), and why anything was left alone (*tags of this format can't be written*, *a file of that name is already there*, *the episode isn't in a folder of its show*, and so on). See [Configuration](Configuration.md#writing-tags-into-music-files) for exactly what is written.
+
 ## 6. Undo
 
 **Undo** (toolbar), or **Rename** → **Undo Last Rename…** (Cmd+Option+Z on macOS, Ctrl+Alt+Z on Windows and Linux), moves the files of the most recent rename back to their original names, associated files included. The confirmation shows how many files and when they were renamed, for example "Renamed Saturday, November 14 at 9:24 AM". Hover over the Undo button to see the same date.
@@ -185,6 +191,8 @@ An existing poster or cover is kept unless **Replace cover art that is already t
 Undo reads the rename history saved on disk, so it works after restarting the app, and it can undo a rename made with the command-line tool (or the Python version). The history keeps the last 200 renames (change it in **Settings** → **Output**); each Undo reverts the newest one that is left.
 
 Undoing a copy or hard link deletes the copy or link, only if it is unchanged since the rename, and never touches the original.
+
+Undo also puts back the tags a rename wrote into music files, and removes the NFO files it created if they are unchanged (a `tvshow.nfo` only when no episode is left in its folder). **Undo Complete** then shows **Tags put back** and **NFO files removed**, and lists files left as they were: tags of a file changed after the rename, an NFO file you edited, or a `tvshow.nfo` other episodes still use.
 
 ### Rename History
 
@@ -223,7 +231,11 @@ One field each for **Movies**, **TV shows**, and **Music**. Below each field is 
   - **Replace the existing file**: overwrite the file that already has the new name. Another file in the same batch is never overwritten.
   - **Add a number**: use the next free name, such as `The Matrix (1999) (1).mkv`.
 
-See [Configuration](Configuration.md#associated-files) for how associated files are matched.
+- **Write metadata** (both off by default):
+  - **Write tags into music files**: after renaming, write a MusicBrainz match's title, artist, album, album artist, track and disc numbers, year, and genre into MP3, FLAC, M4A, Ogg Vorbis, and Opus files, only where they differ. Other formats are renamed without tags; hard-linked files are never written to.
+  - **Write NFO files for media servers**: an `.nfo` file next to each renamed movie and episode, and `tvshow.nfo` in a show's folder, for Kodi, Jellyfin, and Emby (Plex doesn't read them).
+
+See [Configuration](Configuration.md#associated-files) for how associated files are matched, and [Writing tags into music files](Configuration.md#writing-tags-into-music-files) and [NFO files](Configuration.md#nfo-files) for what is written.
 
 ### Output
 

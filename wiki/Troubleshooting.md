@@ -7,6 +7,7 @@ Common problems and how to solve them, grouped by where they show up.
 - [The command-line tool](#the-command-line-tool)
 - [Metadata lookups](#metadata-lookups)
 - [Files and renaming](#files-and-renaming)
+- [Tags and NFO files](#tags-and-nfo-files)
 - [Parsing: wrong title, year, or type](#parsing-wrong-title-year-or-type)
 - [Undo](#undo)
 - [Configuration](#configuration)
@@ -255,6 +256,41 @@ They must be in the same folder and start with exactly the media file's base nam
 ### A folder was created with an odd name, or a "/" disappeared
 
 A `/` in the template creates folders, but a `/` inside a title or artist name is removed (`AC/DC` → `ACDC`), and characters like `:` and `?` are removed too. Empty placeholders leave empty brackets, such as `Album ()` when a track has no year. See [How names are cleaned](Templates.md#how-names-are-cleaned).
+
+## Tags and NFO files
+
+### Tags were not written into some music files
+
+**Rename Complete** (app) and the CLI's output give the reason for each file:
+
+- **The match came from the file's own tags** (`match_from_tags`): the file was matched by its own tags (**Verified** or **Unverified**), so there is nothing better to write. Only matches found on MusicBrainz are written.
+- **Tags of this format can't be written** (`unsupported_format`): WAV, AIFF, WMA, AAC, and APE files are renamed without tags. Supported: MP3, FLAC, M4A, Ogg Vorbis, Opus.
+- **Laid out in a way TidyTitles doesn't write** (`unsupported_layout`): for example an MP3 with an ID3v2.2 tag or an unsynchronised or extended ID3 header, a fragmented M4A, or an Ogg file with more than one stream. Rewrite the tags once with a tag editor (most save ID3v2.3 or 2.4), then rename again.
+- **Hard linked** (`hard_link`): in **Hard link** mode tags are never written, because the original would change too. Use **Copy** to get a tagged copy.
+- **Other hard links** (`shared_data`): the file has other names (for example, a download client still seeding it). Writing would leave those names with the old tags and use the disk space twice, so the file is left alone.
+- **Changed meanwhile**, **couldn't be written**, **didn't read back correctly** (`changed_during_write`, `write_failed`, `verify_failed`): the file is exactly as it was. Check that it is not open in another program and that the folder is writable, then rename it again (or edit its tags yourself).
+
+**Tags already right** means the file already had the match's values. A tag the match does not have is never removed.
+
+### A hidden `.…tidytitles-tmp` file is left in a music folder
+
+Tags are written to a hidden temporary file that replaces the original only when it is complete. A crash or power cut during that leaves the temporary file; the original is intact. Delete the `.tidytitles-tmp` file.
+
+### No `tvshow.nfo` was written
+
+`tvshow.nfo` goes in the show's own folder: the episode's folder, or the folder above a season folder (`Season 1`, `S01`, `Specials`), and only when that folder's name contains the show's title. With a flat template, where episodes of several shows can share a folder, none is written ("the episode isn't in a folder of its show"). Use a template such as `{title}/Season {season}/{title} - S{season2}E{episode2} - {episode_title}` (the Jellyfin and Kodi presets do this). An existing `tvshow.nfo` is never replaced.
+
+### An NFO file was not written ("a file of that name is already there")
+
+TidyTitles does not replace an NFO file it did not just create, unless **When the new name is taken** is **Replace the existing file** (`conflict_resolution = "overwrite"`). An NFO that moved with the video (an associated file) is never replaced.
+
+### Plex ignores the NFO files
+
+Plex does not read NFO files (only with a third-party agent). They are for Kodi, Jellyfin, and Emby. For a file holding several episodes, Kodi 22 expects one NFO file per episode and Emby reads only the first episode; TidyTitles writes all episodes into one file, the layout Kodi up to version 21 and Jellyfin read.
+
+### Undo did not put the tags back
+
+If the music file was changed after the rename (by a tag editor, or a player that writes play counts into files), undo moves it back but leaves its tags as they are, so later edits are not lost. The undo result says so. An NFO file you edited after the rename is left in place too, and `tvshow.nfo` stays while other episodes in its folder use it.
 
 ## Parsing: wrong title, year, or type
 
