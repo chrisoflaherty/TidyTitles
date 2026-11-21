@@ -7,6 +7,7 @@
  * entry is compiled only into the separate `out-e2e` build.
  */
 
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -76,10 +77,12 @@ import {
   parseEditableSettings,
   parseEnabled,
   parseFileIds,
+  parseOptionalFolder,
   parsePaths,
   parseRunOptions,
   parseSelectionAnswer,
   parseTemplates,
+  parseTimestamp,
 } from "./validate";
 import { MIN_SIZE, fitToDisplays, loadWindowState, saveWindowState } from "./windowState";
 
@@ -386,6 +389,27 @@ function startMain(
     if (url && isSafeExternalUrl(url)) await shell.openExternal(url);
   });
   handle(IPC.setAutoCheckForUpdates, (enabled) => updates?.setAutoCheck(parseEnabled(enabled)));
+
+  // Output folders and history.
+  handle(IPC.chooseFolder, async (current) => {
+    const start = parseOptionalFolder(current);
+    const dialogOptions: OpenDialogOptions = {
+      title: "Choose Output Folder",
+      buttonLabel: "Choose",
+      properties: ["openDirectory", "createDirectory"],
+      ...(start && existsSync(start) ? { defaultPath: start } : {}),
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!;
+  });
+  handle(IPC.getHistory, () => controller.getHistory());
+  handle(IPC.undoEntry, async (timestamp) => {
+    const outcome = await controller.undoEntry(parseTimestamp(timestamp));
+    feedback.undoFinished(outcome);
+    return outcome;
+  });
 
   // -------------------------------------------------------------------------
   // Files opened with the app (Dock, Finder's Open With, the command line)

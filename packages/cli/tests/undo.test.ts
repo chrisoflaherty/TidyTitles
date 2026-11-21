@@ -3,7 +3,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ConfigService } from "@tidytitles/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FakePrompter, createSandbox, runIn, touch, type Sandbox } from "./helpers";
+import { FakePrompter, createSandbox, runIn, strip, touch, type Sandbox } from "./helpers";
 
 let sb: Sandbox;
 
@@ -140,6 +140,7 @@ describe("undo", () => {
         items: [],
         undone: 0,
         missing: 0,
+        kept: 0,
         failed: 0,
       });
     });
@@ -166,9 +167,81 @@ describe("undo", () => {
           destination: b.destination,
           status: "failed",
           errors: [expect.stringContaining("Destination already exists")],
+          kept: [],
         },
-        { source: a.source, destination: a.destination, status: "undone", errors: [] },
+        { source: a.source, destination: a.destination, status: "undone", errors: [], kept: [] },
       ]);
+    });
+  });
+
+  describe("--list and --entry", () => {
+    async function seedTwo() {
+      const first = await seedHistory("2026-11-07T19:00:00.123000");
+      const config = new ConfigService({ configDir: sb.configDir, cacheDir: path.join(sb.configDir, "cache"), env: {} });
+      const c = await touch(sb.media, "C (2003).mkv");
+      await config.saveHistory([{ source: path.join(sb.media, "c.old.mkv"), destination: c, associatedFiles: [] }]);
+      const raw = JSON.parse(await readFile(first.file, "utf8")) as Array<{ timestamp: string }>;
+      raw[0]!.timestamp = "2026-11-08T08:30:00";
+      await writeFile(first.file, JSON.stringify(raw, null, 2));
+      return first;
+    }
+
+    it("--list shows the history with en-US dates, most recent first", async () => {
+      await seedTwo();
+      const r = await undo(["--list"]);
+      expect(r.code).toBe(0);
+      const out = strip(r.stdout);
+      expect(out).toContain("Rename History");
+      expect(out).toMatch(/1 .*Nov 8, 2026, 8:30 AM.*1 .*Moved.*C \(2003\)\.mkv/);
+      expect(out).toMatch(/2 .*Nov 7, 2026, 7:00 PM.*3 .*Moved.*A \(2001\)\.mkv and 1 more/);
+      expect(out).toContain("undo --entry <#>");
+    });
+
+    it("--list --json", async () => {
+      await seedTwo();
+      const r = await undo(["--list", "--json"]);
+      const out = JSON.parse(r.stdout);
+      expect(out.history.map((e: { entry: number; files: number; transfer: string }) => [e.entry, e.files, e.transfer])).toEqual([
+        [1, 1, "move"],
+        [2, 3, "move"],
+      ]);
+    });
+
+    it("--entry undoes an older rename and keeps the later one", async () => {
+      await seedTwo();
+      const r = await undo(["--entry", "2", "-y"]);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain("Rename #2: Nov 7, 2026, 7:00 PM");
+      expect(r.stdout).toContain("Undone: 2");
+      expect((await readdir(sb.media)).sort()).toEqual(["C (2003).mkv", "a.old.en.srt", "a.old.mkv", "b.old.mkv"]);
+      const config = new ConfigService({ configDir: sb.configDir, cacheDir: path.join(sb.configDir, "cache"), env: {} });
+      expect((await config.loadHistory()).map((e) => e.timestamp)).toEqual(["2026-11-08T08:30:00"]);
+    });
+
+    it("--entry beyond the history is a usage error", async () => {
+      await seedTwo();
+      const r = await undo(["--entry", "5", "-y"]);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("There is no entry 5 in the rename history (it has 2)");
+    });
+
+    it("--entry must be a positive number", async () => {
+      const r = await undo(["--entry", "0"]);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("Must be a positive whole number");
+    });
+
+    it("reports files left in place", async () => {
+      const { a } = await seedHistory();
+      // Record a fingerprint for A, then replace the file.
+      const file = path.join(sb.configDir, "history.json");
+      const raw = JSON.parse(await readFile(file, "utf8"));
+      raw[0].operations[0].fingerprint = { dev: "1", ino: "2", size: "3", mtime_ns: "4" };
+      await writeFile(file, JSON.stringify(raw));
+      const r = await undo(["-y"]);
+      expect(r.stdout).toContain("Left in place: A (2001).mkv (it was replaced or changed since the rename)");
+      expect(r.stdout).toContain("Left in place: 1");
+      expect(existsSync(a.destination)).toBe(true);
     });
   });
 });

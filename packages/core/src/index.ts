@@ -26,6 +26,8 @@ export { DEFAULT_TIMEOUT_MS } from "./providers/util";
 export type { JsonObject, QueryParams, ResponseCache } from "./providers/util";
 
 export * from "./renamer";
+export * from "./transfer";
+export * from "./output";
 export * from "./associatedFiles";
 export * from "./conflictResolution";
 export * from "./coverArt";

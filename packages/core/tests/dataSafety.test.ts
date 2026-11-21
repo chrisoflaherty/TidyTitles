@@ -5,7 +5,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -234,3 +234,53 @@ describe("cover art", () => {
   });
 });
 
+
+describe.each(["copy", "hardlink"] as const)("overwrite strategy within a batch, %s mode", (transferMode) => {
+  it("never overwrites a file that another operation in the batch still has to transfer", async () => {
+    const a = await touch(dir, "Old.Name.2000.mkv", "A");
+    const b = await touch(dir, "The Matrix (1999).mkv", "B");
+    const movies = new FakeMovieProvider({ "Old Name": [matrix], "The Matrix": [matrixReloaded] });
+    const service = new RenameService({
+      movieProvider: movies,
+      musicParser: new FakeMusicParser(),
+      conflictStrategy: "overwrite",
+      fileRenamer: new FileRenamer({ overwrite: true, transferMode }),
+    });
+    const ops = await service.processFiles([a, b]);
+    await service.executeRename(ops);
+    expect(await readFile(a, "utf8")).toBe("A");
+    expect(await readFile(b, "utf8")).toBe("B");
+    expect(ops[0]!.status).toBe("skipped");
+  });
+
+  it("never overwrites a file this batch already created", async () => {
+    const a = await touch(dir, "a.mkv", "A");
+    const b = await touch(dir, "b.mkv", "B");
+    const dest = path.join(dir, "Movie.mkv");
+    const info = (name: string) => ({ title: name, mediaType: "movie" as const, rawFilename: name });
+    const ops = [
+      createRenameOperation({ source: a, destination: dest, mediaFile: { path: a, parsedInfo: info("a.mkv") } }),
+      createRenameOperation({ source: b, destination: dest, mediaFile: { path: b, parsedInfo: info("b.mkv") } }),
+    ];
+    await new FileRenamer({ overwrite: true, transferMode }).execute(ops);
+    expect(await readFile(dest, "utf8")).toBe("A");
+    expect(await readFile(a, "utf8")).toBe("A");
+    expect(await readFile(b, "utf8")).toBe("B");
+    expect(ops[1]!.status).toBe("skipped");
+  });
+
+  it("undo after a later rename replaced the result leaves both files", async () => {
+    const a = await touch(dir, "a.mkv", "A");
+    const dest = path.join(dir, "Movie.mkv");
+    const info = { title: "a", mediaType: "movie" as const, rawFilename: "a.mkv" };
+    const ops = [createRenameOperation({ source: a, destination: dest, mediaFile: { path: a, parsedInfo: info } })];
+    await new FileRenamer({ transferMode }).execute(ops);
+    await recordHistory(config(), ops);
+    await rm(dest);
+    await writeFile(dest, "NEW");
+    const result = await undoLastRename(config());
+    expect(result.kept).toBe(1);
+    expect(await readFile(dest, "utf8")).toBe("NEW");
+    expect(await readFile(a, "utf8")).toBe("A");
+  });
+});

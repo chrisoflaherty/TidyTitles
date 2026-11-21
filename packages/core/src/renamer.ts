@@ -8,16 +8,21 @@
 
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, statSync } from "node:fs";
-import {
-  copyFile,
-  mkdir,
-  rename as fsRename,
-  stat,
-  unlink,
-  utimes,
-} from "node:fs/promises";
+import { mkdir, rename as fsRename } from "node:fs/promises";
 import path from "node:path";
 import { RenameError } from "./errors";
+import {
+  CROSS_DEVICE_LINK_MESSAGE,
+  LINK_UNSUPPORTED_MESSAGE,
+  TransferError,
+  crossesVolumes,
+  fingerprintOf,
+  hardLink,
+  moveAcrossVolumes,
+  safeCopy,
+  undoTransferredFile,
+  type TransferMode,
+} from "./transfer";
 import {
   willOverwrite,
   type AssociatedFileRename,
@@ -36,6 +41,8 @@ export interface FileRenamerOptions {
   dryRun?: boolean;
   /** If true, overwrite existing destination files. Default false. */
   overwrite?: boolean;
+  /** How `execute` gets files to their destination. Default "move". */
+  transferMode?: TransferMode;
 }
 
 function errorText(error: unknown): string {
@@ -91,10 +98,49 @@ export const BATCH_OVERWRITE_MESSAGE = "Would overwrite another file in this bat
 export class FileRenamer {
   dryRun: boolean;
   overwrite: boolean;
+  /** How `execute` gets files to their destination (`rename` always moves). */
+  transferMode: TransferMode;
 
-  constructor({ dryRun = false, overwrite = false }: FileRenamerOptions = {}) {
+  constructor({ dryRun = false, overwrite = false, transferMode = "move" }: FileRenamerOptions = {}) {
     this.dryRun = dryRun;
     this.overwrite = overwrite;
+    this.transferMode = transferMode;
+  }
+
+  /**
+   * Get one file to `destination` in the current transfer mode, creating
+   * the destination folder. "move" is `rename`; "copy" and "hardlink" leave
+   * the source untouched.
+   *
+   * @throws TransferError for a hard link across volumes or on a volume
+   *   without hard links; RenameError for everything `rename` refuses.
+   */
+  async transfer(source: string, destination: string): Promise<void> {
+    if (this.transferMode === "move") {
+      await this.rename(source, destination);
+      return;
+    }
+    if (!existsSync(source)) {
+      throw new RenameError(`Source file does not exist: ${source}`);
+    }
+    if (existsSync(destination) && !this.overwrite) {
+      throw new RenameError(`Destination already exists: ${destination}`);
+    }
+    if (this.transferMode === "hardlink" && crossesVolumes(source, destination)) {
+      throw new TransferError("cross_device_link", CROSS_DEVICE_LINK_MESSAGE);
+    }
+    if (this.dryRun) return;
+
+    try {
+      await mkdir(path.dirname(destination), { recursive: true });
+    } catch (error) {
+      throw new RenameError(
+        `Failed to create directory ${path.dirname(destination)}: ${errorText(error)}`,
+        { cause: error },
+      );
+    }
+    if (this.transferMode === "copy") await safeCopy(source, destination, this.overwrite);
+    else await hardLink(source, destination, this.overwrite);
   }
 
   /**
@@ -170,32 +216,12 @@ export class FileRenamer {
     }
   }
 
-  /** Cross-device move: copy (preserving timestamps), then delete the source. */
+  /**
+   * Cross-device move: a safe copy (preserving timestamps, never a partial
+   * file under the final name), then delete the source.
+   */
   private async copyAndDelete(source: string, destination: string): Promise<void> {
-    const destinationExisted = existsSync(destination);
-    try {
-      await copyFile(source, destination);
-    } catch (error) {
-      // Do not leave a partial copy behind (unless we were overwriting a
-      // file that was already there, in which case it is already replaced).
-      if (!destinationExisted) await unlink(destination).catch(() => undefined);
-      throw new RenameError(`Failed to rename file: ${errorText(error)}`, {
-        cause: error,
-      });
-    }
-    try {
-      const st = await stat(source);
-      await utimes(destination, st.atime, st.mtime);
-    } catch {
-      // Timestamps are best effort, as with shutil.copy2 on some filesystems.
-    }
-    try {
-      await unlink(source);
-    } catch (error) {
-      throw new RenameError(`Failed to rename file: ${errorText(error)}`, {
-        cause: error,
-      });
-    }
+    await moveAcrossVolumes(source, destination, this.overwrite);
   }
 
   /**
@@ -213,8 +239,9 @@ export class FileRenamer {
         if (this.clobbersBatchFile(assoc.source, assoc.destination, batchFiles)) {
           throw new RenameError(BATCH_OVERWRITE_MESSAGE);
         }
-        await this.rename(assoc.source, assoc.destination);
+        await this.transfer(assoc.source, assoc.destination);
         this.rememberMoved(assoc.destination, batchFiles);
+        this.recordTransfer(assoc);
         moved.push(assoc);
       } catch (error) {
         if (!(error instanceof RenameError)) throw error;
@@ -235,6 +262,13 @@ export class FileRenamer {
     if (!this.overwrite) return false;
     const target = fileIdentity(destination);
     return target !== undefined && target !== fileIdentity(source) && batchFiles.has(target);
+  }
+
+  /** Note how a file got to its destination, with its fingerprint, for history and undo. */
+  private recordTransfer(target: { destination: string; transfer?: RenameOperation["transfer"] }): void {
+    if (this.dryRun) return;
+    const fingerprint = fingerprintOf(target.destination);
+    target.transfer = fingerprint ? { mode: this.transferMode, fingerprint } : { mode: this.transferMode };
   }
 
   /** Track a file this batch moved (a cross-device move gives it a new identity). */
@@ -305,9 +339,26 @@ export class FileRenamer {
         continue;
       }
 
+      // Another name for the very same file (a hard link made earlier):
+      // there is nothing to transfer, and replacing it would be a no-op
+      // that leaves a temporary name behind.
+      // A case-only change can't give a copy or link a name of its own on a
+      // case-insensitive volume either.
+      const destinationId = fileIdentity(op.destination);
+      if (
+        destinationId !== undefined &&
+        destinationId === fileIdentity(op.source) &&
+        (this.transferMode !== "move" || !isCaseOnlyRename(op.source, op.destination))
+      ) {
+        op.status = "skipped";
+        op.errorMessage = "Source and destination are the same";
+        continue;
+      }
+
       try {
-        await this.rename(op.source, op.destination);
+        await this.transfer(op.source, op.destination);
         this.rememberMoved(op.destination, batchFiles);
+        this.recordTransfer(op);
 
         if (op.associatedFiles.length > 0) {
           const { errors, moved } = await this.renameAssociatedFiles(
@@ -322,6 +373,13 @@ export class FileRenamer {
 
         op.status = "completed";
       } catch (error) {
+        if (error instanceof TransferError) {
+          // Nothing was created; the file is skipped with a typed reason.
+          op.status = "skipped";
+          op.errorMessage =
+            error.reason === "cross_device_link" ? CROSS_DEVICE_LINK_MESSAGE : LINK_UNSUPPORTED_MESSAGE;
+          continue;
+        }
         if (!(error instanceof RenameError)) throw error;
         op.status = "failed";
         op.errorMessage = error.message;
@@ -349,6 +407,18 @@ export class FileRenamer {
 
       if (op.status !== "completed") continue;
 
+      if (op.transfer && op.transfer.mode !== "move") {
+        // A copy or link: remove what was made, never the original.
+        const problems: string[] = [];
+        for (const file of [...op.associatedFiles].reverse()) {
+          problems.push(...(await this.undoCreated(file)));
+        }
+        problems.push(...(await this.undoCreated(op)));
+        if (problems.length === 0) op.status = "pending";
+        else op.errorMessage = `Undo failed: ${problems.join("; ")}`;
+        continue;
+      }
+
       try {
         for (const assoc of [...op.associatedFiles].reverse()) {
           await this.rename(assoc.destination, assoc.source);
@@ -362,5 +432,26 @@ export class FileRenamer {
     }
 
     return operations;
+  }
+
+  /** Remove a copy or link this renamer made, if it is still the file it made. Returns problems. */
+  private async undoCreated(file: {
+    source: string;
+    destination: string;
+    transfer?: RenameOperation["transfer"];
+  }): Promise<string[]> {
+    const mode = file.transfer?.mode;
+    const outcome = await undoTransferredFile(
+      {
+        source: file.source,
+        destination: file.destination,
+        transfer: mode === "copy" || mode === "hardlink" ? mode : undefined,
+        fingerprint: file.transfer?.fingerprint,
+      },
+      { moveBack: (from, to) => this.rename(from, to) },
+    );
+    if (outcome.kind === "failed") return [outcome.message];
+    if (outcome.kind === "kept") return [`${path.basename(file.destination)}: left in place (${outcome.reason})`];
+    return [];
   }
 }

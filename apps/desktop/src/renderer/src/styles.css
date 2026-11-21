@@ -1316,3 +1316,163 @@ progress.update-progress {
 .placeholder-table td.mono.muted {
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------------
+   Output folders, transfer mode, and rename history
+   --------------------------------------------------------------------------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A new name in another folder: a folder mark, then "<output folder>/<path>". */
+.dest-elsewhere {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dest-elsewhere .mid-ellipsis {
+  min-width: 0;
+}
+
+.dest-mark {
+  flex: none;
+  color: var(--accent);
+}
+
+/* Options bar: where files go. */
+.output-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 420px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-button);
+  color: var(--text-muted);
+}
+
+.output-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.output-chip:disabled {
+  opacity: 0.6;
+}
+
+.output-chip.is-set {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+
+.output-chip .icon {
+  flex: none;
+}
+
+.output-chip-label {
+  flex: none;
+  font-weight: 500;
+}
+
+.output-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.output-chip.is-set .output-chip-value {
+  color: inherit;
+}
+
+/* Settings: a folder path with its buttons. */
+.folder-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.folder-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-number {
+  width: 7em;
+}
+
+/* Rename confirmation: destination folders. */
+.confirm-destinations ul {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+
+.confirm-destinations li {
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+}
+
+/* Rename History. */
+.dialog-history {
+  width: min(620px, calc(100vw - 40px));
+  max-height: min(560px, calc(100vh - 40px));
+}
+
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.history-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-when {
+  font-weight: 500;
+}
+
+.history-what {
+  font-size: var(--fs-sm);
+}
+
+.history-sample {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}

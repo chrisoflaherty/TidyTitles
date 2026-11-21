@@ -14,12 +14,14 @@ import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { PlaceholderTable, PresetPicker } from "./TemplatePresets";
+import { OutputSettings } from "./OutputSettings";
 
-type TabId = "templates" | "api" | "files" | "coverArt" | "providers" | "updates";
+type TabId = "templates" | "api" | "files" | "output" | "coverArt" | "providers" | "updates";
 const TABS: { id: TabId; label: string }[] = [
   { id: "templates", label: "Templates" },
   { id: "api", label: "API Keys" },
   { id: "files", label: "Files" },
+  { id: "output", label: "Output" },
   { id: "coverArt", label: "Cover Art" },
   { id: "providers", label: "Providers" },
   { id: "updates", label: "Updates" },
@@ -188,7 +190,10 @@ export function SettingsDialog({
   onClose,
   onSaved,
   updates = null,
+  initialTab,
 }: {
+  /** The tab shown first (default: Templates). */
+  initialTab?: "output";
   onClose: () => void;
   onSaved: () => void;
   /** Update state; the "Check for updates automatically" setting is saved with the rest. */
@@ -200,7 +205,7 @@ export function SettingsDialog({
   const [payload, setPayload] = useState<SettingsPayload | null>(null);
   const [draft, setDraft] = useState<EditableSettings | null>(null);
   const [preview, setPreview] = useState<TemplatePreview | null>(null);
-  const [tab, setTab] = useState<TabId>("templates");
+  const [tab, setTab] = useState<TabId>(initialTab ?? "templates");
   const [errors, setErrors] = useState<string[]>([]);
   const [templateErrors, setTemplateErrors] = useState<Partial<Record<keyof TemplateSet, string[]>>>({});
   const [saving, setSaving] = useState(false);
@@ -473,6 +478,8 @@ export function SettingsDialog({
                 </Section>
               </>
             )}
+
+            {tab === "output" && <OutputSettings draft={draft} update={update} />}
 
             {tab === "coverArt" && (
               <Section title="Cover art" description="Posters (movies and TV) and album covers (music) are saved next to the renamed files.">

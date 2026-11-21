@@ -52,13 +52,14 @@ function renameDone(over: Partial<OperationSummary> = {}, associatedRenamed = 0)
     associatedRenamed,
     coverArtDownloaded: 0,
     coverArtAttempted: false,
+    transferMode: "move",
     failures: [],
     historySaved: 1,
   };
 }
 
 function undoDone(over: Partial<Extract<UndoOutcome, { kind: "done" }>> = {}): UndoOutcome {
-  return { kind: "done", historyFound: true, undone: 0, missing: 0, failed: 0, items: [], ...over };
+  return { kind: "done", historyFound: true, undone: 0, missing: 0, kept: 0, failed: 0, items: [], ...over };
 }
 
 describe("iconProgress", () => {

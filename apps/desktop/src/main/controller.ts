@@ -18,15 +18,19 @@ import {
   FIELD_GROUP_LABELS,
   NAMING_PRESETS,
   getTemplateFieldDocs,
+  applyTransferChecks,
   availableProviderChoices,
   collectMediaFiles,
   createDefaultSettings,
   forceTypeForChoice,
   getApiKeyStatus,
   isMusicFile,
+  listHistory,
   summarizeOperations,
+  undoHistoryEntry,
   undoLastRename,
   type ConfigService,
+  type UndoResult,
   type PlannedOperation,
   type SelectableOption,
   type SelectionResult,
@@ -41,6 +45,7 @@ import type {
   EventPayloads,
   FetchOutcome,
   FileEntry,
+  HistoryEntryView,
   LastRenameInfo,
   PlanState,
   ProgressEvent,
@@ -116,6 +121,8 @@ export function toEditableSettings(settings: Settings): EditableSettings {
     coverArt: { ...settings.coverArt },
     conflictResolution: settings.conflictResolution,
     tvProvider: settings.tvProvider,
+    output: { ...settings.output },
+    history: { ...settings.history },
   };
 }
 
@@ -141,6 +148,7 @@ export class AppController {
     // Off by default, as in the Python GUI.
     recursive: false,
     coverArt: false,
+    transferMode: "move",
   };
   private lastRename: LastRenameInfo | null = null;
   private status: StatusMessage = { text: "Ready", tone: "info" };
@@ -156,6 +164,7 @@ export class AppController {
   async init(): Promise<void> {
     await this.reloadSettings();
     this.options.coverArt = this.settings.coverArt.enabled;
+    this.options.transferMode = this.settings.output.transferMode;
     await this.refreshLastRename();
     this.emitState();
   }
@@ -178,6 +187,7 @@ export class AppController {
       configError: this.configError,
       configFile: this.config.configFile,
       platform: this.platform,
+      output: { movie: this.settings.output.movie, tv: this.settings.output.tv, music: this.settings.output.music },
     };
   }
 
@@ -322,8 +332,15 @@ export class AppController {
     const next = { ...this.options, ...options };
     const changedLookup =
       next.mediaType !== this.options.mediaType || next.provider !== this.options.provider;
+    const changedTransfer = next.transferMode !== this.options.transferMode;
     this.options = next;
     this.coerceProvider();
+    // A new transfer mode needs no new lookup: only hard links that cannot
+    // work are marked (or unmarked) in the plan.
+    if (changedTransfer && this.plan === "planned" && this.session && this.operations) {
+      this.session.transferMode = next.transferMode;
+      applyTransferChecks(this.operations, next.transferMode);
+    }
     if (changedLookup && this.plan === "planned") {
       this.resetPlan();
       this.setStatus("Options changed. Fetch metadata again to update the new names.");
@@ -388,6 +405,7 @@ export class AppController {
       provider: this.options.provider,
       mediaType: this.options.mediaType,
       requireApiKeys: false,
+      transferMode: this.options.transferMode,
       selectionCallback: this.selectionCallback,
       ...this.sessionOverrides,
     });
@@ -476,10 +494,11 @@ export class AppController {
 
       const historySaved = await session.saveHistory(operations);
 
-      // The list now holds the new names, so a second fetch or an undo sees them.
+      // The list now holds the new names, so a second fetch or an undo sees
+      // them. A copy or link leaves the original, which stays in the list.
       for (const [i, op] of operations.entries()) {
         const entry = this.files[i];
-        if (entry && op.status === "completed" && entry.path === op.source) {
+        if (entry && op.status === "completed" && entry.path === op.source && session.transferMode === "move") {
           entry.path = op.destination;
           entry.name = path.basename(op.destination);
           entry.directory = path.dirname(op.destination);
@@ -496,8 +515,9 @@ export class AppController {
         .filter((op) => op.status === "completed")
         .reduce((n, op) => n + op.associatedFiles.length, 0);
 
+      const verb = { move: "Renamed", copy: "Copied", hardlink: "Linked" }[session.transferMode];
       this.setStatus(
-        `Renamed ${plural(summary.completed, "file")}${summary.failed ? `, ${COUNT.format(summary.failed)} failed` : ""}`,
+        `${verb} ${plural(summary.completed, "file")}${summary.failed ? `, ${COUNT.format(summary.failed)} failed` : ""}`,
         summary.failed ? "warning" : "success",
       );
       return {
@@ -506,6 +526,7 @@ export class AppController {
         associatedRenamed,
         coverArtDownloaded,
         coverArtAttempted,
+        transferMode: session.transferMode,
         failures,
         historySaved,
       };
@@ -522,23 +543,51 @@ export class AppController {
 
   /** Undo the most recent history entry (written by this app or the CLI). */
   async undo(): Promise<UndoOutcome> {
-    if (this.busy) return { kind: "busy" };
-    this.busy = "undoing";
-    this.setStatus("Undoing the last rename…");
-    this.emitState();
-    try {
+    return this.runUndo("Undoing the last rename…", (progressCallback) =>
       // Undo only the entry the confirmation showed; the CLI may have
       // recorded a newer one since.
-      const result = await undoLastRename(this.config, {
-        progressCallback: (current, total, message) =>
-          this.emitProgress({ phase: "undo", current, total, message }),
+      undoLastRename(this.config, {
+        progressCallback,
         ...(this.lastRename ? { expectedTimestamp: this.lastRename.timestamp } : {}),
-      });
+      }),
+    );
+  }
 
-      // Put the original names back into the list.
+  /**
+   * Undo any history entry, found by its timestamp. Files that later
+   * renames moved or replaced are left in place and reported.
+   */
+  async undoEntry(timestamp: string): Promise<UndoOutcome> {
+    return this.runUndo("Undoing a rename…", (progressCallback) =>
+      undoHistoryEntry(this.config, timestamp, { progressCallback }),
+    );
+  }
+
+  /** The rename history for the History dialog, most recent first. */
+  async getHistory(): Promise<HistoryEntryView[]> {
+    return listHistory(this.config);
+  }
+
+  private async runUndo(
+    status: string,
+    run: (progressCallback: (current: number, total: number, message: string) => void) => Promise<UndoResult>,
+  ): Promise<UndoOutcome> {
+    if (this.busy) return { kind: "busy" };
+    this.busy = "undoing";
+    this.setStatus(status);
+    this.emitState();
+    try {
+      const result = await run((current, total, message) =>
+        this.emitProgress({ phase: "undo", current, total, message }),
+      );
+
+      // Put the original names back into the list (a removed copy or link
+      // was never in it: the list kept the original).
       const restored = new Map<string, string>();
       for (const item of result.items) {
-        if (item.status === "undone") restored.set(item.operation.destination, item.operation.source);
+        if (item.status === "undone" && !item.operation.transfer) {
+          restored.set(item.operation.destination, item.operation.source);
+        }
       }
       if (restored.size > 0) {
         for (const entry of this.files) {
@@ -557,6 +606,8 @@ export class AppController {
       if (!result.historyFound) this.setStatus("There is no rename to undo", "warning");
       else if (result.failed > 0)
         this.setStatus(`Undid ${plural(result.undone, "rename")}; ${COUNT.format(result.failed)} failed`, "warning");
+      else if (result.kept > 0)
+        this.setStatus(`Undid ${plural(result.undone, "rename")}; ${plural(result.kept, "file")} left in place`, "warning");
       else this.setStatus(`Undid ${plural(result.undone, "rename")}`, "success");
 
       return {
@@ -564,11 +615,13 @@ export class AppController {
         historyFound: result.historyFound,
         undone: result.undone,
         missing: result.missing,
+        kept: result.kept,
         failed: result.failed,
         items: result.items.map((item) => ({
           name: path.basename(item.operation.destination),
           status: item.status,
           errors: item.errors,
+          kept: item.kept.map((k) => ({ name: path.basename(k.path), reason: k.reason })),
         })),
       };
     } catch (error) {
@@ -642,12 +695,21 @@ export class AppController {
         },
         conflictResolution: edited.conflictResolution,
         tvProvider: edited.tvProvider,
+        output: {
+          movie: edited.output.movie.trim(),
+          tv: edited.output.tv.trim(),
+          music: edited.output.music.trim(),
+          transferMode: edited.output.transferMode,
+        },
+        history: { maxEntries: edited.history.maxEntries },
       };
       const coverArtDefaultChanged = next.coverArt.enabled !== this.settings.coverArt.enabled;
+      const transferDefaultChanged = next.output.transferMode !== this.settings.output.transferMode;
       await this.config.save(next);
       this.settings = next;
       this.configError = null;
       if (coverArtDefaultChanged) this.options.coverArt = next.coverArt.enabled;
+      if (transferDefaultChanged) this.options.transferMode = next.output.transferMode;
       this.coerceProvider();
       if (this.plan === "planned") {
         this.resetPlan();

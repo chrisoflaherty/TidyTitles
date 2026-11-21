@@ -18,11 +18,11 @@
  * a `RenameService` differently when it needs to.
  */
 
-import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   toHistoryOperation,
   type ConfigService,
+  type HistoryEntry,
   type HistoryOperation,
   type Settings,
 } from "./config";
@@ -50,6 +50,20 @@ import {
 import { FileRenamer, type ProgressCallback } from "./renamer";
 import { collectMediaFiles, extensionsForMediaType, type CollectOptions } from "./scan";
 import { TemplateEngine } from "./template";
+import {
+  applyTransferChecks,
+  checkOutputFolders,
+  outputDirFor,
+  outputKindFor,
+  outputPlanFromSettings,
+  type OutputPlan,
+} from "./output";
+import {
+  historyPathKey,
+  undoTransferredFile,
+  type TransferMode,
+  type UndoKeptFile,
+} from "./transfer";
 
 // ---------------------------------------------------------------------------
 // Choices
@@ -294,19 +308,23 @@ export function resolveConflictStrategy(settings: Settings): ConflictStrategy {
 export interface BuildFileRenamerOptions {
   /** Validate without renaming. Default false. */
   dryRun?: boolean;
+  /** Default: `[output] transfer_mode`. */
+  transferMode?: TransferMode;
 }
 
 /**
  * A FileRenamer for the settings. Overwriting is on exactly when the
- * conflict strategy is "overwrite".
+ * conflict strategy is "overwrite"; the transfer mode is `[output]
+ * transfer_mode` unless given.
  */
 export function buildFileRenamer(
   settings: Settings,
-  { dryRun = false }: BuildFileRenamerOptions = {},
+  { dryRun = false, transferMode }: BuildFileRenamerOptions = {},
 ): FileRenamer {
   return new FileRenamer({
     dryRun,
     overwrite: resolveConflictStrategy(settings) === "overwrite",
+    transferMode: transferMode ?? settings.output.transferMode,
   });
 }
 
@@ -331,6 +349,8 @@ export interface BuildRenameServiceOptions {
   /** Renamer to use. Default `buildFileRenamer(settings, { dryRun })`. */
   fileRenamer?: FileRenamer;
   dryRun?: boolean;
+  /** Default: `[output] transfer_mode`. */
+  transferMode?: TransferMode;
   parser?: FilenameParser;
   musicParser?: MusicParser;
 }
@@ -348,7 +368,9 @@ export function buildRenameService(
     tvProvider: providers.tvProvider,
     musicProvider: providers.musicProvider,
     templateEngine: buildTemplateEngine(settings),
-    fileRenamer: options.fileRenamer ?? buildFileRenamer(settings, { dryRun: options.dryRun }),
+    fileRenamer:
+      options.fileRenamer ??
+      buildFileRenamer(settings, { dryRun: options.dryRun, transferMode: options.transferMode }),
     associatedFilesSettings: { ...settings.associatedFiles },
     conflictStrategy: resolveConflictStrategy(settings),
     selectionCallback: options.selectionCallback,
@@ -413,17 +435,23 @@ export async function recordHistory(
 
 /**
  * Outcome of undoing one history operation:
- * - "undone": the file (and any associated files found) were moved back
+ * - "undone": the file (and any associated files found) were moved back,
+ *   or the copies and links made were removed
  * - "missing": nothing was found at the renamed paths, so nothing moved
+ * - "kept": at least one file was left in place on purpose (see `kept`):
+ *   it is not the file the rename produced, or removing a copy could lose
+ *   the only copy
  * - "failed": at least one move failed; see `errors`
  */
-export type UndoItemStatus = "undone" | "missing" | "failed";
+export type UndoItemStatus = "undone" | "missing" | "kept" | "failed";
 
 export interface UndoItemResult {
   operation: HistoryOperation;
   status: UndoItemStatus;
   /** "name: reason" for each move that failed. */
   errors: string[];
+  /** Files left in place on purpose, with the reason. */
+  kept: UndoKeptFile[];
 }
 
 export interface UndoResult {
@@ -433,6 +461,8 @@ export interface UndoResult {
   items: UndoItemResult[];
   undone: number;
   missing: number;
+  /** Operations with a file left in place on purpose (status "kept"). */
+  kept: number;
   failed: number;
 }
 
@@ -447,14 +477,20 @@ export interface UndoOptions {
    * HistoryChangedError is thrown.
    */
   expectedTimestamp?: string;
+  /**
+   * Paths that more recent history entries touched (see
+   * `undoTransferredFile`). Set by `undoHistoryEntry`.
+   */
+  touchedLater?: ReadonlySet<string>;
 }
 
 interface UndoItemInternal extends UndoItemResult {
-  /** What is still renamed after the attempt (for rewriting history). */
+  /** What is still to undo after the attempt (for rewriting history). */
   remaining?: HistoryOperation;
   moved: boolean;
 }
 
+/** Undo one history operation's files: associated files first, then the main file. */
 async function undoItems(
   operations: readonly HistoryOperation[],
   options: UndoOptions,
@@ -466,32 +502,49 @@ async function undoItems(
   for (const [i, op] of ordered.entries()) {
     options.progressCallback?.(i + 1, ordered.length, `Undoing: ${path.basename(op.destination)}`);
     const errors: string[] = [];
-    const failedAssoc: HistoryOperation["associatedFiles"] = [];
+    const kept: UndoKeptFile[] = [];
     let moved = false;
 
-    const moveBack = async (from: string, to: string): Promise<boolean> => {
-      if (!existsSync(from)) return true;
+    /** Undo one file; true when it needs no further undo (done, missing, or changed since). */
+    const undoOne = async (record: HistoryOperation | HistoryOperation["associatedFiles"][number]) => {
+      let outcome;
       try {
-        await renamer.rename(from, to);
-        moved = true;
-        return true;
+        outcome = await undoTransferredFile(record, {
+          moveBack: (from, to) => renamer.rename(from, to),
+          touchedLater: options.touchedLater,
+        });
       } catch (error) {
         if (!(error instanceof RenameError)) throw error;
-        errors.push(`${path.basename(from)}: ${error.message}`);
-        return false;
+        outcome = { kind: "failed" as const, message: error.message };
+      }
+      switch (outcome.kind) {
+        case "restored":
+          moved = true;
+          return true;
+        case "missing":
+          return true;
+        case "kept":
+          kept.push({ path: record.destination, reason: outcome.reason });
+          // A changed file will never be ours again; the others may be
+          // undone later (original back online, later rename undone).
+          return outcome.reason === "changed";
+        case "failed":
+          errors.push(`${path.basename(record.destination)}: ${outcome.message}`);
+          return false;
       }
     };
 
-    // Associated files first, then the main file (as FileRenamer.undo does).
+    const remainingAssoc: HistoryOperation["associatedFiles"] = [];
     for (const assoc of [...op.associatedFiles].reverse()) {
-      if (!(await moveBack(assoc.destination, assoc.source))) failedAssoc.unshift(assoc);
+      if (!(await undoOne(assoc))) remainingAssoc.unshift(assoc);
     }
-    await moveBack(op.destination, op.source);
+    const mainDone = await undoOne(op);
 
-    const status: UndoItemStatus = errors.length > 0 ? "failed" : moved ? "undone" : "missing";
-    const item: UndoItemInternal = { operation: op, status, errors, moved };
-    if (status === "failed") {
-      item.remaining = { ...op, associatedFiles: failedAssoc };
+    const status: UndoItemStatus =
+      errors.length > 0 ? "failed" : kept.length > 0 ? "kept" : moved ? "undone" : "missing";
+    const item: UndoItemInternal = { operation: op, status, errors, kept, moved };
+    if (!mainDone || remainingAssoc.length > 0) {
+      item.remaining = { ...op, associatedFiles: remainingAssoc };
     }
     results.push(item);
   }
@@ -501,22 +554,49 @@ async function undoItems(
 function toUndoResult(items: UndoItemInternal[]): UndoResult {
   return {
     historyFound: true,
-    items: items.map(({ operation, status, errors }) => ({ operation, status, errors })),
+    items: items.map(({ operation, status, errors, kept }) => ({ operation, status, errors, kept })),
     undone: items.filter((i) => i.status === "undone").length,
     missing: items.filter((i) => i.status === "missing").length,
+    kept: items.filter((i) => i.status === "kept").length,
     failed: items.filter((i) => i.status === "failed").length,
   };
 }
 
 /**
- * Move files from history operations back to their original names, last
- * renamed first. Does not touch the history file.
+ * Move files from history operations back to their original names (and
+ * remove copies and links), last renamed first. Does not touch the history
+ * file.
  */
 export async function undoHistoryOperations(
   operations: readonly HistoryOperation[],
   options: UndoOptions = {},
 ): Promise<UndoResult> {
   return toUndoResult(await undoItems(operations, options));
+}
+
+const NO_HISTORY: UndoResult = { historyFound: false, items: [], undone: 0, missing: 0, kept: 0, failed: 0 };
+
+/**
+ * Undo one entry and update it in the history: removed when nothing is left
+ * to undo; otherwise replaced by what is left (failed moves, and files kept
+ * for a reason that may pass), so undo can be retried; left as it was when
+ * nothing could be done at all. Only that entry is changed.
+ */
+async function undoEntry(
+  config: ConfigService,
+  entry: HistoryEntry,
+  options: UndoOptions,
+): Promise<UndoResult> {
+  const items = await undoItems(entry.operations, options);
+  const left = items.filter((i) => i.remaining);
+  if (left.length === 0) {
+    await config.replaceHistoryEntry(entry, []);
+  } else if (items.some((i) => i.moved || i.kept.some((k) => k.reason === "changed"))) {
+    // History is undone last-first; store the remainder in the original order.
+    const remaining = left.map((i) => i.remaining!).reverse();
+    await config.replaceHistoryEntry(entry, remaining);
+  }
+  return toUndoResult(items);
 }
 
 /**
@@ -542,20 +622,82 @@ export async function undoLastRename(
       "The rename history changed since it was shown (another rename was recorded or undone). Review the last rename and try again.",
     );
   }
-  if (!entry || entry.operations.length === 0) {
-    return { historyFound: false, items: [], undone: 0, missing: 0, failed: 0 };
-  }
+  if (!entry || entry.operations.length === 0) return { ...NO_HISTORY };
+  return undoEntry(config, entry, options);
+}
 
-  const items = await undoItems(entry.operations, options);
-  const failed = items.filter((i) => i.status === "failed");
-  if (failed.length === 0) {
-    await config.replaceHistoryEntry(entry, []);
-  } else if (items.some((i) => i.moved)) {
-    // History is undone last-first; store the remainder in the original order.
-    const remaining = failed.map((i) => i.remaining!).reverse();
-    await config.replaceHistoryEntry(entry, remaining);
+/** Every path a history entry names (sources and destinations, associated files included). */
+function entryPaths(entry: HistoryEntry): string[] {
+  return entry.operations.flatMap((op) => [
+    op.source,
+    op.destination,
+    ...op.associatedFiles.flatMap((a) => [a.source, a.destination]),
+  ]);
+}
+
+/**
+ * Undo any history entry, found by its timestamp, not only the most
+ * recent. Safe after later renames touched the same files: a file that is
+ * not where the entry expects it, or is no longer the file the entry
+ * recorded, is left in place and reported (`kept`), never guessed at.
+ * Entries from older versions carry no fingerprints; their files are left
+ * alone when a more recent entry touched the same path.
+ * @throws HistoryChangedError when no entry has that timestamp (it was
+ *   undone or dropped since it was listed).
+ */
+export async function undoHistoryEntry(
+  config: ConfigService,
+  timestamp: string,
+  options: Omit<UndoOptions, "expectedTimestamp" | "touchedLater"> = {},
+): Promise<UndoResult> {
+  const history = await config.loadHistory();
+  const index = history.findIndex((e) => e.timestamp === timestamp);
+  if (index < 0) {
+    throw new HistoryChangedError(
+      "That rename is no longer in the history (it was undone, or dropped as older entries were added). Review the history and try again.",
+    );
   }
-  return toUndoResult(items);
+  const entry = history[index]!;
+  if (entry.operations.length === 0) return { ...NO_HISTORY };
+  const touchedLater = new Set(history.slice(0, index).flatMap(entryPaths).map(historyPathKey));
+  return undoEntry(config, entry, { ...options, touchedLater });
+}
+
+/** A history entry as front ends list it. */
+export interface HistoryEntrySummary {
+  /** Identifies the entry for `undoHistoryEntry`. */
+  timestamp: string;
+  /** 0 is the most recent. */
+  position: number;
+  /** Main files. */
+  operations: number;
+  /** Main plus associated files. */
+  files: number;
+  /** How the files were transferred; "mixed" when the entry has several modes. */
+  transfer: TransferMode | "mixed";
+  /** The entry's first few renames (main files), for display. */
+  samples: { source: string; destination: string }[];
+}
+
+/** Summaries of the history, most recent first. */
+export async function listHistory(
+  config: ConfigService,
+  { samples = 3 }: { samples?: number } = {},
+): Promise<HistoryEntrySummary[]> {
+  const history = await config.loadHistory();
+  return history
+    .map((entry, position): HistoryEntrySummary => {
+      const modes = new Set(entry.operations.map((op) => op.transfer ?? "move"));
+      return {
+        timestamp: entry.timestamp,
+        position,
+        operations: entry.operations.length,
+        files: entry.operations.reduce((n, op) => n + 1 + op.associatedFiles.length, 0),
+        transfer: modes.size > 1 ? "mixed" : ([...modes][0] ?? "move"),
+        samples: entry.operations.slice(0, samples).map((op) => ({ source: op.source, destination: op.destination })),
+      };
+    })
+    .filter((e) => e.operations > 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -569,6 +711,13 @@ export interface SessionOptions {
   mediaType?: MediaTypeChoice;
   /** Validate without renaming; also disables cover art and history. Default false. */
   dryRun?: boolean;
+  /**
+   * One output folder for every media type (the CLI's `--output`), instead
+   * of the `[output]` folders. Created when missing.
+   */
+  outputDir?: string;
+  /** Default: `[output] transfer_mode`. */
+  transferMode?: TransferMode;
   selectionCallback?: SelectionCallback;
   /**
    * Throw MissingApiKeyError (see `checkApiKeys`) when required keys are
@@ -611,6 +760,8 @@ export class RenameSession {
   readonly providers: ProviderSet;
   readonly service: RenameService;
   readonly coverArt: CoverArtDownloader;
+  /** Where renamed files go: the `[output]` folders, or `outputDir` for all. */
+  readonly output: OutputPlan;
 
   /** @throws MissingApiKeyError when `requireApiKeys` is on and keys are missing. */
   constructor(settings: Settings, options: SessionOptions = {}) {
@@ -620,6 +771,7 @@ export class RenameSession {
     this.mediaType = options.mediaType ?? "auto";
     this.forceType = forceTypeForChoice(this.mediaType);
     this.dryRun = options.dryRun ?? false;
+    this.output = outputPlanFromSettings(settings.output, options.outputDir);
 
     if (options.requireApiKeys ?? true) {
       const missing = checkApiKeys(settings, {
@@ -656,6 +808,7 @@ export class RenameSession {
       providers: this.providers,
       selectionCallback: options.selectionCallback,
       dryRun: this.dryRun,
+      transferMode: options.transferMode,
       parser: options.parser,
       musicParser: options.musicParser,
     });
@@ -685,16 +838,51 @@ export class RenameSession {
     return collectMediaFiles(paths, { mediaType: this.forceType, ...options });
   }
 
-  /** Parse, fetch metadata, and plan operations. */
-  plan(paths: readonly string[], options: PlanOptions = {}): Promise<PlannedOperation[]> {
-    return this.service.processFiles(paths, { ...options, forceType: this.forceType });
+  /** How files get to their new names (may be changed between plan and execute). */
+  get transferMode(): TransferMode {
+    return this.service.fileRenamer.transferMode;
+  }
+  set transferMode(mode: TransferMode) {
+    this.service.fileRenamer.transferMode = mode;
   }
 
-  /** Execute planned operations (updated in place). */
-  execute<T extends RenameOperation>(
+  /** The output folder for a planned operation, or undefined when it is renamed in place. */
+  outputDirFor(operation: RenameOperation): string | undefined {
+    return outputDirFor(this.output, outputKindFor(operation.mediaFile.matchedMetadata));
+  }
+
+  /**
+   * Parse, fetch metadata, and plan operations. Files go to the output
+   * folder for their matched kind (see `output`) unless `destinationDir` is
+   * given. Hard links that cannot work are marked (`applyTransferChecks`).
+   * @throws OutputFolderError when an output folder the plan uses cannot be
+   *   used (missing, a file, not writable).
+   */
+  async plan(paths: readonly string[], options: PlanOptions = {}): Promise<PlannedOperation[]> {
+    const operations = await this.service.processFiles(paths, {
+      destinationDir: (mediaFile) => outputDirFor(this.output, outputKindFor(mediaFile.matchedMetadata)),
+      ...options,
+      forceType: this.forceType,
+    });
+    if (options.destinationDir === undefined) {
+      await checkOutputFolders(this.output, operations, { dryRun: true });
+    }
+    return applyTransferChecks(operations, this.transferMode);
+  }
+
+  /**
+   * Execute planned operations (updated in place). Output folders are
+   * checked again first (the override folder is created when missing), so a
+   * folder that went away since planning stops the whole batch before any
+   * file is touched.
+   * @throws OutputFolderError
+   */
+  async execute<T extends RenameOperation>(
     operations: T[],
     progressCallback?: ProgressCallback,
   ): Promise<T[]> {
+    if (!this.dryRun) await checkOutputFolders(this.output, operations);
+    applyTransferChecks(operations as unknown as PlannedOperation[], this.transferMode);
     return this.service.executeRename(operations, progressCallback);
   }
 
@@ -723,6 +911,14 @@ export class RenameSession {
    */
   async undoLast(options: UndoOptions = {}): Promise<UndoResult> {
     return undoLastRename(this.requireConfig(), options);
+  }
+
+  /**
+   * Undo a history entry by its timestamp (see `undoHistoryEntry`).
+   * @throws ConfigError when the session has no config.
+   */
+  async undoEntry(timestamp: string, options: Omit<UndoOptions, "expectedTimestamp" | "touchedLater"> = {}): Promise<UndoResult> {
+    return undoHistoryEntry(this.requireConfig(), timestamp, options);
   }
 
   private requireConfig(): ConfigService {

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { AuthenticationError, ProviderError } from "@tidytitles/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -125,6 +125,67 @@ describe("rename", () => {
     expect(r.code).toBe(0);
     expect(await readdir(out)).toEqual(["The Matrix (1999).mkv"]);
     expect(await readdir(sb.media)).toEqual([]);
+  });
+
+  describe("output folders and transfer modes", () => {
+    it("sends files to the [output] folder for their kind and says so", async () => {
+      await touch(sb.media, MATRIX_FILE);
+      const movies = path.join(sb.root, "Movies");
+      await mkdir(movies);
+      await writeKeys(sb.configDir, { tmdb: "k", tvdb: "k" }, `[output]\nmovie = ${JSON.stringify(movies)}\n`);
+      const r = await rename([sb.media, "-y"]);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain(`Output folder: ${movies}`);
+      expect(await readdir(movies)).toEqual(["The Matrix (1999).mkv"]);
+      expect(await readdir(sb.media)).toEqual([]);
+    });
+
+    it("stops before renaming anything when an [output] folder is missing", async () => {
+      await touch(sb.media, MATRIX_FILE);
+      const missing = path.join(sb.root, "Unmounted");
+      await writeKeys(sb.configDir, { tmdb: "k", tvdb: "k" }, `[output]\nmovie = ${JSON.stringify(missing)}\n`);
+      const r = await rename([sb.media, "-y"]);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain(`The movie output folder doesn't exist (is the drive connected?): ${missing}`);
+      expect(await readdir(sb.media)).toEqual([MATRIX_FILE]);
+      expect(await history()).toEqual([]);
+    });
+
+    it("--output overrides the [output] folders", async () => {
+      await touch(sb.media, MATRIX_FILE);
+      const out = path.join(sb.root, "out");
+      await writeKeys(sb.configDir, { tmdb: "k", tvdb: "k" }, `[output]\nmovie = "/nonexistent/folder"\n`);
+      const r = await rename([sb.media, "-y", "-o", out]);
+      expect(r.code).toBe(0);
+      expect(await readdir(out)).toEqual(["The Matrix (1999).mkv"]);
+    });
+
+    it("--transfer copy leaves the original, and undo removes only the copy", async () => {
+      const file = await touch(sb.media, MATRIX_FILE, "DATA");
+      const r = await rename([sb.media, "-y", "--transfer", "copy"]);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain("Transfer: copy (the originals stay where they are)");
+      expect((await readdir(sb.media)).sort()).toEqual([MATRIX_FILE, "The Matrix (1999).mkv"].sort());
+      const u = await runIn(["undo", "-y", "--config-dir", sb.configDir]);
+      expect(u.code).toBe(0);
+      expect(await readdir(sb.media)).toEqual([MATRIX_FILE]);
+      expect(await readFile(file, "utf8")).toBe("DATA");
+    });
+
+    it("--transfer hardlink, and transfer_mode from config.toml", async () => {
+      await touch(sb.media, MATRIX_FILE, "DATA");
+      await writeKeys(sb.configDir, { tmdb: "k", tvdb: "k" }, `[output]\ntransfer_mode = "hardlink"\n`);
+      const r = await rename([sb.media, "-y", "--json"]);
+      const out = JSON.parse(r.stdout);
+      expect(out.transfer).toBe("hardlink");
+      expect(out.operations[0].status).toBe("completed");
+      expect((await readdir(sb.media)).sort()).toEqual([MATRIX_FILE, "The Matrix (1999).mkv"].sort());
+    });
+
+    it("rejects an unknown --transfer mode", async () => {
+      const r = await rename([sb.media, "--transfer", "teleport"]);
+      expect(r.code).toBe(2);
+    });
   });
 
   describe("multiple matches", () => {

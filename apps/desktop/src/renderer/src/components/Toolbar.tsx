@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { MediaTypeChoice, ProviderChoice } from "@tidytitles/core";
-import type { AppState, RunOptions } from "../../../shared/ipc";
+import type { MediaTypeChoice, ProviderChoice, TransferMode } from "@tidytitles/core";
+import { TRANSFER_MODE_CHOICES, type AppState, type RunOptions } from "../../../shared/ipc";
+import { TRANSFER_LABELS, outputSummary } from "../destination";
 import { formatTimestamp, shortcut } from "../format";
 import { availability } from "../state";
 import { MEDIA_TYPE_LABELS, MEDIA_TYPE_ORDER, providerLabel } from "../status";
@@ -16,6 +17,8 @@ export interface ToolbarHandlers {
   onCancelFetch: () => void;
   onRename: () => void;
   onOptions: (options: Partial<RunOptions>) => void;
+  /** Open the rename history. */
+  onHistory?: () => void;
 }
 
 function ToolButton({
@@ -75,6 +78,9 @@ export function Toolbar({ app, handlers }: { app: AppState; handlers: ToolbarHan
       <div className="toolbar-group">
         <ToolButton icon="gear" label="Settings" compact onClick={handlers.onSettings} disabled={!can.settings} title={`Settings (${shortcut(p, ",")})`} testId="settings" />
         <ToolButton icon="undo" label="Undo" compact onClick={handlers.onUndo} disabled={!can.undo} title={undoTitle} testId="undo" />
+        {handlers.onHistory && (
+          <ToolButton icon="history" label="History" compact onClick={handlers.onHistory} disabled={!can.history} title="Rename history: undo an earlier rename" testId="history" />
+        )}
         {fetching ? (
           <ToolButton icon="stop" label="Stop" onClick={handlers.onCancelFetch} title={`Stop fetching (${p === "darwin" ? "⌘." : "Esc"})`} testId="stop-fetch" />
         ) : (
@@ -90,7 +96,7 @@ export function Toolbar({ app, handlers }: { app: AppState; handlers: ToolbarHan
         )}
         <ToolButton
           icon="rename"
-          label={ready > 0 && planned ? `Rename ${ready}` : "Rename"}
+          label={ready > 0 && planned ? `${TRANSFER_LABELS[app.options.transferMode].verb} ${ready}` : TRANSFER_LABELS[app.options.transferMode].verb}
           onClick={handlers.onRename}
           disabled={!can.rename}
           primary={planned}
@@ -102,12 +108,25 @@ export function Toolbar({ app, handlers }: { app: AppState; handlers: ToolbarHan
   );
 }
 
-export function OptionsBar({ app, onOptions }: { app: AppState; onOptions: (options: Partial<RunOptions>) => void }) {
+export function OptionsBar({
+  app,
+  onOptions,
+  onOutputSettings,
+}: {
+  app: AppState;
+  onOptions: (options: Partial<RunOptions>) => void;
+  /** Open the output folder settings. */
+  onOutputSettings?: () => void;
+}) {
   const disabled = app.busy !== null;
   // Show a change at once; main's state (which may adjust it) replaces it.
   const [options, setLocal] = useState(app.options);
-  const { mediaType, provider, recursive, coverArt } = app.options;
-  useEffect(() => setLocal({ mediaType, provider, recursive, coverArt }), [mediaType, provider, recursive, coverArt]);
+  const { mediaType, provider, recursive, coverArt, transferMode } = app.options;
+  useEffect(
+    () => setLocal({ mediaType, provider, recursive, coverArt, transferMode }),
+    [mediaType, provider, recursive, coverArt, transferMode],
+  );
+  const output = outputSummary(app.output);
   const change = (next: Partial<RunOptions>) => {
     setLocal((current) => ({ ...current, ...next }));
     onOptions(next);
@@ -164,6 +183,33 @@ export function OptionsBar({ app, onOptions }: { app: AppState; onOptions: (opti
         />
         <span>Download cover art</span>
       </label>
+      <label className="field-inline" title={TRANSFER_LABELS[options.transferMode].hint}>
+        <span>Transfer</span>
+        <select
+          value={options.transferMode}
+          disabled={disabled}
+          onChange={(e) => change({ transferMode: e.target.value as TransferMode })}
+          data-testid="transfer-mode"
+        >
+          {TRANSFER_MODE_CHOICES.map((mode) => (
+            <option key={mode} value={mode}>
+              {TRANSFER_LABELS[mode].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className={`output-chip${output ? " is-set" : ""}`}
+        onClick={onOutputSettings}
+        disabled={disabled || !onOutputSettings}
+        title={output ? `Renamed files go to:\n${output.detail}\n\nClick to change.` : "Renamed files stay in their folders. Click to choose output folders."}
+        data-testid="output-chip"
+      >
+        <Icon name="folder-out" size={13} />
+        <span className="output-chip-label">Output</span>
+        <span className="output-chip-value">{output ? output.text : "Same folders"}</span>
+      </button>
     </div>
   );
 }

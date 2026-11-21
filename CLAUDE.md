@@ -61,6 +61,8 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `template.ts` - Placeholder-based filename generation (`{title} ({year})`); optional sections in `templateSections.ts`, the placeholder reference in `templateFields.ts`, naming presets (Plex, Jellyfin, Kodi) in `presets.ts`
 - `providers/` - `tmdb.ts`, `tvdb.ts`, `musicbrainz.ts` (fetch-based, implement the interfaces in `base.ts`), `cache.ts`. Identical requests in flight share one call; TMDB/TVDB retry a 429 a bounded number of times, MusicBrainz never retries
 - `renamer.ts`, `associatedFiles.ts`, `conflictResolution.ts`, `coverArt.ts` - File operations
+- `transfer.ts` - Move, copy, hard link (safe temp-then-link copy, cross-volume moves), file fingerprints, and undo of one file
+- `output.ts` - Output folders per media kind, `OutputFolderError` checks before anything moves, `applyTransferChecks` (hard links across volumes)
 - `config.ts` - `ConfigService`: zod-validated settings in TOML, plus rename history
 - `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo. Lookups run concurrently (`concurrency.ts`); questions to the selection callback and progress stay one at a time, in file order
 - `session.ts` - Wiring shared by both front ends: providers from settings, `RenameSession`, history, undo
@@ -96,8 +98,14 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
   - macOS: `~/Library/Application Support/file-renamer/`
   - Linux: `~/.config/file-renamer/` (or `$XDG_CONFIG_HOME/file-renamer/`)
   - Windows: `%LOCALAPPDATA%\file-renamer\file-renamer\`
-- `config.toml` holds settings (snake_case keys on disk, camelCase in memory) and API keys (TMDB/TVDB required for movies/TV; MusicBrainz is free). `history.json` holds the last 10 renames for undo.
+- `config.toml` holds settings (snake_case keys on disk, camelCase in memory) and API keys (TMDB/TVDB required for movies/TV; MusicBrainz is free). `history.json` holds the last `[history] max_entries` renames for undo (default 200), each file with a fingerprint.
 - Environment overrides use the `FILE_RENAMER_` prefix with `__` as the nested delimiter; a value in `config.toml` wins over the environment.
+
+## Output Folders, Transfer Modes, and Undo
+
+- `[output]` has a folder per kind (`movie`, `tv`, `music`; empty renames in place) and `transfer_mode` (`move`, `copy`, `hardlink`). `RenameSession` resolves folders per file by the matched kind; `outputDir` (CLI `--output`) overrides all three and is created when missing; configured folders never are. Folders are checked at `plan` and again at `execute`, so a missing or unwritable one throws `OutputFolderError` (typed `reason`) before any file moves.
+- Copies are written to a hidden `.…tidytitles-tmp` name and hard-linked into place (no clobber); cross-volume moves use the same copy. A hard link across volumes or on a volume without links is skipped with `skipReason` `cross_device_link` / `link_unsupported`, never copied.
+- `FileRenamer.execute` records `transfer: { mode, fingerprint }` on each operation and associated file; history stores `transfer` (copies and links only) and `fingerprint` (dev, ino, size, mtime_ns). Undo moves a file back only if dev+ino match, deletes a copy only if unchanged and the original exists, a link only if the original is still the same inode; otherwise the file is `kept` with a typed `UndoKeptReason`. `undoHistoryEntry` undoes any entry; legacy entries without fingerprints skip files a later entry touched.
 
 ## Template Placeholders
 

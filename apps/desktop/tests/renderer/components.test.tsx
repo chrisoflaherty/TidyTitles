@@ -248,6 +248,7 @@ describe("App", () => {
       associatedRenamed: 1,
       coverArtDownloaded: 0,
       coverArtAttempted: false,
+      transferMode: "move",
       failures: [],
       historySaved: 2,
     });

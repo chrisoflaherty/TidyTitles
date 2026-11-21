@@ -94,7 +94,7 @@ export function renameNotification(outcome: RenameOutcome): FeedbackNotification
   if (outcome.associatedRenamed > 0) details.push(`${plural(outcome.associatedRenamed, "associated file")} moved`);
   return {
     title: failed > 0 ? "Rename Finished with Errors" : "Rename Complete",
-    body: `Renamed ${plural(completed, "file")}${details.length > 0 ? `; ${details.join(", ")}` : ""}.`,
+    body: `${{ move: "Renamed", copy: "Copied", hardlink: "Linked" }[outcome.transferMode]} ${plural(completed, "file")}${details.length > 0 ? `; ${details.join(", ")}` : ""}.`,
   };
 }
 
@@ -105,6 +105,7 @@ export function undoNotification(outcome: UndoOutcome): FeedbackNotification | n
   if (!outcome.historyFound) return { title: "Undo Complete", body: "There is no rename to undo." };
   const details: string[] = [];
   if (outcome.missing > 0) details.push(`${COUNT.format(outcome.missing)} not found`);
+  if (outcome.kept > 0) details.push(`${COUNT.format(outcome.kept)} left in place`);
   if (outcome.failed > 0) details.push(`${COUNT.format(outcome.failed)} failed`);
   return {
     title: outcome.failed > 0 ? "Undo Finished with Errors" : "Undo Complete",

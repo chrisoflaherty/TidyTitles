@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { CUSTOM_PRESET_NAME, TemplateEngine, getApiKeyStatus, matchPreset } from "@tidytitles/core";
 import type { CommandContext, GlobalOptions } from "../context";
 import { EXIT_ERROR, EXIT_OK } from "../errors";
+import { formatCount } from "../format";
 
 export interface JsonOption extends GlobalOptions {
   json?: boolean;
@@ -37,6 +38,8 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
         conflictResolution: s.conflictResolution,
       },
       providers: { movie: s.movieProvider, tv: s.tvProvider, music: s.musicProvider },
+      output: { ...s.output },
+      history: { ...s.history },
     });
     return EXIT_OK;
   }
@@ -70,6 +73,16 @@ export async function configShowCommand(ctx: CommandContext, options: JsonOption
   ui.print(c.bold("Behavior:"));
   ui.print(`  Conflict resolution: ${s.conflictResolution}`);
   ui.print(`  Preview before rename: ${pyBool(s.previewBeforeRename)}`);
+  ui.print();
+  ui.print(c.bold("Output:"));
+  const folder = (f: string) => (f.trim() ? f : c.dim("next to the original"));
+  ui.print(`  Movies: ${folder(s.output.movie)}`);
+  ui.print(`  TV:     ${folder(s.output.tv)}`);
+  ui.print(`  Music:  ${folder(s.output.music)}`);
+  ui.print(`  Transfer: ${s.output.transferMode}`);
+  ui.print();
+  ui.print(c.bold("History:"));
+  ui.print(`  Entries kept: ${formatCount(s.history.maxEntries)}`);
   return EXIT_OK;
 }
 
