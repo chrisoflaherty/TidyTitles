@@ -87,7 +87,18 @@ conflict_resolution = "skip"
 movie = "tmdb"
 tv = "tvdb"
 music = "musicbrainz"
+
+[output]
+movie = ""
+tv = ""
+music = ""
+transfer_mode = "move"
+
+[history]
+max_entries = 200
 ```
+
+`[output]` and `[history]` are TidyTitles additions; the old Python app ignores them.
 
 Every key is optional; a missing key takes its default. Booleans also accept `1`/`0` and strings such as `"yes"`/`"no"`. Unknown sections and keys are ignored when reading.
 
@@ -154,6 +165,33 @@ See [Associated files](#associated-files) below.
 | `providers.tv` | `tvdb` | `tvdb` or `tmdb`: which service TV episodes use when the provider is Auto and both keys are set. If the preferred service has no key, the other is used. |
 | `providers.movie` | `tmdb` | Stored for compatibility; has no effect. Movies always use TMDB. |
 | `providers.music` | `musicbrainz` | Stored for compatibility; has no effect. Music always uses MusicBrainz. |
+
+### Output
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `output.movie` | `""` | Folder that renamed movies go into. Empty: next to the original. Must be a full (absolute) path. |
+| `output.tv` | `""` | Folder for renamed TV episodes. |
+| `output.music` | `""` | Folder for renamed music. |
+| `output.transfer_mode` | `move` | `move`, `copy`, or `hardlink`. See [Output folders and transfer modes](#output-folders-and-transfer-modes). Any other value is a configuration error. |
+
+### History
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `history.max_entries` | `200` | How many renames `history.json` keeps for undo, 1 to 10,000. |
+
+## Output folders and transfer modes
+
+In the desktop app these are **Settings** → **Output**, plus the **Transfer** menu and **Output** button in the main window. In the CLI, `--output` and `--transfer` override them for one run.
+
+- **Output folders.** A matched file goes into the folder for its kind (movie, TV episode, or music); folders the template adds, such as `Artist/Album (1975)/`, are created inside it. Associated files (subtitles and so on) go with their media file. A file without a match stays where it is. A kind with no folder is renamed in place.
+- **A missing or unusable folder stops the run before anything is renamed.** If a configured folder does not exist (for example, the drive or network share is not connected), is a file, or cannot be written to, the CLI exits with an error such as `The movie output folder doesn't exist (is the drive connected?): /Volumes/Media/Movies`, and the app shows it when you fetch metadata. TidyTitles never creates a configured output folder, so files are never written to an empty mount point by mistake. It checks again just before renaming. The CLI's `--output` folder *is* created when missing, as it always was.
+- **move** (the default) renames the file. When the destination is on another drive, the file is copied (to a temporary name first, so a half-copied file never has the new name), and then the original is deleted.
+- **copy** makes a renamed copy and leaves the original untouched. The copy keeps the original's modification time. If the copy fails partway (for example, the disk is full), the temporary file is removed and nothing has the new name.
+- **hardlink** gives the same data a second name: no extra disk space, and the original name stays. A hard link only works within one drive. A file whose destination is on another drive is skipped and reported (**Can't link across drives** in the app, "can't hard link to another volume" in the CLI); it is never copied instead. On a drive that does not support hard links (for example, FAT or exFAT) the file is skipped with **Links not supported** ("the volume doesn't support hard links").
+- Conflict resolution works the same in every mode. With **Replace the existing file** (overwrite), the existing file is replaced in one step, never deleted first.
+- Cover art is saved next to the renamed files, so in an output folder.
 
 ## Conflict resolution
 
@@ -233,6 +271,8 @@ Every setting can also come from an environment variable named `FILE_RENAMER_` p
 | `FILE_RENAMER_COVER_ART__ENABLED` | `cover_art.enabled` (also `__FILENAME`, `__MUSIC_FILENAME`, `__OVERWRITE`, `__SIZE`) |
 | `FILE_RENAMER_CONFLICT_RESOLUTION` | `behavior.conflict_resolution` |
 | `FILE_RENAMER_TV_PROVIDER` | `providers.tv` |
+| `FILE_RENAMER_OUTPUT__MOVIE` | `output.movie` (also `__TV`, `__MUSIC`, `__TRANSFER_MODE`) |
+| `FILE_RENAMER_HISTORY__MAX_ENTRIES` | `history.max_entries` |
 
 The `[behavior]` and `[providers]` settings use flat names without a section: `FILE_RENAMER_CONFLICT_RESOLUTION`, `FILE_RENAMER_DRY_RUN`, `FILE_RENAMER_MOVIE_PROVIDER`, `FILE_RENAMER_TV_PROVIDER`, `FILE_RENAMER_MUSIC_PROVIDER`. A whole section can also be given as JSON, for example `FILE_RENAMER_API='{"tmdb_api_key": "..."}'`; the `__` variables win over the JSON.
 
@@ -267,7 +307,9 @@ For testing, or to keep separate setups, point TidyTitles at another folder. It 
 
 ## Rename history
 
-`history.json` records each batch of renames so it can be undone. The newest batch is first, and **only the last 10 batches are kept**. Only files that were actually renamed are recorded; a dry run records nothing.
+`history.json` records each batch of renames so it can be undone. The newest batch is first, and the last 200 batches are kept (`history.max_entries`; earlier versions kept 10). Only files that were actually renamed are recorded; a dry run records nothing.
+
+200 is a balance between undo reach and size. Each renamed file takes about half a kilobyte, so 200 batches of 10 to 50 files is roughly 1 to 5 MB, which loads in a few milliseconds. If you rename thousands of files at a time, a lower limit keeps the file small; if you rename a few files at a time, raise it as high as 10,000.
 
 ```json
 [
@@ -291,8 +333,9 @@ For testing, or to keep separate setups, point TidyTitles at another folder. It 
 
 - `timestamp` is local time without a time zone (here November 14, 2026, 9:05 PM).
 - Paths are absolute.
-- The format is the Python app's, so either version can undo the other's renames.
-- Undo (`tidytitles undo`, or **Undo** in the app) reverts the first entry and removes it, or, if some files could not be moved back, keeps just those files in it.
+- Entries written by this version also have a `fingerprint` on each file (`dev`, `ino`, `size`, `mtime_ns`: the file right after it was renamed), and `"transfer": "copy"` or `"hardlink"` for copies and links. Undo uses the fingerprint to tell its own files from other files put at the same path later. Older entries have no fingerprint and still load and undo.
+- Undo (`tidytitles undo`, or **Undo** in the app) reverts the first entry and removes it, or, if some files could not be moved back, keeps just those files in it. `tidytitles undo --entry N` and **History** in the app undo an older entry.
+- Undo moves a file back only if it is still the same file (same drive and file ID). It deletes a copy or link only if the copy or link is unchanged and the original still exists, and it never touches the original. Anything else is left in place and reported as **Left in place**, with the reason.
 - While the history is being written, a lock file (`history.json.lock`) keeps the CLI and the app from overwriting each other's entries. A lock older than 30 seconds is treated as left over from a crash.
 
 Deleting `history.json` is safe; you just cannot undo earlier renames any more.

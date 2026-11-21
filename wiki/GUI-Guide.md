@@ -76,6 +76,10 @@ With no TMDB or TVDB key, only **MusicBrainz (music only)** is offered, and the 
 
 **Download cover art** downloads a poster or album cover after renaming (see [Cover art](#cover-art)). It starts checked or unchecked according to **Download cover art by default** in Settings.
 
+**Transfer** chooses how files get their new names: **Move** (rename them, the default), **Copy** (make renamed copies and leave the originals), or **Hard link** (add the new name as a second name for the same data: no extra space, originals stay, only within one drive). It starts at the default chosen in **Settings** → **Output**. Changing it after fetching keeps the new names; you don't need to fetch again. The Rename button then says **Copy *N*** or **Link *N***.
+
+**Output** shows where renamed files go: **Same folders** when files are renamed where they are, or the output folders, for example "Movies → Movies, TV → Shows" (hover to see the full paths). Click it to change them in Settings. See [Output folders](#output).
+
 Changing Type or Provider after fetching clears the new names; fetch again to see the result.
 
 ## 3. Fetch metadata
@@ -128,7 +132,13 @@ Rows are tinted: green for a confident match, amber for music whose tags could n
 
 ## 5. Rename
 
-Click **Rename** (Cmd+Enter / Ctrl+Enter). A confirmation lists how many files will be renamed, how many associated files move with them, how many are skipped, and whether cover art will be downloaded. Click **Rename *N* Files** to go ahead.
+Click **Rename** (Cmd+Enter / Ctrl+Enter). A confirmation lists how many files will be renamed (or copied, or linked), how many associated files go with them, how many are skipped, which output folders they go to, and whether cover art will be downloaded. Click **Rename *N* Files** (or **Copy *N* Files**, **Link *N* Files**) to go ahead.
+
+A new name in another folder (an output folder) is marked with a folder icon in the **New name** column and shown as the output folder's name followed by the path inside it, for example "Movies/Inception (2010).mkv". Hover to see the full path.
+
+If an output folder is missing (for example, its drive isn't connected), Fetch Metadata stops with "The movie output folder doesn't exist (is the drive connected?)" and nothing can be renamed until it is back or the setting is changed. The folders are checked again when you click Rename, so a drive unplugged in between stops the whole rename before any file is touched.
+
+In **Hard link** mode, a file whose new name would be on another drive shows **Can't link across drives** and is skipped (it is never copied instead).
 
 Renaming cannot be interrupted, and the window will not close while it runs. While it runs, and while metadata is fetched, the TidyTitles icon in the Dock or taskbar shows a progress bar, so you can follow it from another app. If you switched to another app, TidyTitles also bounces its Dock icon once (macOS) or flashes its taskbar button (Windows) when it needs you to choose a match, and posts a notification when the rename (or an undo) finishes, for example "Renamed 6 files; 2 skipped". Click the notification to bring the window back. When it finishes, a summary appears:
 
@@ -156,12 +166,19 @@ An existing poster or cover is kept unless **Replace cover art that is already t
 
 **Undo** (toolbar), or **Rename** → **Undo Last Rename…** (Cmd+Option+Z on macOS, Ctrl+Alt+Z on Windows and Linux), moves the files of the most recent rename back to their original names, associated files included. The confirmation shows how many files and when they were renamed, for example "Renamed Saturday, November 14 at 9:24 AM". Hover over the Undo button to see the same date.
 
-Undo reads the rename history saved on disk, so it works after restarting the app, and it can undo a rename made with the command-line tool (or the Python version). The history keeps the last 10 renames; each Undo reverts the newest one that is left.
+Undo reads the rename history saved on disk, so it works after restarting the app, and it can undo a rename made with the command-line tool (or the Python version). The history keeps the last 200 renames (change it in **Settings** → **Output**); each Undo reverts the newest one that is left.
+
+Undoing a copy or hard link deletes the copy or link, only if it is unchanged since the rename, and never touches the original.
+
+### Rename History
+
+**History** (toolbar), or **Rename** → **Rename History…**, lists every rename in the history, newest first: when it happened (for example "Saturday, November 7 at 7:00 PM"), how many files, whether they were renamed, copied, or linked, and the first new name. **Undo…** next to an entry asks for confirmation and then undoes that entry, even if it isn't the newest. Later renames stay as they are. A file that a later rename moved away shows as not found. A file that is no longer the one this rename produced (replaced by another file, or a copy that was changed since) is left in place and listed under **Left in place** with the reason.
 
 The **Undo Complete** summary shows:
 
 - **Restored**: files moved back.
 - **Not found (moved or deleted since)**: nothing was at the renamed path any more, so nothing was moved.
+- **Left in place**: a file undo deliberately did not touch: it was replaced or changed after the rename, or it is a copy whose original is gone (so it may be the only copy). Copies whose originals are missing stay in the history, so undo works once the original's drive is back.
 - **Failed**: the file could not be moved back, for example because its original name is now taken by another file. Undo never overwrites. Files that failed stay in the history, so you can fix the problem and click Undo again.
 
 Folders created by the rename are not removed by Undo.
@@ -189,6 +206,14 @@ One field each for **Movies**, **TV shows**, and **Music**. Below each field is 
   - **Add a number**: use the next free name, such as `The Matrix (1999) (1).mkv`.
 
 See [Configuration](Configuration.md#associated-files) for how associated files are matched.
+
+### Output
+
+- **Output folders**: one each for **Movies**, **TV**, and **Music**. Type a path or click **Choose…**; **Clear** (or an empty field) renames those files where they are. Folders the template adds are created inside the output folder.
+- **How files get their new names**: the default for the **Transfer** menu in the main window (**Move**, **Copy**, or **Hard link**).
+- **Renames to keep**: how many renames the history keeps for undo (1 to 10,000; default 200).
+
+See [Configuration](Configuration.md#output-folders-and-transfer-modes) for the details and safety rules.
 
 ### Cover Art
 
@@ -250,7 +275,7 @@ View → Actual Size, Zoom In, and Zoom Out change the text size.
 - **TidyTitles** (macOS only): About, **Check for Updates…**, **Settings…**, **Install Command Line Tool…**, Hide, Quit.
 - **File**: **Add Files…**, **Add Folder…**, **Clear List**; on Windows and Linux also **Settings…**, **Install Command Line Tool…**, and **Quit**.
 - **Edit**: the usual text editing commands, for the text fields in Settings. Edit → Undo undoes typing; it does not undo renames.
-- **Rename**: **Fetch Metadata**, **Stop Fetching**, **Rename Files…**, **Undo Last Rename…**.
+- **Rename**: **Fetch Metadata**, **Stop Fetching**, **Rename Files…**, **Undo Last Rename…**, **Rename History…**.
 - **View**: zoom and full screen.
 - **Window**: the standard window commands.
 - **Help**: **TidyTitles on GitHub**, **Template Reference**, **Report an Issue** (each opens your browser); on Windows and Linux also **Check for Updates…** and About.

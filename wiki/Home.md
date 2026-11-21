@@ -33,5 +33,6 @@ TidyTitles renames movie, TV, and music files to clean, consistent names using m
 | Audio files | `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav`, `.aiff`, `.wma`, `.aac`, `.ape` |
 | Associated files | Subtitles (`.srt`, `.vtt`, `.ass`, `.ssa`, `.sub`, `.idx`), `.nfo`, images (`.jpg`, `.jpeg`, `.png`, `.tbn`) |
 | Conflict handling | Skip, replace, or add a number |
-| Undo | The last 10 renames, from the app or the CLI |
+| Undo | Any of the last 200 renames (configurable), from the app or the CLI |
+| Output folders | A folder per media type; move, copy, or hard link files there |
 | Settings | `config.toml` in `~/Library/Application Support/file-renamer/` (macOS), `%LOCALAPPDATA%\file-renamer\file-renamer\` (Windows), `~/.config/file-renamer/` (Linux) |

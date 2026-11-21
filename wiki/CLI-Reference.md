@@ -60,7 +60,8 @@ tidytitles rename [options] <path>
 |--------|-------------|
 | `-t, --type <type>` | Media type: `auto`, `movie`, `tv`, or `music` (default: `auto`) |
 | `-r, --recursive` | Scan directories recursively |
-| `-o, --output <dir>` | Output directory for renamed files |
+| `-o, --output <dir>` | Output directory for renamed files (overrides the `[output]` folders) |
+| `--transfer <mode>` | How files get their new names: `move`, `copy`, or `hardlink` (default: `[output] transfer_mode`, normally `move`) |
 | `-n, --dry-run` | Preview changes without renaming |
 | `-y, --yes` | Skip confirmation prompt |
 | `-a, --auto-select` | Automatically select first match when multiple results found |
@@ -132,17 +133,35 @@ It then asks `Select match (1-3) or skip:` with a list of the matches, for examp
 | `(skipped: lookup failed: ...)` | The service returned an error or could not be reached. Reported on stderr as "Metadata lookup failed for *N* file(s): ...". |
 | `(skipped: template error: ...)` | The template could not be rendered. |
 | `(skipped: duplicate destination)` | An earlier file in the batch gets the same new name. |
+| `(skipped: can't hard link to another volume)` | `--transfer hardlink`, but the new name would be on another drive. The file is not copied instead. |
 
-After renaming, two more outcomes are counted as skipped: the file already had its new name, or the new name was taken (`conflict_resolution = "skip"`, or the existing file is part of the same batch). See [Conflict resolution](Configuration.md#conflict-resolution).
+After renaming, more outcomes are counted as skipped (in hard-link mode, also a drive without hard links, `the volume doesn't support hard links`): the file already had its new name, or the new name was taken (`conflict_resolution = "skip"`, or the existing file is part of the same batch). See [Conflict resolution](Configuration.md#conflict-resolution).
 
 If no file can be renamed, the CLI prints `No matches found.` and stops.
 
 ### `--output`
 
-`--output <dir>` puts renamed files in `<dir>` instead of next to the originals. Folders in the template are created under it. Associated files go next to their main file's new location.
+`--output <dir>` puts renamed files in `<dir>` instead of next to the originals, whatever their type. Folders in the template are created under it. Associated files go next to their main file's new location. The folder is created if it does not exist.
+
+Without `--output`, files go to the `[output]` folders in `config.toml` (one each for movies, TV, and music; empty means next to the original). The preview names them first:
+
+```
+Output folder: /Volumes/Media/Movies
+Transfer: copy (the originals stay where they are)
+```
+
+A configured `[output]` folder is never created: if it is missing (for example, the drive is not connected), a file instead of a folder, or not writable, `rename` exits 1 with a message such as `Error: The movie output folder doesn't exist (is the drive connected?): /Volumes/Media/Movies`, before anything is renamed. See [Output folders and transfer modes](Configuration.md#output-folders-and-transfer-modes).
 
 ```bash
 tidytitles rename ~/Downloads --type movie --output /Volumes/Media/Movies
+```
+
+### `--transfer`
+
+`--transfer copy` makes renamed copies and leaves the originals; `--transfer hardlink` adds the new name as a hard link (same drive only; files whose destination is on another drive are skipped, never copied). Associated files use the same mode. `undo` deletes the copies or links, only if they are unchanged, and never touches the originals.
+
+```bash
+tidytitles rename ~/Downloads -t movie -o /Volumes/Media/Movies --transfer copy
 ```
 
 ### `--dry-run`
@@ -205,7 +224,9 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
   "summary": { "total": 1, "completed": 1, "failed": 0, "skipped": 0, "pending": 0, "associatedFiles": 0, "totalFiles": 1 },
   "skippedSelections": [],
   "coverArt": [],
-  "historySaved": 1
+  "historySaved": 1,
+  "transfer": "move",
+  "outputFolders": false
 }
 ```
 
@@ -213,13 +234,15 @@ With `--json`, the CLI prints one JSON object on stdout when it finishes (and no
 |-------|---------|
 | `confirmed` | `true` or `false` for the answer to "Proceed with rename?", `true` with `--yes`, `null` when nothing was asked (dry run, nothing to rename). |
 | `operations[].status` | `pending` (dry run, or not confirmed), `completed`, `failed`, or `skipped`. |
-| `operations[].skipReason` | `no_match`, `lookup_failed`, `unknown_metadata`, `template_error`, `duplicate_destination`, `same_path` (already named), `would_overwrite` (name taken), or `null`. |
+| `operations[].skipReason` | `no_match`, `lookup_failed`, `unknown_metadata`, `template_error`, `duplicate_destination`, `same_path` (already named), `would_overwrite` (name taken), `cross_device_link` (hard link to another drive), `link_unsupported` (drive without hard links), or `null`. |
 | `operations[].lookupError` | `{ kind, name, message }` when the lookup failed; `kind` is `authentication` (bad key), `rate_limit`, `provider`, or `other`. |
 | `operations[].mediaType` | `movie`, `tv_episode`, `music`, or `unknown`, as parsed from the name. |
 | `operations[].match` | The metadata used (`kind` is `movie`, `episode`, or `track`), with `verificationStatus`: `auto_matched`, `manual_selection`, `verified`, `unverified`, or `from_provider`. See [Review the new names](GUI-Guide.md#4-review-the-new-names). |
 | `skippedSelections` | Files skipped because they had several matches and stdin was not a terminal. |
 | `coverArt` | Paths of cover art saved or already present. |
 | `historySaved` | Number of renames recorded for `undo`. |
+| `transfer` | `move`, `copy`, or `hardlink`. |
+| `outputFolders` | Whether any output folder (`--output` or `[output]`) was in effect. |
 
 API keys never appear in JSON output.
 
@@ -258,7 +281,7 @@ With no video files it prints `No video files found.`
 
 ## undo
 
-Undo the last rename operation, using the saved history.
+Undo the last rename operation (or an older one), using the saved history.
 
 ```
 tidytitles undo [options]
@@ -267,7 +290,9 @@ tidytitles undo [options]
 | Option | Description |
 |--------|-------------|
 | `-y, --yes` | Skip confirmation prompt |
-| `--json` | Print the result as JSON: `{ command, historyFound, timestamp, confirmed, items: [{ source, destination, status, errors }], undone, missing, failed }` |
+| `-l, --list` | List the rename history (most recent first) instead of undoing |
+| `-e, --entry <number>` | Undo this entry of `--list` instead of the most recent (1 is the most recent) |
+| `--json` | Print the result as JSON: `{ command, historyFound, timestamp, confirmed, items: [{ source, destination, status, errors, kept }], undone, missing, kept, failed }`; with `--list`: `{ command, history: [{ entry, timestamp, operations, files, transfer, samples }] }` |
 | `-h, --help` | Show this message and exit |
 
 ```
@@ -281,10 +306,28 @@ Proceed with undo? [y/N]: y
 Undone: 1
 ```
 
-- It reverts the most recent entry in the history, whether the CLI, the desktop app, or the Python app made it. Associated files are moved back too. The history keeps the last 10 renames, so you can run `undo` repeatedly to go further back.
-- Each file ends up **undone**, **not found** (nothing at the renamed path any more; counted as `Not found`), or **failed** (for example, its original name is now taken; undo never overwrites).
+- It reverts the most recent entry in the history, whether the CLI, the desktop app, or the Python app made it. Associated files are moved back too. The history keeps the last 200 renames (`[history] max_entries`), so you can run `undo` repeatedly to go further back, or pick one with `--entry`.
+- Copies and hard links are undone by deleting them, only if they are unchanged since the rename; the originals are never touched.
+- Each file ends up **undone**, **not found** (nothing at the renamed path any more; counted as `Not found`), **left in place** (it is not the file the rename produced: replaced or changed since, a copy whose original is gone, or, in entries from older versions without fingerprints, a file a later rename touched; printed as `Left in place: name (reason)`), or **failed** (for example, its original name is now taken; undo never overwrites).
 - When everything worked, the entry is removed from the history. When some files failed, the entry keeps only those files, so you can fix the cause and run `undo` again. When nothing could be moved at all, the entry is left as it was.
 - If another rename is recorded between the listing and your answer, undo stops without moving anything and asks you to review and try again.
+
+`--list` shows the history with en-US dates:
+
+```
+$ tidytitles undo --list
+Rename History
+┌───┬────────────────────────┬───────┬────────┬───────────────────────────────────┐
+│ # │ Renamed                │ Files │ How    │ First file                        │
+├───┼────────────────────────┼───────┼────────┼───────────────────────────────────┤
+│ 1 │ Nov 21, 2026, 9:15 AM  │ 1     │ Copied │ B (2002).mkv                      │
+│ 2 │ Nov 7, 2026, 7:00 PM   │ 3     │ Moved  │ A (2001).mkv and 1 more           │
+└───┴────────────────────────┴───────┴────────┴───────────────────────────────────┘
+
+Undo one with 'tidytitles undo --entry <#>'.
+```
+
+`--entry 2` then undoes the November 7 rename and leaves the later one alone. A file that a later rename moved away is reported as not found; one that was replaced since is left in place. A number beyond the history is a usage error (exit 2).
 - Folders created by the rename are not removed.
 - With no history it prints `No rename history found.` and exits 0. Answering no prints `Aborted.` and exits 0.
 - Exits 1 when any file could not be moved back.
@@ -329,6 +372,15 @@ Associated Files:
 Behavior:
   Conflict resolution: skip
   Preview before rename: True
+
+Output:
+  Movies: next to the original
+  TV:     next to the original
+  Music:  next to the original
+  Transfer: move
+
+History:
+  Entries kept: 200
 ```
 
 The values shown are the effective ones: defaults, then `FILE_RENAMER_*` environment variables, then `config.toml` on top. `--json` prints every setting, including cover art and providers:
@@ -342,7 +394,9 @@ The values shown are the effective ones: defaults, then `FILE_RENAMER_*` environ
   "associatedFiles": { "enabled": true, "subtitles": true, "nfo": true, "images": true },
   "coverArt": { "enabled": false, "filename": "poster.jpg", "musicFilename": "cover.jpg", "overwrite": false, "size": "w500" },
   "behavior": { "dryRun": false, "overwrite": false, "previewBeforeRename": true, "conflictResolution": "skip" },
-  "providers": { "movie": "tmdb", "tv": "tvdb", "music": "musicbrainz" }
+  "providers": { "movie": "tmdb", "tv": "tvdb", "music": "musicbrainz" },
+  "output": { "movie": "", "tv": "", "music": "", "transferMode": "move" },
+  "history": { "maxEntries": 200 }
 }
 ```
 

@@ -206,7 +206,15 @@ You do not have permission to change the file or its folder, or the file is in u
 
 ### Renaming across disks is slow
 
-When `--output` points to another disk, each file is copied and then the original is deleted, which takes as long as copying the file.
+When the output folder (`--output`, or an `[output]` folder) is on another disk, each file is copied and then the original is deleted, which takes as long as copying the file. If it is interrupted, at most a hidden `.…tidytitles-tmp` file is left in the destination folder; delete it. The original is deleted only after the copy is complete.
+
+### "The movie output folder doesn't exist (is the drive connected?)"
+
+An output folder in Settings → **Output** (or `[output]` in `config.toml`) is missing. Connect the drive or share, or change or clear the folder. TidyTitles never creates a configured output folder, so it doesn't write into an empty mount point, and it renames nothing in the run until the folder is back. Similar messages say the folder "is a file, not a folder", "can't be written to" (check its permissions, or whether the drive is read-only), or "must be a full path".
+
+### "Can't link across drives" / "can't hard link to another volume"
+
+Hard link mode only works when the new name is on the same drive as the file. Choose **Copy** or **Move** for those files, or an output folder on the same drive. TidyTitles never copies instead of linking without asking. **Links not supported** means the drive's format (for example, FAT or exFAT) has no hard links.
 
 ### Associated files were not renamed
 
@@ -264,7 +272,19 @@ Undo moves files back but does not delete the folders the rename created. Delete
 
 ### I want to undo an older rename
 
-The history keeps the last 10 renames. Undo always reverts the newest one left, so undo repeatedly to go back further.
+Use **History** in the app (or **Rename** → **Rename History…**), or `tidytitles undo --list` and then `tidytitles undo --entry N`. Later renames stay as they are. The history keeps the last 200 renames by default; change `[history] max_entries` (or **Settings** → **Output** → **Renames to keep**) to keep more or fewer.
+
+### Undo says "Left in place"
+
+Undo found a file at the renamed path but did not touch it, because:
+
+- **it was replaced or changed after the rename**: another file now has that name (for example, a later rename put a different file there), or a copy was edited. Undo only moves back, or deletes, the exact file the rename produced.
+- **the original is gone**: undoing a copy or hard link deletes it, which would lose your only copy if the original was deleted or its drive is not connected. Reconnect the drive and undo again; the entry stays in the history.
+- **a later rename touched it** (renames recorded by versions before 0.2, which could not tell files apart): undo the later rename first.
+
+### Undoing a copy left the original
+
+That is intended: undoing a copy or hard link deletes the copy or link and never touches the original.
 
 ## Configuration
 
@@ -288,7 +308,7 @@ The CLI and the app take turns writing `history.json`, using a lock file. If one
 
 ### "Couldn't Fetch Metadata"
 
-Usually `config.toml` could not be loaded; the message says why. See [Configuration](#configuration).
+Usually `config.toml` could not be loaded, or an output folder is missing; the message says why. See [Configuration](#configuration) and [the output folder message](#the-movie-output-folder-doesnt-exist-is-the-drive-connected).
 
 ### Only "MusicBrainz (music only)" is in the Provider menu
 
