@@ -321,7 +321,23 @@ export interface EditableSettings {
   coverArt: Settings["coverArt"];
   conflictResolution: string;
   tvProvider: string;
+  /** `[tv]`: the episode order. */
+  tv: Settings["tv"];
+  /** `[metadata]`: the metadata language code. */
+  metadata: Settings["metadata"];
 }
+
+/** A metadata language the settings offer: its code (stored) and English name. */
+export interface MetadataLanguageChoice {
+  code: string;
+  name: string;
+}
+
+/** For each TV provider and episode order, a note when the provider delivers it only in part. */
+export type EpisodeOrderNotes = Record<
+  (typeof TV_PROVIDER_CHOICES)[number],
+  Record<(typeof EPISODE_ORDER_CHOICES)[number], { partial: boolean; note?: string }>
+>;
 
 export interface SettingsPayload {
   settings: EditableSettings;
@@ -333,6 +349,10 @@ export interface SettingsPayload {
   preview: TemplatePreview;
   /** Set when config.toml could not be loaded; `settings` are then the defaults. */
   loadError: string | null;
+  /** Languages offered for `metadata.language`, English first. */
+  metadataLanguages: MetadataLanguageChoice[];
+  /** What each TV provider can do with each episode order. */
+  episodeOrderNotes: EpisodeOrderNotes;
 }
 
 export type SaveSettingsResult =
@@ -342,6 +362,7 @@ export type SaveSettingsResult =
 export const CONFLICT_CHOICES = ["skip", "overwrite", "auto_version"] as const;
 export const COVER_SIZE_CHOICES = ["w92", "w154", "w185", "w342", "w500", "w780", "original"] as const;
 export const TV_PROVIDER_CHOICES = ["tvdb", "tmdb"] as const;
+export const EPISODE_ORDER_CHOICES = ["aired", "dvd", "absolute"] as const;
 
 // ---------------------------------------------------------------------------
 // The API exposed on `window.tidytitles`

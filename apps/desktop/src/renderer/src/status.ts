@@ -44,6 +44,11 @@ function matchStatus(op: PlannedOperation): StatusView {
   }
 }
 
+/** End a message with a period unless it already ends a sentence. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
 function skippedStatus(op: PlannedOperation): StatusView {
   const message = op.lookupError?.message ?? op.errorMessage ?? "";
   const red = (label: string, detail: string, icon: StatusIcon = "x"): StatusView => ({
@@ -62,6 +67,12 @@ function skippedStatus(op: PlannedOperation): StatusView {
           return red("API key rejected", `The metadata service rejected the API key. Check it in Settings. ${message}`.trim(), "alert");
         case "rate_limit":
           return red("Rate limited", `The metadata service is limiting requests. Try again in a minute. ${message}`.trim(), "alert");
+        case "order_unavailable":
+          return red(
+            "Order not available",
+            `${sentence(message || "The TV service has no episodes in the chosen order for this show")} Choose Aired order, or TVDB, in Settings > Providers.`,
+            "alert",
+          );
         default:
           return red("Lookup failed", message || "The metadata lookup failed.", "alert");
       }

@@ -4,10 +4,11 @@
  */
 
 import path from "node:path";
-import { MEDIA_TYPE_CHOICES, PROVIDER_CHOICES } from "@tidytitles/core";
+import { isMetadataLanguageCode, MEDIA_TYPE_CHOICES, PROVIDER_CHOICES } from "@tidytitles/core";
 import {
   CONFLICT_CHOICES,
   COVER_SIZE_CHOICES,
+  EPISODE_ORDER_CHOICES,
   TV_PROVIDER_CHOICES,
   type EditableSettings,
   type RunOptions,
@@ -126,6 +127,12 @@ export function parseEditableSettings(value: unknown): EditableSettings {
   const api = record(r.api, "api");
   const assoc = record(r.associatedFiles, "associatedFiles");
   const cover = record(r.coverArt, "coverArt");
+  const tv = record(r.tv, "tv");
+  const metadata = record(r.metadata, "metadata");
+  const language = str(metadata.language, "metadata.language", 16);
+  if (!isMetadataLanguageCode(language)) {
+    throw new IpcValidationError("metadata.language must be a language code such as en-US");
+  }
   return {
     templates: parseTemplates(r.templates),
     api: {
@@ -148,6 +155,8 @@ export function parseEditableSettings(value: unknown): EditableSettings {
     },
     conflictResolution: oneOf(r.conflictResolution, CONFLICT_CHOICES, "conflictResolution"),
     tvProvider: oneOf(r.tvProvider, TV_PROVIDER_CHOICES, "tvProvider"),
+    tv: { episodeOrder: oneOf(tv.episodeOrder, EPISODE_ORDER_CHOICES, "tv.episodeOrder") },
+    metadata: { language },
   };
 }
 

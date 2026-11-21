@@ -18,6 +18,8 @@ const validSettings = () => ({
   coverArt: { enabled: false, filename: "poster.jpg", musicFilename: "cover.jpg", overwrite: false, size: "w500" },
   conflictResolution: "skip",
   tvProvider: "tvdb",
+  tv: { episodeOrder: "aired" },
+  metadata: { language: "en-US" },
 });
 
 describe("IPC validation", () => {
@@ -65,6 +67,14 @@ describe("IPC validation", () => {
     const badSize = validSettings();
     badSize.coverArt.size = "w9999";
     expect(() => parseEditableSettings(badSize)).toThrow();
+    expect(() => parseEditableSettings({ ...validSettings(), tv: { episodeOrder: "production" } })).toThrow();
+    expect(() => parseEditableSettings({ ...validSettings(), metadata: { language: "German" } })).toThrow(
+      /language code/,
+    );
+    expect(() => parseEditableSettings({ ...validSettings(), tv: undefined })).toThrow();
+    expect(parseEditableSettings({ ...validSettings(), metadata: { language: "pt-BR" } }).metadata.language).toBe(
+      "pt-BR",
+    );
     // Extra properties are dropped, not passed through.
     const extra = { ...validSettings(), dryRun: true } as Record<string, unknown>;
     expect(parseEditableSettings(extra)).not.toHaveProperty("dryRun");

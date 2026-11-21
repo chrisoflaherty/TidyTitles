@@ -55,6 +55,12 @@ export const EPISODES: Record<number, Episode> = {
   81189: createEpisode({ show: breakingBad, season: 1, episode: 1, title: "Pilot", airDate: "2008-01-20" }),
 };
 
+/** Episodes by show, season, and number; other numbers fall back to `EPISODES`. */
+export const EPISODES_BY_NUMBER: Record<string, Episode> = {
+  "81189:1:1": EPISODES[81189]!,
+  "81189:1:2": createEpisode({ show: breakingBad, season: 1, episode: 2, title: "Cat's in the Bag...", airDate: "2008-01-27" }),
+};
+
 const queen = createArtist({ id: "0383dadf-2a4e-4d10-a46a-e9e041da8eb3", name: "Queen" });
 const opera: Album = createAlbum({ id: "r-opera", title: "A Night at the Opera", artist: queen, year: 1975 });
 const daftPunk = createArtist({ id: "056e4f3e-d505-4dad-8ec1-d04f521cbb56", name: "Daft Punk" });
@@ -90,8 +96,8 @@ export class FakeTVProvider implements TVProvider {
   async getShow(): Promise<undefined> {
     return undefined;
   }
-  async getEpisode(showId: number): Promise<Episode | undefined> {
-    return EPISODES[showId];
+  async getEpisode(showId: number, season?: number, episode?: number): Promise<Episode | undefined> {
+    return EPISODES_BY_NUMBER[`${showId}:${season}:${episode}`] ?? EPISODES[showId];
   }
 }
 

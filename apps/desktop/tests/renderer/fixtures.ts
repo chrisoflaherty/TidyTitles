@@ -72,6 +72,8 @@ export function settingsPayload(): SettingsPayload {
       coverArt: { enabled: false, filename: "poster.jpg", musicFilename: "cover.jpg", overwrite: false, size: "w500" },
       conflictResolution: "skip",
       tvProvider: "tvdb",
+      tv: { episodeOrder: "aired" },
+      metadata: { language: "en-US" },
     },
     configFile: "/config/config.toml",
     fields: { title: "Title", year: "Year" },
@@ -82,6 +84,19 @@ export function settingsPayload(): SettingsPayload {
       music: { preview: "Pink Floyd/Comfortably Numb.flac", errors: [] },
     },
     loadError: null,
+    metadataLanguages: [
+      { code: "en-US", name: "English" },
+      { code: "de-DE", name: "German" },
+      { code: "ja-JP", name: "Japanese" },
+    ],
+    episodeOrderNotes: {
+      tvdb: { aired: { partial: false }, dvd: { partial: false }, absolute: { partial: false } },
+      tmdb: {
+        aired: { partial: false },
+        dvd: { partial: true, note: "TMDB has DVD order only for shows with a DVD episode group; files of other shows are left unmatched." },
+        absolute: { partial: false, note: "TMDB uses the show's Absolute episode group, or counts the aired episodes in order when it has none." },
+      },
+    },
   };
 }
 

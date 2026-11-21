@@ -53,6 +53,7 @@ import type {
   UndoOutcome,
 } from "../shared/ipc";
 import { EVENTS } from "../shared/ipc";
+import { episodeOrderNotes, metadataLanguageChoices } from "./metadataOptions";
 import { previewTemplates } from "./templatePreview";
 
 export type Emit = <K extends keyof EventPayloads>(channel: K, payload: EventPayloads[K]) => void;
@@ -113,6 +114,8 @@ export function toEditableSettings(settings: Settings): EditableSettings {
     coverArt: { ...settings.coverArt },
     conflictResolution: settings.conflictResolution,
     tvProvider: settings.tvProvider,
+    tv: { ...settings.tv },
+    metadata: { ...settings.metadata },
   };
 }
 
@@ -596,6 +599,8 @@ export class AppController {
       formatters: TemplateEngine.getAvailableFormatters(),
       preview: previewTemplates(editable.templates),
       loadError: this.configError,
+      metadataLanguages: metadataLanguageChoices(this.settings.metadata.language),
+      episodeOrderNotes: episodeOrderNotes(),
     };
   }
 
@@ -636,6 +641,8 @@ export class AppController {
         },
         conflictResolution: edited.conflictResolution,
         tvProvider: edited.tvProvider,
+        tv: { ...edited.tv },
+        metadata: { ...edited.metadata },
       };
       const coverArtDefaultChanged = next.coverArt.enabled !== this.settings.coverArt.enabled;
       await this.config.save(next);
