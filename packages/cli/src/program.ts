@@ -9,6 +9,7 @@ import { Argument, Command, CommanderError, Option } from "commander";
 import { ConfigError, MEDIA_TYPE_CHOICES, MissingApiKeyError, PROVIDER_CHOICES } from "@tidytitles/core";
 import pkg from "../package.json" with { type: "json" };
 import { configInitCommand, configSetKeyCommand, configSetTemplateCommand, configShowCommand } from "./commands/config";
+import { configPresetCommand, configPresetsCommand } from "./commands/presets";
 import { previewCommand } from "./commands/preview";
 import { renameCommand, type RenameOptions } from "./commands/rename";
 import { undoCommand } from "./commands/undo";
@@ -212,6 +213,26 @@ Example templates:
       run(async (type: "movie" | "tv" | "music", template: string, _opts: unknown, cmd: Command) =>
         configSetTemplateCommand(ctx, type, template, globals(cmd)),
       ),
+    );
+
+  config
+    .command("presets")
+    .description("List the naming presets (Plex, Jellyfin, Kodi, TidyTitles) and which one is in effect.")
+    .option("--json", "Print the presets as JSON")
+    .action(run(async (_opts: unknown, cmd: Command) => configPresetsCommand(ctx, globals(cmd))));
+
+  config
+    .command("preset")
+    .description("Set the movie, TV, and music templates from a naming preset.")
+    .argument("<name>", "Preset id: default, plex, jellyfin, or kodi")
+    .addHelpText(
+      "after",
+      `
+Presets only fill in the three templates; change any of them afterward with
+set-template. Run "config presets" to see each preset's templates.`,
+    )
+    .action(
+      run(async (name: string, _opts: unknown, cmd: Command) => configPresetCommand(ctx, name, globals(cmd))),
     );
 
   config
