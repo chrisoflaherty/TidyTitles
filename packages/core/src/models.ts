@@ -42,6 +42,15 @@ export interface ParsedInfo {
   year?: number;
   season?: number;
   episode?: number;
+  /**
+   * Every episode number when the file holds more than one
+   * ("S01E01E02", "S01E01-E03", "1x01-02"), in filename order; ranges are
+   * expanded as guessit does. Absent for single episodes. `episode` is the
+   * first of these.
+   */
+  episodes?: number[];
+  /** Air date of a date-based episode ("Show.2024.03.15"), as "YYYY-MM-DD". */
+  airDate?: string;
   episodeTitle?: string;
   mediaType: MediaType;
   quality?: string;
@@ -90,6 +99,22 @@ export interface Episode {
   airDate?: string;
   overview?: string;
   verificationStatus?: VerificationStatus;
+  /** Absolute episode number, when the provider has one. */
+  absoluteNumber?: number;
+  /**
+   * Every episode of a multi-episode file, in file order, the first being
+   * this episode itself. Absent for single episodes.
+   */
+  parts?: EpisodePart[];
+}
+
+/** One episode of a multi-episode file (see `Episode.parts`). */
+export interface EpisodePart {
+  episode: number;
+  title: string;
+  airDate?: string;
+  overview?: string;
+  absoluteNumber?: number;
 }
 
 /** Music artist metadata. */
@@ -276,6 +301,13 @@ export function willOverwrite(operation: RenameOperation): boolean {
 /** Total number of files that will be renamed (main + associated). */
 export function totalFiles(operation: RenameOperation): number {
   return 1 + operation.associatedFiles.length;
+}
+
+/** The episode numbers an Episode covers: one, or all of a multi-episode file. */
+export function episodeNumbers(episode: Episode): number[] {
+  return episode.parts && episode.parts.length > 0
+    ? episode.parts.map((part) => part.episode)
+    : [episode.episode];
 }
 
 /** Create a Track from ParsedMusicInfo (file tags). */

@@ -460,3 +460,41 @@ Movie Title (2020) [Directors Cut].mkv
 Show.Name.S01E01.1080p.WEB.h264-GROUP[TGx].mkv
 Show Name S01E01 1080p WEB H264-GROUP.mkv
 Movie.Title.2021.1080p.WEB-DL.x264.AAC-[YTS.MX].mp4
+# --- Multi-episode files ---
+The.Office.US.S02E01E02.720p.HDTV.x264-LOL.mkv
+Friends.S01E16E17.720p.BluRay.x264-PSYCHD.mkv
+Lost.S01E01-E03.720p.BluRay.x264.mkv
+Lost.S01E01-03.720p.BluRay.x264.mkv
+Firefly.1x01x02.Serenity.avi
+Stargate.SG-1.1x01-1x02.Children.of.the.Gods.avi
+Doctor.Who.2005.S04E17E18.The.End.of.Time.720p.mkv
+Seinfeld.S09E23+E24.The.Finale.mkv
+Star.Trek.The.Next.Generation.S01.E01-E02.Encounter.at.Farpoint.mkv
+Futurama - S01E01-E02 - Space Pilot 3000.mkv
+Sherlock.S01E01.S01E02.720p.mkv
+The.Simpsons.S01E01-E03E05.mkv
+Breaking.Bad.S05E01.1080p.E02.mkv
+Show.S01E05-E03.mkv
+[SubsPlease] Frieren - 01-02 (1080p).mkv
+[Erai-raws] Spy x Family - 01 - 02 [1080p].mkv
+[HorribleSubs] Naruto - 01~03 [720p].mkv
+Show.E01E02.mkv
+Show.Ep01-02.mkv
+# --- Date-based shows ---
+The.Daily.Show.2024.03.15.Guest.Name.720p.WEB.h264.mkv
+Jeopardy.2024-03-15.720p.mkv
+The.Tonight.Show.Starring.Jimmy.Fallon.20240315.720p.HDTV.mkv
+Last.Week.Tonight.with.John.Oliver.15.03.2024.mkv
+Saturday.Night.Live.03.16.2024.mkv
+The.Late.Show.with.Stephen.Colbert.2024.02.30.mkv
+# --- Absolute numbering and versions ---
+[SubsPlease] One Piece - 1100 (1080p) [ABCDEF12].mkv
+[Erai-raws] Detective Conan - 1120 [1080p].mkv
+[SubsPlease] Bleach - 367v2 (1080p).mkv
+[HorribleSubs] Fairy Tail - 175 [720p].mkv
+Naruto.Shippuden.E500.mkv
+Dragon.Ball.Z.Ep123.mkv
+# --- Movies with a year and a number, not episodes ---
+Blade.Runner.2049.2017.1080p.mkv
+2012.2009.1080p.BluRay.mkv
+Ocean's.Eleven.2001.720p.mkv

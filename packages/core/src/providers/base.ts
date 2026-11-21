@@ -29,6 +29,16 @@ export interface TVProvider {
     season: number,
     episode: number,
   ): Promise<Episode | undefined>;
+  /**
+   * Optional: the episode that aired on a date ("YYYY-MM-DD"), for
+   * date-based shows. Returned with its aired season and episode numbers.
+   */
+  getEpisodeByAirDate?(showId: number, airDate: string): Promise<Episode | undefined>;
+  /**
+   * Optional: the episode with an absolute number (anime-style files with
+   * no season), numbered in the provider's configured episode order.
+   */
+  getEpisodeByAbsoluteNumber?(showId: number, absoluteNumber: number): Promise<Episode | undefined>;
 }
 
 /** Music metadata provider. */

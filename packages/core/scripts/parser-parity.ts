@@ -41,6 +41,8 @@ const FIELDS = [
   "source",
   "codec",
   "group",
+  "episodes",
+  "airDate",
 ] as const;
 type Field = (typeof FIELDS)[number];
 const KEY_FIELDS: readonly Field[] = ["mediaType", "title", "year", "season", "episode"];
@@ -87,7 +89,7 @@ names.forEach((name, i) => {
   for (const field of fields) {
     const a = py[field] ?? undefined;
     const b = (ts as Partial<ParsedInfo> & Record<string, unknown>)[field] ?? undefined;
-    if (a === b) {
+    if (a === b || (Array.isArray(a) && JSON.stringify(a) === JSON.stringify(b))) {
       agree[field] = (agree[field] ?? 0) + 1;
     } else {
       diffs.push(`    ${field.padEnd(12)} guessit=${fmt(a)}  ts=${fmt(b)}`);
