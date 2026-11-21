@@ -5,8 +5,8 @@
  * to the exit code; it never calls `process.exit` and never throws.
  */
 
-import { Argument, Command, CommanderError, Option } from "commander";
-import { ConfigError, MEDIA_TYPE_CHOICES, MissingApiKeyError, PROVIDER_CHOICES } from "@tidytitles/core";
+import { Argument, Command, CommanderError, InvalidArgumentError, Option } from "commander";
+import { ConfigError, MEDIA_TYPE_CHOICES, MissingApiKeyError, PROVIDER_CHOICES, TRANSFER_MODES } from "@tidytitles/core";
 import pkg from "../package.json" with { type: "json" };
 import { configInitCommand, configSetKeyCommand, configSetTemplateCommand, configShowCommand } from "./commands/config";
 import { previewCommand } from "./commands/preview";
@@ -53,17 +53,26 @@ Confirmation:
   is not a terminal, a y/n answer is read from stdin; end of input aborts
   (exit 1). Use --yes in scripts.
 
+Output folders and transfer:
+  Files go to the [output] folders in config.toml (one per media type; empty
+  keeps a file next to the original). --output sends every file to one folder
+  instead and creates it when missing. A missing or unwritable [output] folder
+  stops the run before anything is renamed (exit 1). --transfer copy or
+  hardlink leaves the originals in place; a hard link to another volume is
+  skipped and reported, never copied instead.
+
 Output:
   Results go to stdout, progress and prompts to stderr (progress only on a
   terminal). --json prints one JSON object: { command, path, dryRun, files,
   confirmed, operations: [{ source, destination, status, skipReason, error,
   lookupError, mediaType, match, associatedFiles }], summary,
-  skippedSelections, coverArt, historySaved }.
+  skippedSelections, coverArt, historySaved, transfer, outputFolders }.
 
 Examples:
   $ tidytitles rename ~/Downloads --type movie --dry-run
   $ tidytitles rename /media/shows -t tv -r -y --auto-select
-  $ tidytitles rename /music -t music -p musicbrainz --json`;
+  $ tidytitles rename /music -t music -p musicbrainz --json
+  $ tidytitles rename ~/Downloads -t movie -o /Volumes/Media/Movies --transfer copy`;
 
 /** Program name and options that matter before parsing (colors for error output). */
 function preScan(argv: readonly string[]): { color: boolean } {
@@ -73,6 +82,15 @@ function preScan(argv: readonly string[]): { color: boolean } {
     if (arg === "--no-color") color = false;
   }
   return { color };
+}
+
+/** `--entry`: a positive whole number. */
+function parseEntryNumber(value: string): number {
+  const n = Number(value);
+  if (!/^\d+$/.test(value.trim()) || !Number.isSafeInteger(n) || n < 1) {
+    throw new InvalidArgumentError("Must be a positive whole number (1 is the most recent rename).");
+  }
+  return n;
 }
 
 function missingKeyMessage(error: MissingApiKeyError, name: string): string {
@@ -133,7 +151,11 @@ export function createProgram(
         .default("auto"),
     )
     .option("-r, --recursive", "Scan directories recursively")
-    .option("-o, --output <dir>", "Output directory for renamed files")
+    .option("-o, --output <dir>", "Output directory for renamed files (overrides the [output] folders)")
+    .addOption(
+      new Option("--transfer <mode>", "How files get their new names: move, copy, or hardlink (default: [output] transfer_mode)")
+        .choices(TRANSFER_MODES),
+    )
     .option("-n, --dry-run", "Preview changes without renaming")
     .option("-y, --yes", "Skip confirmation prompt")
     .option("-a, --auto-select", "Automatically select first match when multiple results found")
@@ -161,18 +183,30 @@ export function createProgram(
 
   program
     .command("undo")
-    .description("Undo the last rename operation, using the saved history.")
+    .description("Undo the last rename operation (or an older one), using the saved history.")
     .option("-y, --yes", "Skip confirmation prompt")
+    .option("-l, --list", "List the rename history (most recent first) instead of undoing")
+    .option("-e, --entry <number>", "Undo this entry of --list instead of the most recent (1 is the most recent)", parseEntryNumber)
     .option(
       "--json",
-      "Print the result as JSON: { command, historyFound, timestamp, confirmed, items: [{ source, destination, status, errors }], undone, missing, failed }",
+      "Print the result as JSON: { command, historyFound, timestamp, confirmed, items: [{ source, destination, status, errors, kept }], undone, missing, kept, failed }; with --list: { command, history: [{ entry, timestamp, operations, files, transfer, samples }] }",
     )
     .addHelpText(
       "after",
       `
 Without --yes you are asked "Proceed with undo?"; when stdin is not a terminal
 the y/n answer is read from stdin. Exits 1 when any file could not be moved back
-(the history then keeps only those files, so undo can be retried).`,
+(the history then keeps only those files, so undo can be retried).
+
+Copies and hard links are undone by deleting them; the originals are never
+touched. A file is moved back or deleted only if it is still the file the
+rename produced: one that was replaced or edited since, a copy whose original
+is gone, or (in entries from older versions) a file a later rename touched is
+left in place and reported as "left in place".
+
+Examples:
+  $ tidytitles undo --list
+  $ tidytitles undo --entry 3`,
     )
     .action(run(async (_opts: unknown, cmd: Command) => undoCommand(ctx, globals(cmd))));
 

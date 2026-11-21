@@ -72,6 +72,10 @@ export function describeSkip(op: PlannedOperation): string {
       return "already named";
     case "would_overwrite":
       return "destination exists";
+    case "cross_device_link":
+      return "can't hard link to another volume";
+    case "link_unsupported":
+      return "the volume doesn't support hard links";
     default:
       return op.errorMessage ?? "skipped";
   }

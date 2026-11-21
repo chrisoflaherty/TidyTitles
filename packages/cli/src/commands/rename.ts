@@ -4,8 +4,11 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import {
   createSession,
+  hasOutputFolders,
   summarizeOperations,
   type MediaTypeChoice,
+  type RenameSession,
+  type TransferMode,
   type PlannedOperation,
   type ProviderChoice,
   type SelectableOption,
@@ -27,7 +30,28 @@ export interface RenameOptions extends GlobalOptions {
   autoSelect?: boolean;
   provider: ProviderChoice;
   coverArt?: boolean;
+  /** Default: `[output] transfer_mode`. */
+  transfer?: TransferMode;
   json?: boolean;
+}
+
+const TRANSFER_TEXT: Record<TransferMode, string> = {
+  move: "move",
+  copy: "copy (the originals stay where they are)",
+  hardlink: "hard link (the originals stay where they are)",
+};
+
+/** Where files go, when that is not simply "renamed where they are, by moving". */
+function showDestinations(ui: Ui, session: RenameSession, operations: PlannedOperation[]): void {
+  const c = ui.c;
+  const folders = new Set<string>();
+  for (const op of operations) {
+    const folder = session.outputDirFor(op);
+    if (folder && op.status === "pending") folders.add(folder);
+  }
+  for (const folder of [...folders].sort()) ui.print(`${c.dim("Output folder:")} ${folder}`);
+  if (session.transferMode !== "move") ui.print(`${c.dim("Transfer:")} ${TRANSFER_TEXT[session.transferMode]}`);
+  if (folders.size > 0 || session.transferMode !== "move") ui.print();
 }
 
 const SCAN_TEXT: Record<MediaTypeChoice, { scanning: string; notFound: string }> = {
@@ -75,12 +99,16 @@ function createSelection(ctx: CommandContext, autoSelect: boolean): SelectionCal
   return callback;
 }
 
-function showPreview(ui: Ui, operations: PlannedOperation[], outputDir?: string): void {
+function showPreview(
+  ui: Ui,
+  operations: PlannedOperation[],
+  outputDirFor: (op: PlannedOperation) => string | undefined,
+): void {
   const c = ui.c;
   const table = makeTable(["Type", "Original", "New Name"], c);
   for (const op of operations) {
     const label = op.mediaFile.parsedInfo.mediaType === "music" ? "Music" : "Video";
-    const baseDir = outputDir ?? path.dirname(op.source);
+    const baseDir = outputDirFor(op) ?? path.dirname(op.source);
     const newName =
       op.status === "skipped"
         ? c.yellow(`(skipped: ${describeSkip(op)})`)
@@ -163,6 +191,9 @@ export async function renameCommand(
     provider: options.provider,
     mediaType: options.type,
     dryRun,
+    // --output wins over the [output] folders and is created when missing.
+    outputDir: options.output ? path.resolve(options.output) : undefined,
+    transferMode: options.transfer,
     selectionCallback,
     ...ctx.deps.session,
   });
@@ -186,6 +217,8 @@ export async function renameCommand(
     skippedSelections: skippedNonInteractive,
     coverArt: [] as string[],
     historySaved: 0,
+    transfer: session.transferMode,
+    outputFolders: hasOutputFolders(session.output),
   };
   const finish = (ops: PlannedOperation[], code: number): number => {
     if (json) {
@@ -205,7 +238,6 @@ export async function renameCommand(
   const progress = ui.progress;
   const operations = await raceAbort(
     session.plan(files, {
-      destinationDir: options.output ? path.resolve(options.output) : undefined,
       signal,
       progressCallback: (current, total, message) => progress.update(message, current, total),
     }),
@@ -219,7 +251,10 @@ export async function renameCommand(
     }
   }
 
-  if (!json) showPreview(ui, operations, options.output ? path.resolve(options.output) : undefined);
+  if (!json) {
+    showDestinations(ui, session, operations);
+    showPreview(ui, operations, (op) => session.outputDirFor(op));
+  }
   if (skippedNonInteractive.length > 0) {
     ui.note(
       ui.ec.yellow(
