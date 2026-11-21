@@ -58,6 +58,31 @@ Any placeholder can be used in any template. One that has no value for the file 
 | `{episode}` | | Episode number | `1` |
 | `{episode2}` | | Episode number, at least 2 digits | `01` |
 | `{episode_title}` | | Episode title | `Pilot` |
+| `{absolute}` | | Absolute episode number, when the service has one (anime) | `1100` |
+| `{air_date}` | | Air date, YYYY-MM-DD | `2008-01-20` |
+
+### Files with more than one episode
+
+A file such as `Show.S01E01E02.mkv`, `Show.S01E01-E03.mkv`, or `Show.1x01-02.mkv` holds several episodes. TidyTitles looks up every one of them and names the file the way Plex and Jellyfin expect, with the first and last episode:
+
+```
+Breaking Bad - S01E01-E02 - Pilot & Cat's in the Bag....mkv
+```
+
+No template change is needed: `{episode}` and `{episode2}` show all the episodes, repeating the letter written just before the placeholder, and `{episode_title}` joins the titles with ` & ` (a title that repeats is shown once).
+
+| Template | Two episodes | Episodes 1 and 3 |
+|----------|--------------|------------------|
+| `S{season2}E{episode2}` | `S01E01-E02` | `S01E01E03` |
+| `s{season2}e{episode2}` | `s01e01-e02` | `s01e01e03` |
+| `{season}x{episode2}` | `1x01-02` | `1x01-03` |
+| `E{episode|pad:3}` | `E001-E002` | `E001E003` |
+
+Episodes that do not follow each other are listed one by one, because a range would claim the ones in between. The file is matched only when every one of its episodes is found; otherwise it shows **No match**.
+
+### Shows numbered by date or by absolute number
+
+A daily show named by its air date (`The.Daily.Show.2024.03.15.mkv`) is found by that date, and anime numbered without a season (`[SubsPlease] One Piece - 1100 (1080p).mkv`) by its absolute number. Both end up with an ordinary season and episode number, so the usual templates work; `{air_date}` and `{absolute}` are there if you want them in the name. Which numbering the new names use follows the episode order (see [Configuration](Configuration.md#tv-and-metadata)).
 
 ### Release details from the original filename
 
@@ -213,6 +238,10 @@ Templates are checked when you save them (in the app or with `config set-templat
 # Unpadded season folder
 "{title}/Season {season}/{title} S{season2}E{episode2}"
 # → Breaking Bad/Season 1/Breaking Bad S01E01.mkv
+
+# Absolute number for anime
+"{title} - {absolute} - {episode_title}"
+# → One Piece - 1100 - The Name of the Episode.mkv
 
 # 1x001 style
 "{title} {season}x{episode|pad:3}"

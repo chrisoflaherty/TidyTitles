@@ -59,7 +59,10 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
 - `parser.ts` - Hand-written filename parser that reproduces guessit's output, plus a regex fallback
 - `musicParser.ts` - Tag reading with `music-metadata`, with filename fallback
 - `template.ts` - Placeholder-based filename generation (`{title} ({year})`)
-- `providers/` - `tmdb.ts`, `tvdb.ts`, `musicbrainz.ts` (fetch-based, implement the interfaces in `base.ts`), `cache.ts`. Identical requests in flight share one call; TMDB/TVDB retry a 429 a bounded number of times, MusicBrainz never retries
+- `templateEpisodes.ts` - Multi-episode rendering of `{episode}`/`{episode2}`/`{episode_title}`, plus `{absolute}` and `{air_date}`
+- `episodeLookup.ts` - What a TV file names (season and episodes, an air date, or absolute numbers) and how it is looked up
+- `episodeOrder.ts`, `languages.ts` - The `[tv] episode_order` and `[metadata] language` values, what each provider can deliver, TVDB language codes
+- `providers/` - `tmdb.ts`, `tvdb.ts`, `musicbrainz.ts` (fetch-based, implement the interfaces in `base.ts`), `cache.ts`, `memo.ts` (season listings, episode groups, and translations once per client, that is per run). Identical requests in flight share one call; TMDB/TVDB retry a 429 a bounded number of times, MusicBrainz never retries
 - `renamer.ts`, `associatedFiles.ts`, `conflictResolution.ts`, `coverArt.ts` - File operations
 - `config.ts` - `ConfigService`: zod-validated settings in TOML, plus rename history
 - `renameService.ts` - Workflow orchestrator: parse, fetch, plan, execute, undo. Lookups run concurrently (`concurrency.ts`); questions to the selection callback and progress stay one at a time, in file order
@@ -97,12 +100,13 @@ CLI / Electron main → RenameSession → RenameService → Parser → Providers
   - Linux: `~/.config/file-renamer/` (or `$XDG_CONFIG_HOME/file-renamer/`)
   - Windows: `%LOCALAPPDATA%\file-renamer\file-renamer\`
 - `config.toml` holds settings (snake_case keys on disk, camelCase in memory) and API keys (TMDB/TVDB required for movies/TV; MusicBrainz is free). `history.json` holds the last 10 renames for undo.
+- `[tv] episode_order` (`aired`, `dvd`, `absolute`) and `[metadata] language` (TMDB code such as `en-US`) are TypeScript-only tables appended after the Python layout; both have defaults. TMDB delivers DVD order only through a DVD episode group: a show without one fails with lookup error kind `order_unavailable` (`EpisodeOrderUnavailableError`).
 - Environment overrides use the `FILE_RENAMER_` prefix with `__` as the nested delimiter; a value in `config.toml` wins over the environment.
 
 ## Template Placeholders
 
 Movie: `{title}`, `{year}`, `{quality}`
-TV: `{title}`, `{season2}`, `{episode2}`, `{episode_title}`
+TV: `{title}`, `{season2}`, `{episode2}`, `{episode_title}`, `{absolute}`, `{air_date}`. For a multi-episode file `{episode}`/`{episode2}` render every episode (`S{season2}E{episode2}` gives `S01E01-E02`) and `{episode_title}` joins titles with " & ", so the default template needs no change.
 Music: `{artist}`, `{album}`, `{track2}`, `{disc2}`, `{title}`, `{year}`
 
 Formatters: `{field|lower}`, `{field|upper}`, `{field|title}`, `{field|pad:3}`

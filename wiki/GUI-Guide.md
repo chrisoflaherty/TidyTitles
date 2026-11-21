@@ -201,6 +201,13 @@ See [Configuration](Configuration.md#associated-files) for how associated files 
 
 **TV shows**: whether TVDB or TMDB is preferred when the main window's Provider is **Auto** and both keys are set. If the preferred service has no key, the other one is used. Movies always use TMDB and music always uses MusicBrainz.
 
+**Episodes and language**:
+
+- **Episode order**: **Aired** (the broadcast order, right for most shows), **DVD**, or **Absolute** (one running number, as anime is often numbered). An order that the TV service in use has only for some shows is marked in the list, for example "DVD (only some shows on TMDB)", and the note below says what happens to the others. See [Configuration](Configuration.md#tv-and-metadata).
+- **Metadata language**: the language for movie, show, and episode titles, listed by name. A title with no translation comes in English, then in the original language.
+
+Files that hold several episodes (`Show.S01E01E02.mkv`) get one name for all of them, such as `Show - S01E01-E02 - First & Second.mkv`. Files named by date (`Show.2024.03.15.mkv`) and anime numbered without a season (`[Group] Show - 123.mkv`) are matched too.
+
 ### Updates
 
 - **Check for updates automatically** (on by default): look for a new version shortly after starting and every few hours, and download it in the background. This setting is saved on this computer only, with the window position, not in `config.toml`; the command-line tool does not use it.

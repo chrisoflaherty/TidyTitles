@@ -87,6 +87,12 @@ conflict_resolution = "skip"
 movie = "tmdb"
 tv = "tvdb"
 music = "musicbrainz"
+
+[tv]
+episode_order = "aired"
+
+[metadata]
+language = "en-US"
 ```
 
 Every key is optional; a missing key takes its default. Booleans also accept `1`/`0` and strings such as `"yes"`/`"no"`. Unknown sections and keys are ignored when reading.
@@ -154,6 +160,25 @@ See [Associated files](#associated-files) below.
 | `providers.tv` | `tvdb` | `tvdb` or `tmdb`: which service TV episodes use when the provider is Auto and both keys are set. If the preferred service has no key, the other is used. |
 | `providers.movie` | `tmdb` | Stored for compatibility; has no effect. Movies always use TMDB. |
 | `providers.music` | `musicbrainz` | Stored for compatibility; has no effect. Music always uses MusicBrainz. |
+
+### TV and metadata
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `tv.episode_order` | `aired` | `aired`, `dvd`, or `absolute`: how the season and episode numbers in file names count, and how the new names count. See below. |
+| `metadata.language` | `en-US` | Language for movie, show, and episode titles, as a language code: `en-US`, `de-DE`, `pt-BR`, `ja-JP`, or just `de`. A title with no translation falls back to English, then to the original title. MusicBrainz is not affected. |
+
+Files without these tables (written by the Python app or an older TidyTitles) load with the defaults.
+
+**Episode orders:**
+
+- **Aired**: the broadcast order. Right for most shows.
+- **DVD**: the order of the DVD release, for shows whose discs reorder episodes (Firefly, Futurama). TVDB has it for most shows; TMDB only for shows with a DVD episode group. A show without one is left unmatched with **Order not available**.
+- **Absolute**: one running number for the whole show, as anime is often numbered. The episode number in the file is read as the absolute number, and new names put every episode in season 1 (`S01E1100`). Specials (season 0) keep their numbers. TMDB uses the show's Absolute episode group, or counts the aired episodes when it has none.
+
+Whatever the order, a file with an episode number but no season (`[Group] Show - 123`) is read as an absolute number and named in the chosen order, and a file named by date (`Show.2024.03.15`) is found by its air date and named with its aired season and episode.
+
+The CLI can override both for one run with `--order` and `--language`.
 
 ## Conflict resolution
 
@@ -233,6 +258,8 @@ Every setting can also come from an environment variable named `FILE_RENAMER_` p
 | `FILE_RENAMER_COVER_ART__ENABLED` | `cover_art.enabled` (also `__FILENAME`, `__MUSIC_FILENAME`, `__OVERWRITE`, `__SIZE`) |
 | `FILE_RENAMER_CONFLICT_RESOLUTION` | `behavior.conflict_resolution` |
 | `FILE_RENAMER_TV_PROVIDER` | `providers.tv` |
+| `FILE_RENAMER_TV__EPISODE_ORDER` | `tv.episode_order` |
+| `FILE_RENAMER_METADATA__LANGUAGE` | `metadata.language` |
 
 The `[behavior]` and `[providers]` settings use flat names without a section: `FILE_RENAMER_CONFLICT_RESOLUTION`, `FILE_RENAMER_DRY_RUN`, `FILE_RENAMER_MOVIE_PROVIDER`, `FILE_RENAMER_TV_PROVIDER`, `FILE_RENAMER_MUSIC_PROVIDER`. A whole section can also be given as JSON, for example `FILE_RENAMER_API='{"tmdb_api_key": "..."}'`; the `__` variables win over the JSON.
 
