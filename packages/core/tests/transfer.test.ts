@@ -5,7 +5,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rename as fsRename, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -315,8 +315,11 @@ describe("undoTransferredFile", () => {
     const renamed = path.join(media, "b.mkv");
     await new FileRenamer().rename(original, renamed);
     const fingerprint = fingerprintOf(renamed)!;
-    await unlink(renamed);
-    await writeFile(renamed, "OTHER");
+    // Replace it while it still exists, so the new file cannot get its inode
+    // number (Linux hands a freed number straight to the next new file).
+    const other = path.join(media, "other.tmp");
+    await writeFile(other, "OTHER");
+    await fsRename(other, renamed);
     const outcome = await undoTransferredFile({ source: original, destination: renamed, fingerprint }, { moveBack: moveBack() });
     expect(outcome).toEqual({ kind: "kept", reason: "changed" });
     expect(await readFile(renamed, "utf8")).toBe("OTHER");

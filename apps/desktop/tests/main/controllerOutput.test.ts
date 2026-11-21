@@ -159,10 +159,12 @@ describe("AppController: history", () => {
     await h.controller.rename();
     const [entry] = await h.controller.getHistory();
     const renamed = path.join(h.media, "Inception (2010).mkv");
-    // Replace the renamed file with a different one.
-    const { unlink } = await import("node:fs/promises");
-    await unlink(renamed);
-    await writeFile(renamed, "someone else's file");
+    // Replace the renamed file with a different one, while it still exists:
+    // Linux would hand a deleted file's inode number straight to a new file.
+    const { rename: fsRename } = await import("node:fs/promises");
+    const other = path.join(h.media, "other.tmp");
+    await writeFile(other, "someone else's file");
+    await fsRename(other, renamed);
 
     const outcome = await h.controller.undoEntry(entry!.timestamp);
     expect(outcome).toMatchObject({ kind: "done", undone: 0, kept: 1 });

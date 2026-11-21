@@ -81,7 +81,16 @@ function inodeKnown(f: FileFingerprint): boolean {
   return f.ino !== "0";
 }
 
-/** Same file (device and inode), as far as the fingerprints can tell. */
+/**
+ * Whether two fingerprints are the same file: device and inode (or, where
+ * inodes are unknown, size and modification time).
+ *
+ * A known limit: Linux reuses the inode number of a deleted file for the
+ * next file created, so a file deleted and then recreated under the same
+ * name can pass as the original. Undo then moves the new file back; nothing
+ * is lost, but it is not the file that was renamed. Creation time would not
+ * settle it: macOS rewrites it when a modification time is set earlier.
+ */
 export function sameFileIdentity(a: FileFingerprint, b: FileFingerprint): boolean {
   if (!inodeKnown(a) || !inodeKnown(b)) return a.dev === b.dev && a.size === b.size && a.mtimeNs === b.mtimeNs;
   return a.dev === b.dev && a.ino === b.ino;
