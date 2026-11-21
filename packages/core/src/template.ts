@@ -7,6 +7,7 @@
 
 import { TemplateError } from "./errors";
 import type { Episode, Movie, Track } from "./models";
+import { EpisodeNumbers, episodeContext } from "./templateEpisodes";
 
 /** Values substituted into a template; `undefined`/`null` render as "". */
 export type TemplateContext = Record<string, unknown>;
@@ -113,6 +114,12 @@ export function pyTitle(value: string): string {
  *   {episode}        Episode number
  *   {episode2}       Episode number (2 digits, zero-padded)
  *   {episode_title}  Episode title
+ *   {absolute}       Absolute episode number, when the provider has one
+ *   {air_date}       Air date (YYYY-MM-DD)
+ *
+ * In a multi-episode file, {episode} and {episode2} render every episode as
+ * Plex and Jellyfin name them ("S{season2}E{episode2}" gives "S01E01-E02";
+ * see `EpisodeNumbers`), and {episode_title} joins the titles with " & ".
  *   {quality}        Video quality (1080p, 720p, etc.)
  *   {source}         Video source (BluRay, WEB-DL, etc.)
  *   {codec}          Video codec
@@ -174,6 +181,8 @@ export class TemplateEngine {
     "episode",
     "episode2",
     "episode_title",
+    "absolute",
+    "air_date",
     "quality",
     "source",
     "codec",
@@ -217,6 +226,12 @@ export class TemplateEngine {
 
       const raw = Object.hasOwn(context, field) ? context[field] : undefined;
       if (raw === undefined || raw === null) return "";
+      if (raw instanceof EpisodeNumbers) {
+        // Each number gets the formatter, as a single episode's would.
+        const offset = args[args.length - 3] as number;
+        const spec = formatter ? `|${formatter}${arg !== undefined ? `:${arg}` : ""}` : "";
+        return raw.render(template.slice(0, offset), (n) => this.render(`{n${spec}}`, { n }));
+      }
 
       let value = pyStr(raw).replaceAll("/", "");
       const formatters = TemplateEngine.FORMATTERS;
@@ -268,6 +283,7 @@ export class TemplateEngine {
       episode2: zfill(String(episode.episode), 2),
       episode_title: episode.title,
       ext: stripLeadingDots(extension),
+      ...episodeContext(episode),
       ...extraContext,
     };
     return this.finish(this.render(this.tvTemplate, context), extension);
@@ -364,6 +380,8 @@ export class TemplateEngine {
       episode: "Episode number",
       episode2: "Episode number (2 digits, zero-padded)",
       episode_title: "Episode title",
+      absolute: "Absolute episode number (anime)",
+      air_date: "Air date (YYYY-MM-DD)",
       quality: "Video quality (e.g., 1080p)",
       source: "Video source (e.g., BluRay)",
       codec: "Video codec (e.g., x264)",
