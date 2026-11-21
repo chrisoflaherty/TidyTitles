@@ -23,7 +23,11 @@ export type Modal =
   | { kind: "error"; title: string; message: string }
   /** The update dialog, opened by "Check for Updates…"; `sinceCheckId` is the check count when it opened. */
   | { kind: "updates"; sinceCheckId: number }
-  | { kind: "confirmRestart" };
+  | { kind: "confirmRestart" }
+  /** "Change Match" for a file in the list. */
+  | { kind: "changeMatch"; fileId: number }
+  /** "Edit New Name" for a file in the list. */
+  | { kind: "editName"; fileId: number };
 
 export interface UiState {
   app: AppState | null;

@@ -26,7 +26,8 @@ export type IconName =
   | "drop"
   | "external"
   | "download"
-  | "restart";
+  | "restart"
+  | "more";
 
 const PATHS: Record<IconName, string> = {
   "file-plus": "M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5L9 1.5ZM9 1.5v4h4M8 7.5v5M5.5 10h5",
@@ -55,6 +56,7 @@ const PATHS: Record<IconName, string> = {
   external: "M9.5 2.5h4v4M13.5 2.5 7 9M12 9.5V13a.5.5 0 0 1-.5.5h-8A.5.5 0 0 1 3 13V5a.5.5 0 0 1 .5-.5H7",
   download: "M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11",
   restart: "M13.5 8A5.5 5.5 0 1 1 11.9 4.1M13.5 2v3h-3",
+  more: "M2.6 8a.9.9 0 1 0 1.8 0 .9.9 0 1 0-1.8 0ZM7.1 8a.9.9 0 1 0 1.8 0 .9.9 0 1 0-1.8 0ZM11.6 8a.9.9 0 1 0 1.8 0 .9.9 0 1 0-1.8 0Z",
 };
 
 export function Icon({ name, size = 16, className }: { name: IconName; size?: number; className?: string }) {

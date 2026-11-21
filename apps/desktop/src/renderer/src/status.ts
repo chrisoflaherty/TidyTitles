@@ -32,6 +32,9 @@ function matchStatus(op: PlannedOperation): StatusView {
     case "auto_matched":
       return { label: "Auto-matched", tone: "success", icon: "check", rowTone: "success", detail: "Matched automatically: the search found one clear result." };
     case "manual_selection":
+      if (op.mediaFile.correction?.match === "chosen") {
+        return { label: "Selected", tone: "success", icon: "user-check", rowTone: "success", detail: "You chose this match." };
+      }
       return { label: "Selected", tone: "success", icon: "user-check", rowTone: "success", detail: "You chose this match from several results." };
     case "verified":
       return { label: "Verified", tone: "success", icon: "check", rowTone: "success", detail: "The file's tags were confirmed on MusicBrainz." };
@@ -75,6 +78,8 @@ function skippedStatus(op: PlannedOperation): StatusView {
       return { label: "Already named", tone: "neutral", icon: "check", detail: "The file already has this name." };
     case "unknown_metadata":
       return red("Unknown type", message || "The metadata type is not supported.", "alert");
+    case "match_cleared":
+      return { label: "Left alone", tone: "neutral", icon: "minus", detail: "You cleared the match, so the file will not be renamed." };
     default:
       return red("Skipped", message || "This file will not be renamed.", "minus");
   }
