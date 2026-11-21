@@ -63,6 +63,6 @@ export function episodeOrderCapability(
   }
   return {
     support: "full",
-    note: "TMDB uses the show's Absolute episode group, or counts the aired episodes in order when it has none.",
+    note: "TMDB counts the show's aired episodes in order; specials do not count.",
   };
 }

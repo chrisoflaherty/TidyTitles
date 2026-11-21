@@ -1,6 +1,6 @@
 /**
- * TMDB metadata language, episode groups (DVD and absolute order), absolute
- * numbers, and air dates, against a scripted TMDB (no network).
+ * TMDB metadata language, DVD episode groups, absolute numbers, and air
+ * dates, against a scripted TMDB (no network).
  */
 
 import { describe, expect, it } from "vitest";
@@ -229,26 +229,43 @@ describe("TMDB episode orders", () => {
     expect(error).toMatchObject({ provider: "tmdb", order: "dvd" });
   });
 
-  it("uses the Absolute episode group for absolute numbers", async () => {
-    const absoluteGroup = {
+  it("ignores Absolute episode groups: they are community lists, and many reorder the show", async () => {
+    // Like Detective Conan's only Absolute group (a reordered Chinese release).
+    const reordered = {
       type: 2,
       groups: [
-        { name: "Part 1", order: 1, episodes: [{ season_number: 1, episode_number: 1, order: 0 }, { season_number: 1, episode_number: 2, order: 1 }] },
-        { name: "Part 2", order: 2, episodes: [{ season_number: 2, episode_number: 3, order: 0 }] },
+        { name: "Season 01", order: 1, episodes: [{ season_number: 2, episode_number: 3, order: 0 }, { season_number: 1, episode_number: 1, order: 1 }] },
       ],
     };
-    const { fetch } = tmdb({ seasons, groups: [absoluteGroup] });
-    expect(await client(fetch).getEpisodeByAbsoluteNumber(1, 3)).toMatchObject({
-      season: 2,
-      episode: 3,
-      absoluteNumber: 3,
-      title: "Two-3",
-    });
-    expect(await client(fetch, { episodeOrder: "absolute" }).getEpisode(1, 1, 3)).toMatchObject({
+    const { fetch, requests } = tmdb({ seasons, groups: [reordered] });
+    expect(await client(fetch).getEpisodeByAbsoluteNumber(1, 1)).toMatchObject({ season: 1, episode: 1, absoluteNumber: 1 });
+    expect(await client(fetch, { episodeOrder: "absolute" }).getEpisode(1, 1, 4)).toMatchObject({
       season: 1,
-      episode: 3,
-      title: "Two-3",
+      episode: 4,
+      title: "Two-1",
     });
+    expect(requests.some((r) => r.url.pathname.includes("episode_group"))).toBe(false);
+  });
+
+  it("counts by position when a show keeps numbering across seasons", async () => {
+    // Like One Piece, whose season 22 starts at episode 1089.
+    const continuing = {
+      1: { episodes: { "en-US": eps(3, "One-") } },
+      2: {
+        episodes: {
+          "en-US": [
+            { episode_number: 4, name: "Two-4" },
+            { episode_number: 5, name: "Two-5" },
+          ],
+        },
+      },
+    };
+    const { fetch } = tmdb({ seasons: continuing });
+    const c = client(fetch);
+    expect(await c.getEpisodeByAbsoluteNumber(1, 4)).toMatchObject({ season: 2, episode: 4, title: "Two-4", absoluteNumber: 4 });
+    expect(await c.getEpisodeByAbsoluteNumber(1, 5)).toMatchObject({ season: 2, episode: 5 });
+    expect(await c.getEpisodeByAbsoluteNumber(1, 6)).toBeUndefined();
+    expect(await c.getEpisodeByAbsoluteNumber(1, 0)).toBeUndefined();
   });
 
   it("counts aired episodes for absolute numbers when there is no group (specials left out)", async () => {

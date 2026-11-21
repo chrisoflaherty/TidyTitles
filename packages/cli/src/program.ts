@@ -64,8 +64,7 @@ Episode order and language:
   file names count, and how the new names count (default: [tv] episode_order,
   normally aired). TVDB has all three orders; TMDB has DVD order only for
   shows with a DVD episode group (files of other shows are left unmatched),
-  and absolute order from an Absolute episode group or by counting the aired
-  episodes. Files without a season ("[Group] Show - 123") are always read as
+  and absolute order by counting the aired episodes. Files without a season ("[Group] Show - 123") are always read as
   absolute numbers; files named by date ("Show.2024.03.15") are found by
   their air date.
   --language CODE gets titles in that language, such as de-DE, pt-BR, or ja

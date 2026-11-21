@@ -201,7 +201,7 @@ Files without these tables (written by the Python app or an older TidyTitles) lo
 
 - **Aired**: the broadcast order. Right for most shows.
 - **DVD**: the order of the DVD release, for shows whose discs reorder episodes (Firefly, Futurama). TVDB has it for most shows; TMDB only for shows with a DVD episode group. A show without one is left unmatched with **Order not available**.
-- **Absolute**: one running number for the whole show, as anime is often numbered. The episode number in the file is read as the absolute number, and new names put every episode in season 1 (`S01E1100`). Specials (season 0) keep their numbers. TMDB uses the show's Absolute episode group, or counts the aired episodes when it has none.
+- **Absolute**: one running number for the whole show, as anime is often numbered. The episode number in the file is read as the absolute number, and new names put every episode in season 1 (`S01E1100`). Specials (season 0) keep their numbers. TMDB counts the show's aired episodes in order; specials do not count.
 
 Whatever the order, a file with an episode number but no season (`[Group] Show - 123`) is read as an absolute number and named in the chosen order, and a file named by date (`Show.2024.03.15`) is found by its air date and named with its aired season and episode.
 

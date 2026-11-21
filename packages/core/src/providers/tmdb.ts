@@ -63,8 +63,8 @@ export interface TMDBClientOptions {
   rateLimitRetry?: RateLimitRetryOptions;
   /**
    * Episode order for season/episode numbers (default "aired"). DVD order
-   * needs a DVD episode group on the show; absolute order uses an Absolute
-   * episode group, or counts the aired episodes.
+   * needs a DVD episode group on the show; absolute order counts the aired
+   * episodes.
    */
   episodeOrder?: EpisodeOrder;
 }
@@ -311,19 +311,21 @@ export class TMDBClient implements MovieProvider, TVProvider {
   }
 
   /**
-   * Aired season and episode of an absolute number: from the show's
-   * Absolute episode group, or by counting the aired episodes of seasons 1
-   * and up, in order, when it has none.
+   * Aired season and episode of an absolute number: the Nth episode of
+   * seasons 1 and up, in aired order (specials do not count).
+   *
+   * TMDB's "Absolute" episode groups are not used. They are community lists
+   * and many are something else: Detective Conan's only one is a reordered
+   * Chinese release, Naruto Shippuden has nine, most of them story arcs.
+   * Counting aired episodes is what an absolute number means, and it is by
+   * position, because some shows keep counting across seasons (One Piece's
+   * season 22 starts at episode 1089).
    */
   private async absoluteToAired(
     showId: number,
     absoluteNumber: number,
   ): Promise<{ season: number; episode: number } | undefined> {
-    const group = await this.episodeGroup(showId, EPISODE_GROUP_ABSOLUTE);
-    if (group) {
-      const entry = group.find((e) => e.season === 1 && e.episode === absoluteNumber);
-      return entry && { season: entry.airedSeason, episode: entry.airedEpisode };
-    }
+    if (!Number.isInteger(absoluteNumber) || absoluteNumber < 1) return undefined;
     const details = await this.showDetails(showId, this.language);
     if (!details) return undefined;
     const seasons = optionalArray(details.seasons, LABEL, "seasons")
@@ -334,7 +336,14 @@ export class TMDBClient implements MovieProvider, TVProvider {
     let before = 0;
     for (const season of seasons) {
       if (absoluteNumber <= before + season.count) {
-        return { season: season.number, episode: absoluteNumber - before };
+        const data = await this.seasonData(showId, season.number, this.language);
+        if (!data) return undefined;
+        const numbers = seasonEpisodes(data)
+          .map((ep) => optionalNumber(ep.episode_number))
+          .filter((n): n is number => n !== undefined)
+          .sort((a, b) => a - b);
+        const episode = numbers[absoluteNumber - before - 1];
+        return episode === undefined ? undefined : { season: season.number, episode };
       }
       before += season.count;
     }
@@ -357,8 +366,7 @@ export class TMDBClient implements MovieProvider, TVProvider {
    * The show's episode group of a type (the one with the most episodes),
    * flattened, once per run; `undefined` when it has none. Groups are
    * numbered as seasons in their order, a group named "Specials" being
-   * season 0; episodes by their order within the group. In an Absolute
-   * group every regular episode is in season 1, numbered across groups.
+   * season 0; episodes by their order within the group.
    */
   private episodeGroup(showId: number, type: number): Promise<GroupEntry[] | undefined> {
     return this.memo.run(`group:${showId}:${type}`, async () => {
@@ -383,7 +391,6 @@ export class TMDBClient implements MovieProvider, TVProvider {
         .sort(byOrder);
       const entries: GroupEntry[] = [];
       let season = 0;
-      let running = 0;
       for (const group of groups) {
         const specials = /^specials?$/i.test((optionalString(group.name) ?? "").trim());
         if (!specials) season += 1;
@@ -392,14 +399,7 @@ export class TMDBClient implements MovieProvider, TVProvider {
           const airedSeason = optionalNumber(ep.season_number);
           const airedEpisode = optionalNumber(ep.episode_number);
           if (airedSeason === undefined || airedEpisode === undefined) return;
-          let s = specials ? 0 : season;
-          let e = i + 1;
-          if (type === EPISODE_GROUP_ABSOLUTE && !specials) {
-            running += 1;
-            s = 1;
-            e = running;
-          }
-          entries.push({ season: s, episode: e, airedSeason, airedEpisode });
+          entries.push({ season: specials ? 0 : season, episode: i + 1, airedSeason, airedEpisode });
         });
       }
       return entries;
@@ -516,8 +516,7 @@ export class TMDBClient implements MovieProvider, TVProvider {
   }
 }
 
-/** TMDB episode group types (`/tv/episode_group/{id}`): 2 Absolute, 3 DVD. */
-const EPISODE_GROUP_ABSOLUTE = 2;
+/** TMDB episode group type for DVD order (`/tv/episode_group/{id}`). */
 const EPISODE_GROUP_DVD = 3;
 
 const ENGLISH = "en-US";
